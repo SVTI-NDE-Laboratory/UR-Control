@@ -7,7 +7,7 @@ DASHBOARD_PORT = 29999
 PROGRAM_NAME = "Benoit/Code Base/Main_Horizontal_1Line_Register.urp"
 
 # Change these five values for each run.
-avoid_start = 5
+avoid_start = 5  
 avoid_end = 7
 avoid_gap = 0.05
 line_incr = 0.1
