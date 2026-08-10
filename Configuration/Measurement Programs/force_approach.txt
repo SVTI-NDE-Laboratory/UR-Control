@@ -1,9 +1,0 @@
-This file is kept as a reference placeholder for the force approach script.
-
-The active implementation is currently Python-stepped:
-
-  Code/Measurement/python_step_force_approach.py
-
-Python reads force with RTDE, sends one small tool-frame movel step, then reads
-force again before deciding whether to continue. This avoids robot-side
-get_tcp_force()/RTDE-register issues seen during testing.

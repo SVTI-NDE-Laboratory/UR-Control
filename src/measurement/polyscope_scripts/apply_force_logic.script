@@ -1,0 +1,167 @@
+# Script-node source for Benoit/apply_force.urp.
+# Keep the source name different from apply_force.script because PolyScope
+# generates apply_force.script automatically when it saves apply_force.urp.
+
+# ---------- Configuration ----------
+register = 42
+
+# Global variables appear with live values in PolyScope's Variables pane.
+global apply_force_phase = "Setting program variables"
+global apply_force_max_distance = read_input_float_register(43)
+global apply_force_contact_threshold = read_input_float_register(44)
+global apply_force_holding_force = read_input_float_register(45)
+global apply_force_simulation = read_input_integer_register(46) == 1
+global apply_force_force_reached = False
+
+# Fixed safety settings, identical to move50mm_force.script.
+max_approach_speed = 0.020
+contact_timeout = 10.0
+
+return_speed = 0.020
+return_acceleration = 0.100
+
+# Status:
+# 0 = initialized / completed
+# 1 = force reached (real or simulated); waiting for Python acknowledgement
+# 2 = maximum distance reached without contact
+# 3 = acknowledgement timeout
+
+write_output_integer_register(register, 0)
+
+# Reject acknowledgement remaining from an earlier run
+while read_input_integer_register(register) != 0:
+    sync()
+end
+
+start_pose = get_actual_tcp_pose()
+force_frame = start_pose
+
+zero_ftsensor()
+sleep(0.2)
+
+contact_detected = False
+maximum_reached = False
+
+# Approach along the starting TCP Z+ direction
+apply_force_phase = "Moving to reach contact force"
+
+while (contact_detected == False) and (maximum_reached == False):
+
+    force_mode(
+        force_frame,
+        [0, 0, 1, 0, 0, 0],
+        [0, 0, apply_force_holding_force, 0, 0, 0],
+        2,
+        [0.010, 0.010, max_approach_speed, 0.10, 0.10, 0.10]
+    )
+
+    current_pose = get_actual_tcp_pose()
+    relative_pose = pose_trans(pose_inv(start_pose), current_pose)
+    travelled_z = relative_pose[2]
+
+    measured_force = force()
+
+    if measured_force >= apply_force_contact_threshold:
+        contact_detected = True
+    elif travelled_z >= apply_force_max_distance:
+        maximum_reached = True
+    end
+
+    sync()
+end
+
+# In simulation, reaching maximum distance is reported as force reached. Stop
+# force mode first so the robot cannot move beyond the configured distance while
+# Python performs the simulated hold/acknowledgement sequence.
+force_mode_stopped = False
+
+if contact_detected:
+    apply_force_force_reached = True
+elif maximum_reached and apply_force_simulation:
+    apply_force_force_reached = True
+    end_force_mode()
+    stopl(1.0)
+    sleep(0.1)
+    force_mode_stopped = True
+end
+
+if apply_force_force_reached:
+
+    if contact_detected:
+        apply_force_phase = "Force reached"
+    else:
+        apply_force_phase = "Maximum displacement reached; simulating force reached"
+    end
+    write_output_integer_register(register, 1)
+
+    acknowledged = False
+    timed_out = False
+    elapsed_time = 0.0
+
+    # Maintain real force while waiting for Python. In simulation, force mode was
+    # already stopped at maximum distance and this loop only waits for the same
+    # acknowledgement, allowing the rest of the workflow to be tested.
+    if contact_detected:
+        apply_force_phase = "Waiting for end of force hold"
+    else:
+        apply_force_phase = "Waiting for end of simulated hold"
+    end
+
+    while (acknowledged == False) and (timed_out == False):
+
+        if contact_detected:
+            force_mode(
+                force_frame,
+                [0, 0, 1, 0, 0, 0],
+                [0, 0, apply_force_holding_force, 0, 0, 0],
+                2,
+                [0.010, 0.010, max_approach_speed, 0.10, 0.10, 0.10]
+            )
+        end
+
+        if read_input_integer_register(register) == 1:
+            acknowledged = True
+        end
+
+        elapsed_time = elapsed_time + get_steptime()
+
+        if elapsed_time >= contact_timeout:
+            timed_out = True
+        end
+
+        sync()
+    end
+
+    if timed_out:
+        apply_force_phase = "Force hold acknowledgement timed out"
+        write_output_integer_register(register, 3)
+    else:
+        apply_force_phase = "Force hold completed"
+    end
+
+else:
+
+    apply_force_phase = "Maximum displacement reached"
+    write_output_integer_register(register, 2)
+
+end
+
+if force_mode_stopped == False:
+    end_force_mode()
+    stopl(1.0)
+    sleep(0.1)
+end
+
+apply_force_phase = "Moving back to initial position"
+
+movel(
+    start_pose,
+    a=return_acceleration,
+    v=return_speed
+)
+
+apply_force_phase = "Initial position reached"
+
+write_output_integer_register(register, 0)
+
+apply_force_phase = "Cycle completed"
