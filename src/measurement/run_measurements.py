@@ -14,10 +14,29 @@ ROBOT_DIR = PROJECT_ROOT / "src" / "robot"
 if str(ROBOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROBOT_DIR))
 
-from line_planner import is_obstacle, line_positions, next_measurement_step
+from line_planner import (
+    crosses_obstacle,
+    high_low_movement,
+    is_obstacle,
+    line_positions,
+    next_measurement_step,
+)
 from measurement_movement import high_to_low, low_to_high, translate_along_line
 from measurement_state import write_state
 from apply_force import apply_force
+from robot_connection import assert_robot_running, stop_robot
+
+
+class MeasurementUnavailableError(RuntimeError):
+    """Raised after recovery when force was not found within maximum travel."""
+
+    def __init__(self, line_index: int, line_position: float):
+        self.line_index = line_index
+        self.line_position = line_position
+        super().__init__(
+            "Could not measure line point "
+            f"{line_index} at {line_position:.3f} m: maximum displacement reached."
+        )
 
 
 def run_measurements(robot_ip: str, rtde_receive, config: dict, state_path: str | Path) -> None:
@@ -27,6 +46,25 @@ def run_measurements(robot_ip: str, rtde_receive, config: dict, state_path: str 
     low measurement plane. The state file is updated before each position and
     again after its force measurement so another process can follow progress.
     """
+
+    # Reject an obstacle without a safe vertical movement before any robot
+    # command is allowed to start.
+    high_low_movement(config)
+    assert_robot_running(robot_ip)
+    try:
+        _run_measurements(robot_ip, rtde_receive, config, state_path)
+    except BaseException:
+        # Includes Ctrl+C and robot safety exceptions. Do not attempt recovery
+        # motion here: stop in place and let the operator inspect the robot.
+        try:
+            stop_robot(robot_ip)
+        except Exception as stop_error:
+            print(f"Warning: robot stop command failed: {stop_error}", file=sys.stderr)
+        raise
+
+
+def _run_measurements(robot_ip: str, rtde_receive, config: dict, state_path: str | Path) -> None:
+    """Implementation separated so the public entry point owns cleanup."""
 
     height_mode = "high"
     positions = line_positions(config)
@@ -75,29 +113,66 @@ def run_measurements(robot_ip: str, rtde_receive, config: dict, state_path: str 
             height_mode = "low"
 
         state["height_mode"] = height_mode
-        state["last_measurement_success"] = apply_force(robot_ip, measurement["program_path"], measurement["max_displacement"], measurement["contact_threshold"], measurement["holding_force"], measurement["simulation"])
+        measurement_success = apply_force(
+            robot_ip,
+            measurement["program_path"],
+            measurement["max_displacement"],
+            measurement["contact_threshold"],
+            measurement["holding_force"],
+            measurement["simulation"],
+        )
+        state["last_measurement_success"] = measurement_success
         write_state(state_path, state)
 
-        # Move to the following point. If an obstacle begins next, rise and
-        # jump over its complete range instead of visiting each blocked point.
-        if step < len(positions) - 1:
-            next_position = positions[step + 1][1]
-            next_in_obstacle = is_obstacle(next_position, config)
+        if not measurement_success:
+            message = (
+                f"Could not measure line point {index} at {position:.3f} m: "
+                "maximum displacement reached. Returning to p_start_h."
+            )
+            print(f"\n{message}")
 
-            if next_in_obstacle:
+            # The force URP returns to its initial (low) measurement pose.
+            # Rise to the safe plane, then undo all line translation so the TCP
+            # finishes at p_start_h. Do not continue with the end routine.
+            low_to_high(robot_ip, rtde_receive, config)
+            height_mode = "high"
+            if abs(position) > 1e-12:
+                translate_along_line(robot_ip, rtde_receive, config, -position)
+
+            write_state(
+                state_path,
+                {
+                    "mode": "measurement_failed",
+                    "line_index": index,
+                    "line_position": position,
+                    "height_mode": height_mode,
+                    "in_obstacle": False,
+                    "last_measurement_success": False,
+                    "message": message,
+                },
+            )
+            raise MeasurementUnavailableError(index, position)
+
+        # Move to the following valid point. Check the complete movement
+        # segment, not only sampled points: an obstacle can lie wholly between
+        # two measurement positions.
+        if step < len(positions) - 1:
+            next_step = next_measurement_step(positions, step + 1, config)
+            if next_step is None:
+                print("Obstacle until end of line")
+                break
+
+            next_position = positions[next_step][1]
+            crosses = crosses_obstacle(position, next_position, config)
+
+            if crosses:
                 if height_mode == "low":
-                    print("Next point is obstacle: move low -> high before jumping obstacle")
+                    print("Path crosses obstacle: move low -> high before translating")
                     low_to_high(robot_ip, rtde_receive, config)
                     height_mode = "high"
 
-                next_step = next_measurement_step(positions, step + 2, config)
-                if next_step is None:
-                    print("Obstacle until end of line")
-                    break
-
-                jump_position = positions[next_step][1]
-                print(f"Jump obstacle: translate to {jump_position:.3f} m")
-                translate_along_line(robot_ip, rtde_receive, config, jump_position - position)
+                print(f"Pass obstacle at safe height: translate to {next_position:.3f} m")
+                translate_along_line(robot_ip, rtde_receive, config, next_position - position)
                 step = next_step
                 continue
 

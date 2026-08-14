@@ -75,3 +75,23 @@ def movel_pose_script(pose: list[float], a: float, v: float) -> str:
         """
     )
     return script
+
+
+def routine_script(moves: list[dict]) -> str:
+    """Build one URScript program so consecutive routine moves can blend."""
+
+    commands = []
+    for move in moves:
+        motion = move["motion"]
+        if motion["type"] == "j":
+            target = ur_list(move["target"])
+            command = "movej"
+        else:
+            target = ur_pose(move["target"])
+            command = "movel"
+        commands.append(
+            f"  {command}({target}, a={motion['acceleration']}, "
+            f"v={motion['speed']}, r={motion['blend_radius']})"
+        )
+
+    return "def python_routine():\n" + "\n".join(commands) + "\nend\n\npython_routine()\n"

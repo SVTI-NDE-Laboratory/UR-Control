@@ -5,9 +5,11 @@ Program order:
     2. Perform all configured measurements.
     3. Move through the configured ``end`` routine.
 
-The robot does not move until the operator confirms in the terminal.
+The robot does not move until the operator confirms in the control panel or terminal.
 """
 
+import argparse
+import json
 import sys
 from pathlib import Path
 
@@ -28,10 +30,16 @@ for folder in [MEASUREMENT_DIR, ROBOT_DIR, ROUTINES_DIR]:
         sys.path.insert(0, str(folder))
 
 from measurement_config import read_measurement_config
+from measurement_plan import write_measurement_plan
 from measurement_state import write_state
-from read_routines import read_routines_file
-from robot_connection import assert_remote_control, get_rtde_receive
-from run_measurements import run_measurements
+from read_routines import get_waypoint, read_routines_file
+from robot_connection import (
+    UnsafeStartPositionError,
+    assert_at_home,
+    assert_robot_running,
+    get_rtde_receive,
+)
+from run_measurements import MeasurementUnavailableError, run_measurements
 from run_routine import run_routine
 
 
@@ -39,54 +47,136 @@ from run_routine import run_routine
 ROBOT_IP = "192.168.3.10"
 ROUTINES_FILE = ROUTINES_DIR / "routine_files" / "routines_block.json"
 CONFIG_FILE = CONFIG_DIR / "config.json"
-STATE_FILE = CONFIG_DIR / "state.json"
 
-# Motion and waiting parameters used by the start and end routines.
-# For movej: A is rad/s^2 and V is rad/s.
-# The first end-routine move is a movel, where the same A and V instead mean
-# m/s^2 and m/s. Confirm that these values are safe for both kinds of motion.
-A = 0.2
-V = 4
 # A joint move counts as complete when every joint is within this many radians.
 JOINT_TOLERANCE = 0.01
 # Abort waiting for a robot move if it has not completed within this many seconds.
 WAIT_TIMEOUT = 30.0
+# Home is joint-only in the active routine file. Require every joint to be
+# within this many radians of the taught target before permitting any motion.
+HOME_JOINT_TOLERANCE = 0.005
+
+
+def parse_args() -> argparse.Namespace:
+    """Return command-line options for the program."""
+
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--config",
+        type=Path,
+        default=CONFIG_FILE,
+        help="Measurement configuration file (defaults to config/config.json).",
+    )
+    parser.add_argument(
+        "--operator-confirmed",
+        action="store_true",
+        help="Skip terminal confirmation after confirmation in the control panel.",
+    )
+    parser.add_argument(
+        "--output-dir",
+        type=Path,
+        default=CONFIG_DIR,
+        help="Folder for config_used.json, state.json, and measurement_plan.json.",
+    )
+    return parser.parse_args()
+
+
+def write_used_config(path: Path, config: dict) -> None:
+    """Atomically save the effective configuration without changing defaults."""
+
+    temporary_path = path.with_suffix(path.suffix + ".tmp")
+    temporary_path.write_text(json.dumps(config, indent=2) + "\n", encoding="utf-8")
+    temporary_path.replace(path)
 
 
 if __name__ == "__main__":
+    args = parse_args()
+
     # Load all operator-defined paths and measurement settings before connecting.
     routines_data = read_routines_file(ROUTINES_FILE)
-    measurement_config = read_measurement_config(CONFIG_FILE)
+    measurement_config = read_measurement_config(args.config)
+    output_dir = args.output_dir.resolve()
+    output_dir.mkdir(parents=True, exist_ok=True)
+    state_file = output_dir / "state.json"
+    measurement_plan_file = output_dir / "measurement_plan.json"
+    write_used_config(output_dir / "config_used.json", measurement_config)
+    write_measurement_plan(measurement_plan_file, measurement_config)
 
     # Keep the connection reference for cleanup if startup fails partway through.
     rtde_receive = None
 
     try:
-        # This is the final operator-controlled pause before any robot command.
-        input("Press Enter to connect and start the full program, or Ctrl+C to cancel.")
+        # Direct terminal runs retain their confirmation. The control panel
+        # supplies --operator-confirmed only after its safety dialog is accepted.
+        if not args.operator_confirmed:
+            input("Press Enter to connect and start the full program, or Ctrl+C to cancel.")
 
         # Verify that the robot accepts remote commands, then open the RTDE
         # feedback connection used to observe its actual position and state.
-        assert_remote_control(ROBOT_IP)
+        assert_robot_running(ROBOT_IP)
         rtde_receive = get_rtde_receive(ROBOT_IP)
+        home = get_waypoint(routines_data, "Home")
+        if "q" not in home:
+            raise ValueError("The Home waypoint has no joint target for startup verification.")
+        write_state(state_file, {"mode": "checking_home"})
+        assert_at_home(rtde_receive, home["q"], HOME_JOINT_TOLERANCE)
+        print("Startup position verified: robot is at Home.")
 
         # Move from Home through the configured approach waypoints.
-        write_state(STATE_FILE, {"mode": "start_routine"})
-        run_routine("start", routines_data, ROBOT_IP, rtde_receive, A, V, JOINT_TOLERANCE, WAIT_TIMEOUT, False, True)
+        write_state(state_file, {"mode": "start_routine"})
+        run_routine("start", routines_data, ROBOT_IP, rtde_receive, JOINT_TOLERANCE, WAIT_TIMEOUT, False, True)
 
         # Step along the measurement line and run the measurement procedure.
-        write_state(STATE_FILE, {"mode": "measurements"})
-        run_measurements(ROBOT_IP, rtde_receive, measurement_config, STATE_FILE)
+        write_state(state_file, {"mode": "measurements"})
+        run_measurements(ROBOT_IP, rtde_receive, measurement_config, state_file)
 
         # Return through the configured waypoints to Home. The first move is
         # linear so the tool follows a straight path back to the high pose.
-        write_state(STATE_FILE, {"mode": "end_routine"})
+        write_state(state_file, {"mode": "end_routine"})
         run_routine("end", routines_data, ROBOT_IP, rtde_receive,
-                    A, V, JOINT_TOLERANCE, WAIT_TIMEOUT, False, True, linear_first_waypoint=True)
+                    JOINT_TOLERANCE, WAIT_TIMEOUT, False, True)
 
         # Reaching idle means the complete sequence finished successfully.
-        write_state(STATE_FILE, {"mode": "idle"})
+        write_state(state_file, {"mode": "idle"})
 
+    except UnsafeStartPositionError as error:
+        write_state(
+            state_file,
+            {
+                "mode": "unsafe_start",
+                "message": str(error),
+            },
+        )
+        print(f"\n{error}", file=sys.stderr)
+        raise SystemExit(3)
+    except MeasurementUnavailableError as error:
+        write_state(
+            state_file,
+            {
+                "mode": "measurement_failed",
+                "line_index": error.line_index,
+                "line_position": error.line_position,
+                "height_mode": "high",
+                "last_measurement_success": False,
+                "message": str(error),
+            },
+        )
+        print(f"\n{error}")
+        raise SystemExit(2)
+    except KeyboardInterrupt:
+        write_state(state_file, {"mode": "stopped", "reason": "operator cancellation"})
+        print("\nProgram cancelled; any active routine or measurement was stopped.")
+        raise SystemExit(130)
+    except BaseException as error:
+        write_state(
+            state_file,
+            {
+                "mode": "error",
+                "error_type": type(error).__name__,
+                "message": str(error),
+            },
+        )
+        raise
     finally:
         # Always release communication resources, including after Ctrl+C or an
         # exception. This cleanup does not command the robot back to Home.

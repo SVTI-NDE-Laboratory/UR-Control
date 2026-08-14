@@ -12,20 +12,21 @@ Routine file reading and lookup lives in:
 src/routines/read_routines.py
 ```
 
-It runs a named routine by sending one `movej` at a time to the robot on port
-`30002`. After each command, it uses RTDE to wait until the actual joints match
-the target joints.
+It runs a named routine by reading each step's motion dictionary and sending
+either `movej` or `movel` to port `30002`. After each command, it uses RTDE to
+verify completion.
 
-Before motion, the scripts query the Dashboard server with `is in remote control`.
-If the robot is still in Manual/Local mode on the teach pendant, they raise an
-error before sending any movement.
+Before motion, the scripts query the Dashboard server for both Remote Control
+and robot mode `RUNNING`. If the robot is in Manual/Local mode, powered off, or
+has not had its brakes released, they raise an error before sending movement.
 
 `run_routine.py` provides the reusable routine function used by the main
 program and the retained routine example.
 
-Routine moves normally use `q` joint targets with `movej`. When
-`linear_first_waypoint=True`, the first waypoint uses its `p` Cartesian target
-with `movel`.
+Each step defines `type` (`j` or `l`), `acceleration`, `speed`, and
+`blend_radius`. Joint steps use the waypoint's `q` target; linear steps use its
+`p` target. The routine is sent as one URScript program so intermediate radii
+can blend into the following step; the final radius must be zero.
 
 ## Recovery Routine
 
@@ -36,7 +37,6 @@ By default it runs:
 
 ```python
 ROUTINE_NAME = "end"
-LINEAR_FIRST_WAYPOINT = False
 ```
 
 Run it:

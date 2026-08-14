@@ -9,8 +9,10 @@ The routine file format is:
     "Tmp1": {"p": [...], "q": [...]}
   },
   "routines": [
-    {"name": "start", "order": ["Home", "Tmp1"]},
-    {"name": "end", "order": ["Tmp1", "Home"]}
+    {"name": "start", "steps": [
+      {"waypoint": "Home", "motion": {"type": "j", "acceleration": 0.2,
+       "speed": 4.0, "blend_radius": 0.0}}
+    ]}
   ]
 }
 ```

@@ -7,16 +7,19 @@
   "obstacle": {
     "start": 0.2,
     "end": 0.3,
-    "high_low_distance": 0.02,
+    "high_low_distance": 0.06,
     "direction_high_low": [0.0, 0.0, 1.0]
+  },
+  "motion": {
+    "type": "l",
+    "acceleration": 0.05,
+    "speed": 0.05
   },
   "measurement": {
     "program_path": "Benoit/apply_force.urp",
     "contact_threshold": 30.0,
     "holding_force": 30.0,
-    "max_displacement": 0.005,
-    "simulation": true,
-    "acceleration": 0.05,
-    "speed": 0.05
+    "max_displacement": 0.05,
+    "simulation": false
   }
 }

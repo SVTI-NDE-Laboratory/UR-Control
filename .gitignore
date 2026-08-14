@@ -1,5 +1,10 @@
 .venv/
 __pycache__/
 *.py[cod]
+src/program/config/config_tmp.json
+src/program/config/program.log
+src/program/config/measurement_plan.json
+src/program/config/config_used.json
 old/
 data_acquisition_server/
+temporary_data/

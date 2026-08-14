@@ -73,7 +73,7 @@ def Define_Waypoints_Block():
   # Fixed safety settings, identical to move50mm_force.script.
   max_approach_speed = 0.020
   contact_timeout = 10.0
-  
+
   return_speed = 0.020
   return_acceleration = 0.100
   

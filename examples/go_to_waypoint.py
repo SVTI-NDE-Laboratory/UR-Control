@@ -15,17 +15,18 @@ for folder in [ROBOT_DIR, ROUTINES_DIR]:
 from robot_move import joint_degrees, movej, movel_pose
 from robot_scripts import ur_pose
 from read_routines import read_waypoint
-from robot_connection import assert_remote_control, get_rtde_receive
+from robot_connection import assert_robot_running, get_rtde_receive
 
 
 ROBOT_IP = "192.168.3.10"
-ROUTINES_FILE = ROUTINES_DIR / "routine_files" / "routines.json"
+ROUTINES_FILE = ROUTINES_DIR / "routine_files" / "routines_block.json"
 
 WAYPOINT_NAME = "Home"
-USE_LINEAR_MOVE = False
+#WAYPOINT_NAME = "p_start_h"
+USE_LINEAR_MOVE = False  # Set to False to use movej instead of movel
 
 A = 0.2
-V = 4
+V = 1
 JOINT_TOLERANCE = 0.01
 WAIT_TIMEOUT = 30.0
 
@@ -34,7 +35,7 @@ if __name__ == "__main__":
     waypoint = read_waypoint(ROUTINES_FILE, WAYPOINT_NAME)
 
     input(f"Press Enter to connect and move to '{WAYPOINT_NAME}', or Ctrl+C to cancel.")
-    assert_remote_control(ROBOT_IP)
+    assert_robot_running(ROBOT_IP)
     rtde_receive = get_rtde_receive(ROBOT_IP)
 
     if USE_LINEAR_MOVE:

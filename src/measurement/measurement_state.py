@@ -10,4 +10,7 @@ def write_state(path: str | Path, state: dict) -> None:
     The state file is meant for monitoring/debugging the running sequence.
     """
 
-    Path(path).write_text(json.dumps(state, indent=2), encoding="utf-8")
+    state_path = Path(path)
+    temporary_path = state_path.with_suffix(state_path.suffix + ".tmp")
+    temporary_path.write_text(json.dumps(state, indent=2), encoding="utf-8")
+    temporary_path.replace(state_path)

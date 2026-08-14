@@ -68,20 +68,84 @@
   "routines": [
     {
       "name": "start",
-      "order": [
-        "Home",
-        "Tmp1",
-        "Tmp2",
-        "p_start_h"
+      "steps": [
+        {
+          "waypoint": "Home",
+          "motion": {
+            "type": "j",
+            "acceleration": 0.2,
+            "speed": 4.0,
+            "blend_radius": 0.0
+          }
+        },
+        {
+          "waypoint": "Tmp1",
+          "motion": {
+            "type": "j",
+            "acceleration": 1.0,
+            "speed": 10.0,
+            "blend_radius": 0.02
+          }
+        },
+        {
+          "waypoint": "Tmp2",
+          "motion": {
+            "type": "j",
+            "acceleration": 1.0,
+            "speed": 10.0,
+            "blend_radius": 0.02
+          }
+        },
+        {
+          "waypoint": "p_start_h",
+          "motion": {
+            "type": "j",
+            "acceleration": 1.0,
+            "speed": 10.0,
+            "blend_radius": 0.0
+          }
+        }
       ]
     },
     {
       "name": "end",
-      "order": [
-        "p_start_h",
-        "Tmp2",
-        "Tmp1",
-        "Home"
+      "steps": [
+        {
+          "waypoint": "p_start_h",
+          "motion": {
+            "type": "l",
+            "acceleration": 0.2,
+            "speed": 0.25,
+            "blend_radius": 0.0
+          }
+        },
+        {
+          "waypoint": "Tmp2",
+          "motion": {
+            "type": "j",
+            "acceleration": 1.0,
+            "speed": 10.0,
+            "blend_radius": 0.02
+          }
+        },
+        {
+          "waypoint": "Tmp1",
+          "motion": {
+            "type": "j",
+            "acceleration": 1.0,
+            "speed": 10.0,
+            "blend_radius": 0.02
+          }
+        },
+        {
+          "waypoint": "Home",
+          "motion": {
+            "type": "j",
+            "acceleration": 1.0,
+            "speed": 10.0,
+            "blend_radius": 0.0
+          }
+        }
       ]
     }
   ]

@@ -1,0 +1,502 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>UR15 Measurement Launcher</title>
+  <style>
+    :root { font-family: system-ui, sans-serif; color: #17212b; background: #eef2f5; }
+    * { box-sizing: border-box; }
+    body { margin: 0; padding: 16px; height: 100vh; overflow: hidden; }
+    main { display: flex; flex-direction: column; width: min(1400px, 100%); height: 100%; margin: auto; background: white; padding: 20px; border-radius: 12px; box-shadow: 0 5px 24px #1b304622; }
+    h1 { margin: 0; font-size: 1.6rem; }
+    .app-header { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 14px; }
+    .workspace { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 20px; flex: 1; min-height: 0; }
+    .panel { height: 100%; min-height: 0; padding: 16px; border: 1px solid #cbd5df; border-radius: 8px; background: #f8fafb; }
+    .parameter-panel { display: flex; flex-direction: column; overflow: hidden; }
+    .data-folder { margin-bottom: 9px; padding: 10px 14px; border: 1px solid #cbd5df; border-radius: 8px; background: white; }
+    .data-folder > label { display: block; margin-bottom: 6px; font-weight: 400; text-align: left; }
+    .folder-control { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 7px; }
+    .browse-button { padding: 7px 12px; color: #253746; background: #e3e9ee; }
+    .terminal-toggle { display: flex; align-items: center; gap: 8px; margin-top: 9px; color: #334e60; font-size: .86rem; font-weight: 500; cursor: pointer; white-space: nowrap; }
+    .terminal-toggle input { width: auto; margin: 0; }
+    .option-toggle { display: flex; align-items: center; gap: 8px; color: #334e60; cursor: pointer; white-space: nowrap; }
+    .option-toggle input { width: auto; margin: 0; }
+    [data-optional-group].optional-disabled { opacity: .48; }
+    fieldset { display: block; border: 1px solid #cbd5df; border-radius: 8px; margin: 0 0 9px; padding: 10px 14px; background: white; }
+    legend { margin-left: 0; padding: 0; font-weight: 650; text-align: left; }
+    .legend-note { margin-left: 6px; color: #52606d; font-size: .82rem; font-weight: 500; }
+    label, .parameter-row > span { align-self: center; text-align: left; }
+    input, select { width: 100%; padding: 7px 9px; border: 1px solid #9aa9b8; border-radius: 5px; font: inherit; }
+    .parameter-row { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr) minmax(0, 1fr); align-items: center; gap: 7px 14px; margin-bottom: 7px; }
+    .parameter-row:last-child { margin-bottom: 0; }
+    .parameter-row.single::after { content: ''; }
+    .toggle-row { display: flex; align-items: center; gap: 14px; margin-bottom: 9px; }
+    .visual-panel { display: grid; grid-template-rows: minmax(0, 2fr) minmax(150px, 1fr); gap: 12px; }
+    .visual-section { display: flex; flex-direction: column; min-height: 0; padding: 12px; border: 1px solid #d7e0e7; border-radius: 7px; background: white; }
+    #line-visualization { display: block; width: 100%; flex: 1; min-height: 160px; background: white; }
+    .visual-details { display: grid; grid-template-columns: 1fr 1fr; gap: 0; margin-top: 10px; }
+    .visual-details section { min-width: 0; padding: 12px 14px 2px; }
+    .visual-details h3 { margin: 0 0 9px; font-size: .92rem; }
+    .statistics-values { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 5px 12px; margin: 0; font-size: .86rem; }
+    .statistics-values dt { color: #52606d; }
+    .statistics-values dd { margin: 0; font-weight: 600; text-align: left; }
+    .legend-row { display: grid; grid-template-columns: 1fr; gap: 8px; color: #52606d; font-size: .86rem; }
+    .legend-item { display: flex; align-items: center; gap: 7px; }
+    .key { width: 22px; height: 5px; border-radius: 3px; background: #2474a9; }
+    .key.obstacle { height: 12px; background: #e05252; opacity: .7; }
+    .key.point { width: 9px; height: 9px; border-radius: 50%; background: #2474a9; }
+    .key.current { width: 11px; height: 11px; border-radius: 50%; background: #159447; box-shadow: 0 0 0 3px #15944733; }
+    .left-actions { margin-top: auto; }
+    .run-section { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 14px; align-items: start; min-height: 0; padding: 14px; border: 1px solid #d7e0e7; border-radius: 7px; background: white; }
+    .state-area { align-self: stretch; min-width: 0; overflow: auto; }
+    #state-values { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 5px 12px; margin: 0; font-size: .9rem; }
+    #state-values dt { color: #52606d; }
+    #state-values dd { margin: 0; font-weight: 600; overflow-wrap: anywhere; }
+    .state-unavailable { color: #9b2c2c; }
+    .start-action { display: flex; flex-direction: column; justify-content: flex-start; align-items: flex-end; align-self: start; }
+    button { padding: 10px 18px; border: 0; border-radius: 6px; font: inherit; font-weight: 650; cursor: pointer; }
+    .run-button { min-width: 145px; color: white; background: #1769aa; }
+    .run-button.running { background: #b42318; }
+    .close-app-button { color: #253746; background: #e3e9ee; border: 1px solid #c4ced7; }
+    button:disabled { cursor: not-allowed; opacity: .5; }
+    button[type=reset] { color: #253746; background: #e3e9ee; }
+    dialog { width: min(520px, calc(100% - 32px)); padding: 0; border: 0; border-radius: 10px; box-shadow: 0 12px 45px #10263b66; }
+    dialog::backdrop { background: #10263ba8; }
+    .dialog-content { padding: 24px; }
+    .dialog-content h2 { margin: 0 0 10px; color: #9b2c2c; }
+    .dialog-content p { margin: 0 0 12px; }
+    .safety-list { margin: 0 0 20px; padding-left: 22px; line-height: 1.55; }
+    .dialog-actions { display: flex; justify-content: flex-end; gap: 10px; }
+    .cancel-button { color: #253746; background: #e3e9ee; }
+    .confirm-button { color: white; background: #b42318; }
+    .status { position: fixed; top: 18px; right: 24px; z-index: 2; max-width: 460px; margin: 0; padding: 10px 14px; border-radius: 6px; box-shadow: 0 3px 14px #1b304633; }
+    .success { background: #e4f5e9; color: #17612c; }
+    .error { background: #fde8e7; color: #8d201c; }
+    @media (max-width: 900px) { body { height: auto; min-height: 100vh; overflow: auto; } main { height: auto; } .workspace { grid-template-columns: 1fr; } .panel { height: auto; } .visual-panel { min-height: 520px; } }
+    @media (max-width: 600px) { .parameter-row { grid-template-columns: 1fr; } .parameter-row.single::after { display: none; } .toggle-row { align-items: flex-start; flex-direction: column; gap: 7px; } input, select { margin-bottom: 8px; } .visual-details { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body><main>
+  <header class="app-header">
+    <h1>UR Control Panel</h1>
+    <button id="close-app" class="close-app-button" type="button">Close app</button>
+  </header>
+  {{STATUS}}
+  <div class="workspace">
+    <form id="config-form" class="panel parameter-panel" method="post" action="/start">
+      {{HIDDEN_CONTROLS}}
+      <fieldset class="data-folder">
+        <legend>Data Acquisition</legend>
+        <label for="output-directory">Data Folder</label>
+        <div class="folder-control">
+          <input id="output-directory" name="output_directory" value="{{OUTPUT_DIRECTORY}}" required>
+          <button id="browse-output" class="browse-button" type="button">Browse…</button>
+        </div>
+      </fieldset>
+      {{SECTIONS}}
+      <div class="left-actions"><button type="reset">Reset to defaults</button></div>
+    </form>
+    <section class="panel visual-panel" aria-label="Visualization and program state">
+      <fieldset class="visual-section">
+        <legend>Measurement Visualization</legend>
+        <svg id="line-visualization" viewBox="0 0 600 300" role="img" aria-label="Concrete interface, obstacle, measurement points, and current position visualization"></svg>
+        <div class="visual-details">
+          <section aria-labelledby="statistics-title">
+            <h3 id="statistics-title">Statistics</h3>
+            <dl class="statistics-values">
+              <dt>Number of Measurements</dt><dd id="stat-measurements">—</dd>
+              <dt>Interval</dt><dd id="stat-interval">—</dd>
+              <dt>Line Length</dt><dd id="stat-length">—</dd>
+              <dt>Obstacle Zone</dt><dd id="stat-obstacle">—</dd>
+              <dt>Safe Height</dt><dd id="stat-height">—</dd>
+            </dl>
+          </section>
+          <section aria-labelledby="legends-title">
+            <h3 id="legends-title">Legends</h3>
+            <div class="legend-row">
+              <span class="legend-item"><span class="key obstacle"></span>Obstacle</span>
+              <span class="legend-item"><span class="key point"></span>Measurement</span>
+              <span class="legend-item"><span class="key current"></span>Current Position</span>
+            </div>
+          </section>
+        </div>
+      </fieldset>
+      <fieldset class="run-section">
+        <legend>Program State</legend>
+        <div class="state-area">
+          <dl id="state-values" aria-live="polite"><dt>Status</dt><dd>Loading…</dd></dl>
+        </div>
+        <div class="start-action">
+          <button id="run-program" class="run-button" type="button" disabled>Start program</button>
+          <label class="terminal-toggle">
+            <input id="show-terminal" name="show_terminal" form="config-form" type="checkbox" value="true"{{TERMINAL_CHECKED}}>
+            Show program terminal
+          </label>
+        </div>
+      </fieldset>
+    </section>
+  </div>
+  <dialog id="safety-dialog">
+    <div class="dialog-content">
+      <h2>Safety Confirmation</h2>
+      <p>The robot program is about to run. Before continuing, make sure:</p>
+      <ul class="safety-list">
+        <li>The robot workspace is clear of people and obstructions.</li>
+        <li>The tool, workpiece, and fixtures are secure.</li>
+        <li>The configured parameters and obstacle positions are correct.</li>
+        <li>The robot is in Remote Control mode and the emergency stop is accessible.</li>
+        <li>The robot is at the taught Home position; startup is blocked otherwise.</li>
+      </ul>
+      <p>Run data will be saved in:<br><strong id="confirmation-folder"></strong></p>
+      <div class="dialog-actions">
+        <button id="cancel-start" class="cancel-button" type="button">Cancel</button>
+        <button id="confirm-start" class="confirm-button" type="button">OK, start program</button>
+      </div>
+    </div>
+  </dialog>
+  <script>
+    const svg = document.getElementById('line-visualization');
+    const statMeasurements = document.getElementById('stat-measurements');
+    const statInterval = document.getElementById('stat-interval');
+    const statLength = document.getElementById('stat-length');
+    const statObstacle = document.getElementById('stat-obstacle');
+    const statHeight = document.getElementById('stat-height');
+    const form = document.getElementById('config-form');
+    const stateValues = document.getElementById('state-values');
+    const safetyDialog = document.getElementById('safety-dialog');
+    const cancelStart = document.getElementById('cancel-start');
+    const confirmStart = document.getElementById('confirm-start');
+    const runProgram = document.getElementById('run-program');
+    const closeApp = document.getElementById('close-app');
+    const outputDirectory = document.getElementById('output-directory');
+    const browseOutput = document.getElementById('browse-output');
+    const confirmationFolder = document.getElementById('confirmation-folder');
+    const obstacleEnabled = document.getElementById('obstacle-enabled');
+    const highLowEnabled = document.getElementById('high-low-enabled');
+    const totalLengthInput = document.getElementById('line.length');
+    const incrementInput = document.getElementById('line.increment');
+    const measurementCountInput = document.getElementById('measurement-count');
+    const svgNS = 'http://www.w3.org/2000/svg';
+    let currentPosition = null;
+    let programRunning = false;
+    let runActionPending = false;
+    let appClosing = false;
+
+    function numberValue(id) {
+      return Number.parseFloat(document.getElementById(id).value);
+    }
+
+    function addSvg(tag, attributes, text = '') {
+      const element = document.createElementNS(svgNS, tag);
+      for (const [name, value] of Object.entries(attributes)) element.setAttribute(name, value);
+      if (text) element.textContent = text;
+      svg.appendChild(element);
+      return element;
+    }
+
+    function formatCentimetres(value) {
+      return `${Number((value * 100).toFixed(3))} cm`;
+    }
+
+    function synchronizeOptionalFields() {
+      if (obstacleEnabled.checked) highLowEnabled.checked = true;
+      highLowEnabled.disabled = obstacleEnabled.checked;
+
+      for (const element of document.querySelectorAll('[data-optional-group="obstacle-position"]')) {
+        const disabled = !obstacleEnabled.checked;
+        element.classList.toggle('optional-disabled', disabled);
+        if (element.matches('input, select')) {
+          element.disabled = disabled;
+          element.required = !disabled && element.type !== 'hidden';
+        }
+      }
+      for (const element of document.querySelectorAll('[data-optional-group="high-low"]')) {
+        const disabled = !highLowEnabled.checked;
+        element.classList.toggle('optional-disabled', disabled);
+        if (element.matches('input, select')) {
+          element.disabled = disabled;
+          element.required = !disabled && element.type !== 'hidden';
+        }
+      }
+    }
+
+    function updateMeasurementCount() {
+      const length = Number.parseFloat(totalLengthInput.value);
+      const increment = Number.parseFloat(incrementInput.value);
+      if (Number.isFinite(length) && Number.isFinite(increment) && length > 0 && increment > 0) {
+        measurementCountInput.value = String(Math.max(2, Math.floor((length + 1e-9) / increment) + 1));
+      }
+    }
+
+    function updateIncrement() {
+      const length = Number.parseFloat(totalLengthInput.value);
+      const count = Number.parseFloat(measurementCountInput.value);
+      if (Number.isFinite(length) && Number.isInteger(count) && length > 0 && count >= 2) {
+        incrementInput.value = Number((length / (count - 1)).toFixed(6));
+      }
+    }
+
+    function normalizeMeasurementCount() {
+      const count = Number.parseFloat(measurementCountInput.value);
+      if (Number.isFinite(count)) {
+        measurementCountInput.value = String(Math.max(2, Math.round(count)));
+        updateIncrement();
+      }
+    }
+
+    function drawVisualization() {
+      const length = numberValue('line.length') / 100;
+      const increment = numberValue('line.increment') / 100;
+      const obstacleStart = obstacleEnabled.checked ? numberValue('obstacle.start') / 100 : 0;
+      const obstacleEnd = obstacleEnabled.checked ? numberValue('obstacle.end') / 100 : 0;
+      const highLowDistance = highLowEnabled.checked ? numberValue('obstacle.high_low_distance') / 100 : 0;
+      svg.replaceChildren();
+
+      const requiredValues = [length, increment];
+      if (obstacleEnabled.checked) requiredValues.push(obstacleStart, obstacleEnd);
+      if (highLowEnabled.checked) requiredValues.push(highLowDistance);
+      if (!requiredValues.every(Number.isFinite) || length <= 0 || increment <= 0 || (highLowEnabled.checked && highLowDistance <= 0)) {
+        addSvg('text', { x: 300, y: 150, 'text-anchor': 'middle', fill: '#9b2c2c', 'font-size': 17 }, 'Enter valid positive line values');
+        for (const element of [statMeasurements, statInterval, statLength, statObstacle, statHeight]) {
+          element.textContent = '—';
+        }
+        return;
+      }
+
+      const left = 20;
+      const right = 580;
+      const width = right - left;
+      const highY = 82;
+      const lowY = 205;
+      const concreteBottom = 266;
+      const scale = value => left + (value / length) * width;
+      const clampedStart = Math.max(0, Math.min(length, obstacleStart));
+      const clampedEnd = Math.max(0, Math.min(length, obstacleEnd));
+      const obstacleValid = obstacleEnabled.checked && obstacleStart >= 0 && obstacleStart <= obstacleEnd && obstacleEnd <= length;
+      const isObstaclePosition = position => obstacleValid && position >= obstacleStart - 1e-9 && position <= obstacleEnd + 1e-9;
+
+      addSvg('line', { x1: left, y1: highY, x2: right, y2: highY, stroke: '#8295a5', 'stroke-width': 2, 'stroke-dasharray': '7 6' });
+      addSvg('text', { x: left, y: highY - 13, fill: '#52606d', 'font-size': 14 }, highLowEnabled.checked ? `High (+${formatCentimetres(highLowDistance)})` : 'High/low movement disabled');
+      addSvg('rect', { x: left, y: lowY, width, height: concreteBottom - lowY, fill: '#d5d8dc' });
+      addSvg('line', { x1: left, y1: lowY, x2: right, y2: lowY, stroke: '#111820', 'stroke-width': 5 });
+
+      if (obstacleValid && clampedEnd >= clampedStart) {
+        addSvg('rect', {
+          x: scale(clampedStart), y: highY + 14,
+          width: Math.max(2, scale(clampedEnd) - scale(clampedStart)), height: lowY - highY - 14,
+          rx: 5, fill: '#e05252', opacity: .72
+        });
+        addSvg('text', { x: (scale(clampedStart) + scale(clampedEnd)) / 2, y: highY + 36, 'text-anchor': 'middle', fill: 'white', 'font-size': 15, 'font-weight': 650 }, 'Obstacle');
+      }
+
+      const totalPositions = Math.floor((length + 1e-9) / increment) + 1;
+      const visiblePositions = Math.min(totalPositions, 251);
+      const validPositions = [];
+      for (let index = 0; index < visiblePositions; index++) {
+        const position = index * increment;
+        if (position > length + 1e-9) break;
+        if (!isObstaclePosition(position)) validPositions.push(position);
+      }
+
+      const maximumPointLabels = Math.max(2, Math.floor(width / 32));
+      const pointLabelStep = Math.max(1, Math.ceil(validPositions.length / maximumPointLabels));
+      for (let validIndex = 0; validIndex < validPositions.length; validIndex++) {
+        const position = validPositions[validIndex];
+        addSvg('circle', { cx: scale(position), cy: lowY, r: 5, fill: '#14567f', stroke: 'white', 'stroke-width': 1.5 });
+        const pointNumber = validIndex + 1;
+        const showPointNumber = pointNumber === 1 || pointNumber === validPositions.length || (pointNumber - 1) % pointLabelStep === 0;
+        if (showPointNumber) {
+          addSvg('text', { x: scale(position), y: lowY + 24, 'text-anchor': 'middle', fill: '#17212b', 'font-size': 13, 'font-weight': 600 }, String(pointNumber));
+        }
+      }
+
+      if (Number.isFinite(currentPosition) && currentPosition >= 0 && currentPosition <= length && !isObstaclePosition(currentPosition)) {
+        const currentX = scale(currentPosition);
+        const currentY = lowY;
+        addSvg('circle', { cx: currentX, cy: currentY, r: 10, fill: '#159447', stroke: 'white', 'stroke-width': 3 });
+        addSvg('text', { x: currentX, y: currentY - 18, 'text-anchor': 'middle', fill: '#087832', 'font-size': 15, 'font-weight': 700 }, `Current: ${formatCentimetres(currentPosition)}`);
+      }
+
+      addSvg('text', { x: left, y: 292, 'text-anchor': 'start', fill: '#253746', 'font-size': 15 }, formatCentimetres(0));
+      addSvg('text', { x: right, y: 292, 'text-anchor': 'end', fill: '#253746', 'font-size': 15 }, formatCentimetres(length));
+
+      const firstObstacleIndex = obstacleValid ? Math.max(0, Math.ceil((obstacleStart - 1e-9) / increment)) : 0;
+      const lastObstacleIndex = obstacleValid ? Math.min(totalPositions - 1, Math.floor((obstacleEnd + 1e-9) / increment)) : -1;
+      const blockedPositions = Math.max(0, lastObstacleIndex - firstObstacleIndex + 1);
+      const measurementPositions = totalPositions - blockedPositions;
+      statMeasurements.textContent = String(obstacleValid ? measurementPositions : totalPositions);
+      statInterval.textContent = formatCentimetres(increment);
+      statLength.textContent = formatCentimetres(length);
+      statObstacle.textContent = obstacleValid
+        ? `${formatCentimetres(obstacleStart)} – ${formatCentimetres(obstacleEnd)}`
+        : (obstacleEnabled.checked ? 'Invalid range' : 'None');
+      statHeight.textContent = highLowEnabled.checked ? formatCentimetres(highLowDistance) : 'None';
+    }
+
+    totalLengthInput.addEventListener('input', updateMeasurementCount);
+    incrementInput.addEventListener('input', updateMeasurementCount);
+    incrementInput.addEventListener('change', updateIncrement);
+    measurementCountInput.addEventListener('input', updateIncrement);
+    measurementCountInput.addEventListener('change', normalizeMeasurementCount);
+    obstacleEnabled.addEventListener('change', () => {
+      synchronizeOptionalFields();
+      drawVisualization();
+    });
+    highLowEnabled.addEventListener('change', () => {
+      synchronizeOptionalFields();
+      drawVisualization();
+    });
+    form.addEventListener('input', drawVisualization);
+    form.addEventListener('reset', () => setTimeout(() => {
+      synchronizeOptionalFields();
+      updateMeasurementCount();
+      drawVisualization();
+    }, 0));
+    form.addEventListener('keydown', event => {
+      if (event.key === 'Enter') event.preventDefault();
+    });
+    function showStartConfirmation() {
+      confirmationFolder.textContent = outputDirectory.value;
+      safetyDialog.showModal();
+    }
+    browseOutput.addEventListener('click', async () => {
+      browseOutput.disabled = true;
+      try {
+        const response = await fetch('/select-directory', { cache: 'no-store' });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const result = await response.json();
+        if (result.path) outputDirectory.value = result.path;
+      } catch (error) {
+        window.alert('The folder picker could not be opened. You can type a folder path instead.');
+      } finally {
+        browseOutput.disabled = false;
+      }
+    });
+    cancelStart.addEventListener('click', () => safetyDialog.close());
+    confirmStart.addEventListener('click', () => {
+      if (appClosing) return;
+      const confirmation = document.createElement('input');
+      confirmation.type = 'hidden';
+      confirmation.name = 'operator_confirmation';
+      confirmation.value = 'confirmed';
+      form.appendChild(confirmation);
+      safetyDialog.close();
+      form.submit();
+    });
+    runProgram.addEventListener('click', async () => {
+      if (appClosing) return;
+      if (!programRunning) {
+        showStartConfirmation();
+        return;
+      }
+
+      // Stopping is deliberately immediate: no confirmation dialog.
+      runActionPending = true;
+      runProgram.disabled = true;
+      runProgram.textContent = 'Stopping...';
+      try {
+        const response = await fetch('/stop', { method: 'POST' });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || `HTTP ${response.status}`);
+      } catch (error) {
+        window.alert(`The program could not be stopped: ${error.message}`);
+      } finally {
+        runActionPending = false;
+        await refreshState();
+      }
+    });
+
+    closeApp.addEventListener('click', async event => {
+      // Closing is immediate and intentionally has no confirmation dialog.
+      // The server stops robot motion first when a worker is active.
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      if (appClosing) return;
+      appClosing = true;
+      document.querySelectorAll('.status').forEach(element => element.remove());
+      history.replaceState(null, '', '/');
+      closeApp.disabled = true;
+      closeApp.textContent = 'Closing...';
+      runProgram.disabled = true;
+      try {
+        const response = await fetch('/close', { method: 'POST' });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || `HTTP ${response.status}`);
+
+        window.close();
+
+        // Some browsers only allow scripts to close script-opened tabs. Leave
+        // a clear terminal page when closure is blocked; the app server is
+        // already shut down at this point.
+        document.body.innerHTML = '<main><h1>Application closed</h1><p>You can close this tab.</p></main>';
+      } catch (error) {
+        appClosing = false;
+        closeApp.disabled = false;
+        closeApp.textContent = 'Close app';
+        runProgram.disabled = false;
+        window.alert(`The application could not be closed safely: ${error.message}`);
+      }
+    });
+
+    function stateLabel(key) {
+      return key
+        .replaceAll('_', ' ')
+        .replace(/\b\w/g, character => character.toUpperCase());
+    }
+
+    function stateValue(key, value) {
+      if (key === 'line_position' && typeof value === 'number') return formatCentimetres(value);
+      if (value === null) return '—';
+      if (typeof value === 'boolean') return value ? 'Yes' : 'No';
+      return String(value);
+    }
+
+    function showState(state) {
+      programRunning = state.program_running === true;
+      runProgram.classList.toggle('running', programRunning);
+      runProgram.textContent = runActionPending
+        ? 'Stopping...'
+        : (programRunning ? 'Stop program' : 'Start program');
+      runProgram.disabled = runActionPending;
+
+      stateValues.replaceChildren();
+      for (const [key, value] of Object.entries(state)) {
+        if (key === 'program_running') continue;
+        const term = document.createElement('dt');
+        const description = document.createElement('dd');
+        term.textContent = stateLabel(key);
+        description.textContent = stateValue(key, value);
+        stateValues.append(term, description);
+      }
+      if (typeof state.line_position === 'number') {
+        currentPosition = state.line_position;
+      } else if (state.mode === 'idle' || state.mode === 'start_routine') {
+        currentPosition = null;
+      }
+      drawVisualization();
+    }
+
+    async function refreshState() {
+      try {
+        const response = await fetch(`/state?time=${Date.now()}`, { cache: 'no-store' });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        showState(await response.json());
+      } catch (error) {
+        stateValues.replaceChildren();
+        const term = document.createElement('dt');
+        const description = document.createElement('dd');
+        term.textContent = 'Status';
+        description.textContent = 'State unavailable';
+        description.className = 'state-unavailable';
+        stateValues.append(term, description);
+      }
+    }
+
+    synchronizeOptionalFields();
+    drawVisualization();
+    refreshState();
+    setInterval(refreshState, 500);
+  </script>
+</main></body>
+</html>
