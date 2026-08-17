@@ -1,94 +1,83 @@
 # Program entry point
 
-`main.py` runs the complete sequence:
+For installation, robot preparation, every control-panel input, session
+outputs, safety behavior, and troubleshooting, see the project-level
+[`README.md`](../../README.md).
+
+`main.py` runs the complete robot sequence:
 
 ```text
-start routine -> measurements -> end routine
+Home check -> start routine -> measurements -> end routine -> Home
 ```
 
-By default it reads:
+The recommended operator interface is the single-page FastAPI control panel:
+
+```powershell
+python src\program\webapp\app.py
+```
+
+It combines configuration, visualization, live measurement status, and
+start/stop control. Its implementation is contained in `webapp/` and described
+in [`webapp/README.md`](webapp/README.md).
+
+## Direct command-line use
+
+`main.py` can also be run directly:
+
+```powershell
+python src\program\main.py
+```
+
+By default, it reads:
 
 ```text
-src/routines/routine_files/routines_block.json
 src/program/config/config.json
+src/routines/routine_files/routines_block.json
 ```
 
-To edit the measurement settings in a small local browser app and launch the program,
-run:
+Explicit paths can be supplied when needed:
 
 ```powershell
-python src\program\config_app.py
+python src\program\main.py `
+  --config C:\path\to\config.json `
+  --routines-file C:\path\to\routines.json `
+  --output-dir C:\path\to\output
 ```
 
-The app opens in the default browser, always loads the defaults from `config.json`, and never modifies that
-file. When **Start program** is pressed, it validates the fields, writes
-`src/program/config/config_tmp.json`, and launches `main.py` with that temporary
-configuration. The data-folder control selects where `config_used.json`,
-`state.json`, `measurement_plan.json`, and `program.log` are saved. The control
-defaults to the workspace-level `temporary_data` folder. A browser
-safety dialog must be confirmed before the robot program starts in the
-background. The same blue **Start program** button becomes a red **Stop
-program** button while the worker is active. Stopping is immediate and has no
-confirmation dialog: it commands the cobot to stop before terminating Python.
-Select **Show program terminal** before starting to run the worker in a visible
-console; leave it clear to run hidden and save its output in `program.log`.
-The Obstacle section has separate checkboxes for an obstacle interval and for
-the minimum high/low travel distance. Enabling an obstacle automatically
-enables and requires the minimum distance. With both options disabled, the run
-configuration contains no obstacle section and every line point is measured.
-The compact measurement-line controls show both increment and number of
-measurements. The count includes both endpoints (`floor(total length /
-increment) + 1`); editing the count evenly spaces those points using `total
-length / (count - 1)`. Measurement motion is fixed to linear (`l`) and is shown
-read-only.
-The static page, styling, and browser JavaScript live in
-`config/config_app.html`; `config_app.py` loads that template once and only
-substitutes the current configuration controls and run state.
+Direct use asks for terminal confirmation before connecting to the robot. The
+web launcher supplies `--operator-confirmed` only after its browser safety
+confirmation and read-only Home preflight.
 
-**Close app** in the upper-right corner stops the cobot and worker first when a
-program is active, then shuts down the local web server and closes the browser
-tab when the browser permits scripted tab closure.
+## Runtime and outputs
 
-`main.py` can also be given a configuration explicitly:
+At startup, main validates the configuration, writes the plan, launches the
+local simulated acquisition server, and verifies it with a protocol handshake.
+It then checks the robot state and requires all six joints to be within
+`0.005 rad` of the selected routine's `Home` waypoint before sending motion.
 
-```powershell
-python src\program\main.py --config path\to\config.json
-```
-
-By default it writes these files in `src/program/config`; `--output-dir` or the
-control panel's data-folder control can select another folder:
+The output directory contains:
 
 ```text
 config_used.json
 state.json
 measurement_plan.json
-program.log (control-panel runs)
+program.log
+data_acquisition_server.log
 ```
 
-`measurement_plan.json` is regenerated from the active configuration when the
-program starts. It contains the original line index, the position in metres,
-and an empty `data` object for future results. Positions inside the obstacle
-interval are not included.
+Web sessions also contain `session.json` when the dated-session-folder option
+is enabled. Both logs are written in real time with local ISO timestamps.
 
-Data acquisition is not currently part of this sequence. The optional placeholder
-implementation is kept separately in `data_acquisition_server`.
+Each entry in `measurement_plan.json` has a one-based `measurement_index`, a
+`line_position` in metres, and a `data` result. After a force cycle, `data`
+records the acquisition timestamp and whether the requested force was reached.
+Points excluded by an obstacle are not included in the plan.
 
-When run directly, the script asks for terminal confirmation before connecting
-and moving. The control panel uses its browser safety confirmation instead.
-`Ctrl+C` stops any active routine or measurement before Python exits. Robot
-safety stops and faults are also detected from RTDE feedback and reported in
-`state.json` as errors.
+When contact is reached, the acquisition server simulates a measurement for a
+random 1-3 seconds. Python acknowledges robot input register 42 only after the
+matching `data_acquired` response. A failed force attempt is saved against its
+measurement index before traversal stops and recovery begins.
 
-Both direct and control-panel launches perform a read-only startup interlock:
-all six joints must be within 0.005 rad of the joint-only `Home` waypoint. The
-program sends no motion command if this check fails.
-
-If a real force cycle reaches maximum displacement without detecting contact,
-the measurement traversal stops. The robot first rises from the low measurement
-pose to the high plane, translates back along the line to `p_start_h`, and then
-reports the failed line index and position in the terminal and `state.json`.
-The normal end routine is not run after this failure.
-
-```powershell
-python src\program\main.py
-```
+`Ctrl+C`, the web Stop button, robot safety faults, stalled motion, and protocol
+timeouts all request a controlled stop. See the root guide for the exact
+movement verification, force timeouts, and recovery behavior.

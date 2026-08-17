@@ -31,6 +31,9 @@ Open `create_routines_file.py` and set:
   radius must remain zero.
 
 Each name in these lists must match a waypoint label in the PolyScope script.
+Point-to-point measurement waypoints do not need to appear as routine steps.
+Pass their names through `additional_waypoint_names` so their Cartesian poses
+are also stored in the generated routines file.
 Each generated routine step contains:
 
 ```json
@@ -75,3 +78,9 @@ waypoints before moving the robot.
 `main.py`, `go_to_waypoint.py`, and `run_single_routine.py` all read the
 configured JSON file from `routine_files`. Regenerate it whenever waypoint
 positions, routine orders, or routine motion settings change.
+
+For a standalone example that writes a non-active output file, run:
+
+```powershell
+python examples\create_routines.py
+```

@@ -22,10 +22,11 @@ CONFIG_DIR = PROGRAM_DIR / "config"
 MEASUREMENT_DIR = PROJECT_ROOT / "src" / "measurement"
 ROBOT_DIR = PROJECT_ROOT / "src" / "robot"
 ROUTINES_DIR = PROJECT_ROOT / "src" / "routines"
+DATA_ACQUISITION_DIR = PROJECT_ROOT / "data_acquisition_server"
 
 # These folders contain local modules but are not installed Python packages.
 # Add them to Python's module search path before importing from them below.
-for folder in [MEASUREMENT_DIR, ROBOT_DIR, ROUTINES_DIR]:
+for folder in [MEASUREMENT_DIR, ROBOT_DIR, ROUTINES_DIR, DATA_ACQUISITION_DIR]:
     if str(folder) not in sys.path:
         sys.path.insert(0, str(folder))
 
@@ -41,6 +42,12 @@ from robot_connection import (
 )
 from run_measurements import MeasurementUnavailableError, run_measurements
 from run_routine import run_routine
+from data_acquisition_client import request_data_acquisition
+from data_acquisition_server_process import (
+    start_data_acquisition_server,
+    stop_data_acquisition_server,
+)
+from timestamped_logging import install_timestamped_tee
 
 
 # Connection and configuration locations.
@@ -57,6 +64,12 @@ WAIT_TIMEOUT = 30.0
 HOME_JOINT_TOLERANCE = 0.005
 
 
+def tee_terminal_output(log_path: Path) -> None:
+    """Timestamp and mirror subsequent stdout/stderr into ``log_path``."""
+
+    install_timestamped_tee(log_path)
+
+
 def parse_args() -> argparse.Namespace:
     """Return command-line options for the program."""
 
@@ -71,6 +84,12 @@ def parse_args() -> argparse.Namespace:
         "--operator-confirmed",
         action="store_true",
         help="Skip terminal confirmation after confirmation in the control panel.",
+    )
+    parser.add_argument(
+        "--routines-file",
+        type=Path,
+        default=ROUTINES_FILE,
+        help="Waypoint and routine definition file.",
     )
     parser.add_argument(
         "--output-dir",
@@ -92,20 +111,45 @@ def write_used_config(path: Path, config: dict) -> None:
 if __name__ == "__main__":
     args = parse_args()
 
-    # Load all operator-defined paths and measurement settings before connecting.
-    routines_data = read_routines_file(ROUTINES_FILE)
-    measurement_config = read_measurement_config(args.config)
     output_dir = args.output_dir.resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
+    tee_terminal_output(output_dir / "program.log")
+
+    # Load all operator-defined paths and measurement settings before connecting.
+    routines_data = read_routines_file(args.routines_file)
+    measurement_config = read_measurement_config(
+        args.config, routines_data=routines_data
+    )
     state_file = output_dir / "state.json"
     measurement_plan_file = output_dir / "measurement_plan.json"
     write_used_config(output_dir / "config_used.json", measurement_config)
-    write_measurement_plan(measurement_plan_file, measurement_config)
+    write_measurement_plan(measurement_plan_file, measurement_config, routines_data)
 
     # Keep the connection reference for cleanup if startup fails partway through.
     rtde_receive = None
+    acquisition_process = None
 
     try:
+        # Start the acquisition service before any robot connection or motion.
+        # The launcher returns only after an application-level handshake proves
+        # that the expected server and protocol are available.
+        acquisition_process, acquisition_config = start_data_acquisition_server(
+            output_dir / "data_acquisition_server.log"
+        )
+        handshake = acquisition_config["handshake"]
+        print(
+            "Data acquisition handshake confirmed: "
+            f"{handshake['server']} protocol {handshake['protocol_version']}."
+        )
+
+        def acquire_measurement(payload: dict) -> dict:
+            return request_data_acquisition(
+                acquisition_config["host"],
+                acquisition_config["port"],
+                payload,
+                acquisition_config["request_timeout"],
+            )
+
         # Direct terminal runs retain their confirmation. The control panel
         # supplies --operator-confirmed only after its safety dialog is accepted.
         if not args.operator_confirmed:
@@ -128,7 +172,15 @@ if __name__ == "__main__":
 
         # Step along the measurement line and run the measurement procedure.
         write_state(state_file, {"mode": "measurements"})
-        run_measurements(ROBOT_IP, rtde_receive, measurement_config, state_file)
+        run_measurements(
+            ROBOT_IP,
+            rtde_receive,
+            measurement_config,
+            state_file,
+            routines_data,
+            measurement_plan_file,
+            acquire_measurement,
+        )
 
         # Return through the configured waypoints to Home. The first move is
         # linear so the tool follows a straight path back to the high pose.
@@ -154,7 +206,7 @@ if __name__ == "__main__":
             state_file,
             {
                 "mode": "measurement_failed",
-                "line_index": error.line_index,
+                "measurement_index": error.measurement_index,
                 "line_position": error.line_position,
                 "height_mode": "high",
                 "last_measurement_success": False,
@@ -182,3 +234,4 @@ if __name__ == "__main__":
         # exception. This cleanup does not command the robot back to Home.
         if rtde_receive is not None:
             rtde_receive.disconnect()
+        stop_data_acquisition_server(acquisition_process)

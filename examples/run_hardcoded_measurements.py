@@ -51,13 +51,14 @@ START_JOINT_TOLERANCE = 0.005
 # is m/s. Direction vectors are expressed in the tool coordinate frame.
 MEASUREMENT_CONFIG = {
     "line": {
-        "length": 0.4,
-        "increment": 0.2,
-        "direction_start_end": [-1.0, 0.0, 0.0],
-    },
-    "obstacle": {
-        "high_low_distance": 0.01,
-        "direction_high_low": [0.0, 0.0, 1.0],
+        "method": "translation",
+        "parameters": {
+            "line_length": 0.4,
+            "increment": 0.2,
+            "direction_start_end": [-1.0, 0.0, 0.0],
+            "high_low_distance": 0.01,
+            "direction_high_low": [0.0, 0.0, 1.0],
+        },
     },
     "motion": {
         "type": "l",
@@ -115,7 +116,9 @@ def run() -> None:
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     state_file = OUTPUT_DIR / "state.json"
     write_json_atomic(OUTPUT_DIR / "config_used.json", MEASUREMENT_CONFIG)
-    write_measurement_plan(OUTPUT_DIR / "measurement_plan.json", MEASUREMENT_CONFIG)
+    write_measurement_plan(
+        OUTPUT_DIR / "measurement_plan.json", MEASUREMENT_CONFIG, routines_data
+    )
 
     rtde_receive = None
     try:
@@ -132,7 +135,13 @@ def run() -> None:
         print("Startup position verified: robot is at p_start_h.")
 
         write_state(state_file, {"mode": "measurements"})
-        run_measurements(ROBOT_IP, rtde_receive, MEASUREMENT_CONFIG, state_file)
+        run_measurements(
+            ROBOT_IP,
+            rtde_receive,
+            MEASUREMENT_CONFIG,
+            state_file,
+            routines_data,
+        )
         print("Measurements completed. Robot is at the high end-of-line position.")
 
     except UnsafeStartPositionError as error:

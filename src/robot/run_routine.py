@@ -136,6 +136,33 @@ def _run_routine(
     if confirm_each_step or not moves:
         return
 
+    # With zero blend radius there is no path-continuity advantage in sending
+    # one opaque controller program. Execute each move through the verified
+    # helpers so a rejected or stalled step is detected immediately.
+    if all(move["motion"]["blend_radius"] == 0 for move in moves):
+        for move in moves:
+            motion = move["motion"]
+            if motion["type"] == "l":
+                movel_pose(
+                    robot_ip,
+                    rtde_receive,
+                    move["target"],
+                    motion["acceleration"],
+                    motion["speed"],
+                    wait_timeout,
+                )
+            else:
+                movej(
+                    robot_ip,
+                    rtde_receive,
+                    move["target"],
+                    motion["acceleration"],
+                    motion["speed"],
+                    joint_tolerance,
+                    wait_timeout,
+                )
+        return
+
     send_script(robot_ip, routine_script(moves))
     final_move = moves[-1]
     # The old implementation allowed `wait_timeout` for every individual
@@ -144,7 +171,16 @@ def _run_routine(
     routine_timeout = wait_timeout * len(moves)
     if final_move["motion"]["type"] == "j":
         wait_until_at_joint_target(
-            rtde_receive, final_move["target"], joint_tolerance, routine_timeout
+            rtde_receive,
+            final_move["target"],
+            joint_tolerance,
+            routine_timeout,
+            require_target_progress=False,
         )
     else:
-        wait_until_at_tcp_target(rtde_receive, final_move["target"], routine_timeout)
+        wait_until_at_tcp_target(
+            rtde_receive,
+            final_move["target"],
+            routine_timeout,
+            require_target_progress=False,
+        )

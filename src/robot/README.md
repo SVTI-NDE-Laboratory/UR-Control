@@ -20,6 +20,17 @@ Before motion, the scripts query the Dashboard server for both Remote Control
 and robot mode `RUNNING`. If the robot is in Manual/Local mode, powered off, or
 has not had its brakes released, they raise an error before sending movement.
 
+Cartesian moves must reach their target within 1 mm, remain within the
+orientation tolerance, and settle below the TCP speed threshold. A target
+timeout triggers a controlled stop and up to two retries using the same
+absolute target. If all three attempts fail, the error propagates and no force
+measurement is started.
+
+Joint moves likewise require both the configured joint-position tolerance and
+a low joint speed continuously for a short settling period. The single-waypoint
+utility uses a 0.005 rad tolerance and reports the measured final error only
+after that verification succeeds.
+
 `run_routine.py` provides the reusable routine function used by the main
 program and the retained routine example.
 

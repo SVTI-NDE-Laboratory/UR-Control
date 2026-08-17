@@ -1,0 +1,28 @@
+{
+  "line": {
+    "method": "point_to_point",
+    "parameters": {
+      "increment": 0.1,
+      "number_of_measurements": 9,
+      "start_point": "p_start_l",
+      "end_point": "p_end_l",
+      "spacing_source": "increment"
+    }
+  },
+  "obstacle": {
+    "start": 0.21,
+    "end": 0.31
+  },
+  "motion": {
+    "type": "l",
+    "acceleration": 0.1,
+    "speed": 0.1
+  },
+  "measurement": {
+    "program_path": "Benoit/apply_force.urp",
+    "contact_threshold": 30.0,
+    "holding_force": 50.0,
+    "max_displacement": 0.05,
+    "simulation": false
+  }
+}

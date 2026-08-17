@@ -1,0 +1,66 @@
+def Define_Waypoints_Block_Diagonal2():
+  global _hidden_verificationVariable=0
+  step_count_dce94ce7_75ad_4fbe_b76d_66cc94713100 = 0.0
+  thread Step_Counter_Thread_65901002_ad93_4aaa_be5f_3b5efceff07e():
+    while (True):
+      step_count_dce94ce7_75ad_4fbe_b76d_66cc94713100 = step_count_dce94ce7_75ad_4fbe_b76d_66cc94713100 + 1.0
+      sync()
+    end
+  end
+  run Step_Counter_Thread_65901002_ad93_4aaa_be5f_3b5efceff07e()
+  set_tcp(p[0.0,0.0,0.0,0.0,0.0,0.0])
+  set_safety_mode_transition_hardness(1)
+  set_target_payload(1.970000, [-0.003000, -0.010000, 0.017000], [0.004766, 0.004766, 0.004766, 0.000000, 0.000000, 0.000000])
+  motion_version_set(2)
+  set_gravity([0.0, -9.82, 6.013015783813504E-16])
+  set_tool_communication(False, 115200, 0, 1, 1.5, 3.5)
+  set_tool_output_mode(0)
+  set_tool_digital_output_mode(0, 2)
+  set_tool_digital_output_mode(1, 2)
+  set_tool_voltage(0)
+  tool_wrench_limit_disable()
+  set_standard_analog_input_domain(0, 1)
+  set_standard_analog_input_domain(1, 1)
+  set_tool_analog_input_domain(0, 1)
+  set_tool_analog_input_domain(1, 1)
+  set_analog_outputdomain(0, 0)
+  set_analog_outputdomain(1, 0)
+  set_input_actions_to_default()
+  global line_length=0
+  global line_incr=0
+  global avoid_start=0
+  global avoid_end=0
+  global avoid_gap=0
+  global Plane_1=p[0.0,0.58,0.0,-1.5707963267948963,-2.9874637964168546E-16,-2.9874637964168546E-16]
+  # begin: URCap Installation Node
+  #   Source: UR Connect, 2.3.8, Universal Robots
+  #   Type: UR Connect
+  myurRPC = rpc_factory("xmlrpc","http://127.0.0.1:40474")
+  # end: URCap Installation Node
+  global p_start_h_p=p[-.403986232948, .392901186488, .832502115860, -1.559751602677, -.215675639184, -.214905399750]
+  global p_start_h_q=[-0.9362107601513108, -1.6737158034752682, 1.467008844204832, 0.20667287959136535, 2.1936345859672297, 2.8680863744318774]
+  global p_start_l_p=p[-.403978772037, .542898222678, .832506535464, -1.559747953769, -.215654551162, -.214905444534]
+  global p_start_l_q=[-1.0972795045691335, -1.5207747900511563, 1.3187396973073018, 0.2025534291221259, 2.0325199481922454, 2.869682439444013]
+  global p_end_l_p=p[.410566305604, .542898222206, .958351743238, -1.559747953776, -.215654551144, -.214905444529]
+  global p_end_l_q=[-2.6859609996734495, -1.4444407353220727, 0.9744462563908751, 0.463522190753513, 0.4433009656362472, 2.8742121289360196]
+  global p_end_h_p=p[.410566863242, .392899859991, .958348257992, -1.559750122048, -.215650155125, -.214901160720]
+  global p_end_h_q=[-2.9748211824785784, -1.601154354147912, 1.1422606380689246, 0.4484823367397377, 0.154427577455305, 2.8777696189170228]
+  $ 2 "Robot Program"
+  $ 3 "Home"
+  movej([1.5704206228256226, -1.3090128761580964, 2.443455998097555, -1.134462670688965, 1.5708153247833252, 1.5707963267948966], a=1.3962634015954636, v=1.0471975511965976)
+  $ 4 "MoveJ"
+  $ 5 "p_start_h" "breakAfter"
+  movej(get_inverse_kin(p_start_h_p, qnear=p_start_h_q), a=1.3962634015954636, v=1.0471975511965976)
+  $ 6 "MoveL"
+  $ 7 "p_start_l" "breakAfter"
+  movel(p_start_l_p, a=1.2, v=0.25)
+  $ 8 "MoveL"
+  $ 9 "p_end_l" "breakAfter"
+  movel(p_end_l_p, a=1.2, v=0.25)
+  $ 10 "MoveL"
+  $ 11 "p_end_h" "breakAfter"
+  movel(p_end_h_p, a=1.2, v=0.25)
+  $ 12 "MoveL"
+  $ 13 "p_start_h" "breakAfter"
+  movel(p_start_h_p, a=1.2, v=0.25)
+end

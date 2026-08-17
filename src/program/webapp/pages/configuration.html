@@ -1,0 +1,550 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>UR15 Control</title>
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body><main>
+  <header class="app-header">
+    <div class="title-row">
+      <h1>UR15 Control Panel</h1>
+      <div class="header-tools">
+        <button id="close-app" class="close-app" type="button" aria-label="Close application" title="Close application">&times;</button>
+      </div>
+    </div>
+  </header>
+
+  <form id="config-form">
+    <div class="workspace">
+      <section id="configuration-controls" class="panel">
+        {{HIDDEN_CONTROLS}}
+        {{SECTIONS}}
+        <div class="config-actions">
+          <button id="reset-default" type="button">Reset default</button>
+          <button id="save-default" type="button">Save as default</button>
+        </div>
+      </section>
+
+      <section class="panel measurement-panel" aria-label="Configuration visualization">
+        <fieldset>
+          <legend>Visualization</legend>
+        <svg id="line-visualization" class="line-visualization" viewBox="0 0 640 310" role="img" aria-label="Configured measurement line"></svg>
+        <div id="ongoing-measurement" class="ongoing-measurement" aria-live="polite">
+          <dl class="state-grid">
+            <dt>Phase</dt><dd id="ongoing-mode">—</dd>
+            <dt>Current position [cm]</dt><dd id="ongoing-current">—</dd>
+            <dt>Progress</dt><dd id="ongoing-progress">—</dd>
+          </dl>
+        </div>
+        </fieldset>
+
+        <fieldset class="run-measurement-fieldset">
+          <legend>Run measurement</legend>
+          <label for="output-directory" class="run-folder-label">Data folder</label>
+          <div class="folder-control">
+            <input id="output-directory" autocomplete="off">
+            <button id="browse-output" type="button">Browse…</button>
+          </div>
+          <div class="run-options">
+            <label class="checkbox-label">
+              <input id="show-terminal" type="checkbox"> Show program terminal
+            </label>
+            <label class="checkbox-label">
+              <input id="create-session-folder" type="checkbox" checked> Create dated session folder
+            </label>
+          </div>
+          <button id="run-program" class="primary run-button" type="button" disabled>Start program</button>
+        </fieldset>
+      </section>
+    </div>
+  </form>
+
+  <script>
+    const form = document.getElementById('config-form');
+    const configurationControls = document.getElementById('configuration-controls');
+    const saveDefaultButton = document.getElementById('save-default');
+    const svg = document.getElementById('line-visualization');
+    const svgNS = 'http://www.w3.org/2000/svg';
+    const lineMethod = document.getElementById('line.method');
+    const obstacleEnabled = document.getElementById('obstacle-enabled');
+    const totalLengthInput = document.getElementById('line.parameters.line_length');
+    const safeHeightInput = document.getElementById('line.parameters.high_low_distance');
+    const safeHeightRow = document.getElementById('safe-height-row');
+    const incrementInput = document.getElementById('line.parameters.increment');
+    const measurementCountInput = document.getElementById('measurement-count');
+    const spacingSourceInput = document.getElementById('spacing-source');
+    const pointMethodNote = document.getElementById('point-method-note');
+    const routineFileSelect = document.getElementById('routine-file');
+    const runButton = document.getElementById('run-program');
+    const outputDirectory = document.getElementById('output-directory');
+    const browseOutputButton = document.getElementById('browse-output');
+    const showTerminal = document.getElementById('show-terminal');
+    const createSessionFolder = document.getElementById('create-session-folder');
+    const ongoingMeasurement = document.getElementById('ongoing-measurement');
+    let pointGeometry = null;
+    let defaultConfigs = null;
+    let latestMeasurement = null;
+    let outputInitialized = false;
+    let formDirty = false;
+    let operationPending = false;
+    let lastImportantMessage = '';
+
+    function numberValue(id, fallback = 0) {
+      const element = document.getElementById(id);
+      const value = element ? Number.parseFloat(element.value) : fallback;
+      return Number.isFinite(value) ? value : fallback;
+    }
+
+    function formatCentimetres(metres) {
+      return `${Number((metres * 100).toFixed(3))} cm`;
+    }
+
+    function addSvg(tag, attributes, text = '') {
+      const element = document.createElementNS(svgNS, tag);
+      for (const [name, value] of Object.entries(attributes)) element.setAttribute(name, value);
+      if (text) element.textContent = text;
+      svg.appendChild(element);
+      return element;
+    }
+
+    function showImportant(message) {
+      if (message !== lastImportantMessage) {
+        lastImportantMessage = message;
+        window.alert(message);
+      }
+    }
+
+    function synchronizeFields() {
+      const method = lineMethod.value;
+      const pointToPoint = method === 'point_to_point';
+      pointMethodNote.classList.toggle('hidden', method !== 'point_to_point');
+      totalLengthInput.readOnly = pointToPoint;
+      safeHeightInput.readOnly = pointToPoint;
+      safeHeightInput.disabled = pointToPoint;
+      totalLengthInput.classList.toggle('optional-disabled', pointToPoint);
+      safeHeightRow.classList.toggle('optional-disabled', pointToPoint);
+      if (pointToPoint && pointGeometry) {
+        totalLengthInput.value = (pointGeometry.line_length * 100).toFixed(3);
+        safeHeightInput.value = (pointGeometry.safe_height * 100).toFixed(3);
+      }
+      for (const element of document.querySelectorAll('[data-line-method]')) {
+        const active = element.dataset.lineMethod === method;
+        element.classList.toggle('optional-disabled', !active);
+        if (element.matches('input, select')) {
+          element.disabled = !active;
+          element.required = active && element.type !== 'hidden';
+        }
+      }
+      for (const element of document.querySelectorAll('[data-optional-group="obstacle-position"]')) {
+        const active = obstacleEnabled.checked;
+        element.classList.toggle('optional-disabled', !active);
+        if (element.matches('input, select')) {
+          element.disabled = !active;
+          element.required = active;
+        }
+      }
+    }
+
+    function updateMeasurementCount() {
+      if (!totalLengthInput || !incrementInput || !measurementCountInput) return;
+      const length = lineMethod.value === 'point_to_point'
+        ? (pointGeometry?.line_length || 0) * 100
+        : Number.parseFloat(totalLengthInput.value);
+      const increment = Number.parseFloat(incrementInput.value);
+      if (length > 0 && increment > 0) {
+        const ratio = length / increment;
+        const nearestInteger = Math.round(ratio);
+        const exactDivision = Math.abs(ratio - nearestInteger) < 1e-9;
+        const intervals = exactDivision
+          ? nearestInteger
+          : Math.floor(ratio);
+        measurementCountInput.value = String(Math.max(2, intervals + 1));
+      }
+    }
+
+    function updateIncrement() {
+      if (!totalLengthInput || !incrementInput || !measurementCountInput) return;
+      const length = lineMethod.value === 'point_to_point'
+        ? (pointGeometry?.line_length || 0) * 100
+        : Number.parseFloat(totalLengthInput.value);
+      const count = Number(measurementCountInput.value);
+      if (length > 0 && Number.isInteger(count) && count >= 2) {
+        incrementInput.value = (length / (count - 1)).toFixed(3);
+      }
+    }
+
+    function synchronizeSpacingFromSource() {
+      if (lineMethod.value === 'point_to_point' && spacingSourceInput.value === 'count') {
+        updateIncrement();
+      } else {
+        updateMeasurementCount();
+      }
+    }
+
+    function drawVisualization() {
+      synchronizeFields();
+      const translation = lineMethod.value === 'translation';
+      const requestedCount = Number(measurementCountInput?.value || '2');
+      const count = Number.isInteger(requestedCount) && requestedCount >= 2 ? requestedCount : 2;
+      const length = translation
+        ? numberValue('line.parameters.line_length') / 100
+        : pointGeometry?.line_length || 0;
+      const requestedIncrement = numberValue('line.parameters.increment') / 100;
+      const increment = !translation && spacingSourceInput.value === 'count' && length > 0
+        ? length / (count - 1)
+        : requestedIncrement;
+      const obstacleStart = numberValue('obstacle.start') / 100;
+      const obstacleEnd = numberValue('obstacle.end') / 100;
+      const hasObstacle = obstacleEnabled.checked && obstacleStart >= 0 && obstacleEnd >= obstacleStart;
+      const left = 55, right = 585, highY = 90, lowY = 220;
+      const width = right - left;
+      const scale = value => left + (length > 0 ? value / length : 0) * width;
+
+      svg.replaceChildren();
+      addSvg('line', {x1:left, y1:highY, x2:right, y2:highY, stroke:'#8295a5', 'stroke-width':2, 'stroke-dasharray':'7 6'});
+      addSvg('line', {x1:left, y1:lowY, x2:right, y2:lowY, stroke:'#17212b', 'stroke-width':5});
+      addSvg('text', {x:left, y:highY-15, fill:'#52606d', 'font-size':14}, 'Safe plane');
+
+      if (hasObstacle && length > 0) {
+        const start = Math.max(0, Math.min(length, obstacleStart));
+        const end = Math.max(start, Math.min(length, obstacleEnd));
+        addSvg('rect', {x:scale(start), y:highY+15, width:Math.max(2, scale(end)-scale(start)), height:lowY-highY-15, rx:5, fill:'#e05252', opacity:.72});
+        addSvg('text', {x:(scale(start)+scale(end))/2, y:highY+40, 'text-anchor':'middle', fill:'white', 'font-size':14}, 'Obstacle');
+      }
+
+      let visibleMeasurements = 0;
+      for (let index = 0; index < count; index++) {
+        const position = index * increment;
+        if (position > length + 1e-9) break;
+        const blocked = hasObstacle && position >= obstacleStart - 1e-9 && position <= obstacleEnd + 1e-9;
+        if (blocked) continue;
+        visibleMeasurements += 1;
+        addSvg('circle', {cx:scale(position), cy:lowY, r:6, fill:'#2474a9', stroke:'white', 'stroke-width':2});
+        addSvg('text', {x:scale(position), y:lowY+25, 'text-anchor':'middle', fill:'#334e60', 'font-size':12}, String(visibleMeasurements));
+      }
+      addSvg('text', {x:left, y:285, fill:'#334e60', 'font-size':14}, translation ? '0 cm' : 'p_start_l');
+      addSvg('text', {x:right, y:285, 'text-anchor':'end', fill:'#334e60', 'font-size':14}, translation ? formatCentimetres(length) : `p_end_l (${formatCentimetres(length)})`);
+
+    }
+
+    async function loadPointGeometry() {
+      try {
+        const response = await fetch('/api/configuration/geometry', {cache:'no-store'});
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.detail || `HTTP ${response.status}`);
+        pointGeometry = result;
+        pointMethodNote.textContent = 'Fixed: p_start_l → p_end_l';
+        synchronizeSpacingFromSource();
+        drawVisualization();
+      } catch (error) {
+        pointGeometry = null;
+        pointMethodNote.textContent = 'Fixed: p_start_l → p_end_l (not defined in selected routine file)';
+        if (lineMethod.value === 'point_to_point') window.alert(error.message);
+      }
+    }
+
+    async function loadRoutineFiles() {
+      const response = await fetch('/api/configuration/routine-files', {cache:'no-store'});
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.detail || `HTTP ${response.status}`);
+      routineFileSelect.replaceChildren();
+      for (const filename of result.files) {
+        const option = document.createElement('option');
+        option.value = filename;
+        option.textContent = filename;
+        option.selected = filename === result.default;
+        routineFileSelect.appendChild(option);
+      }
+      await loadPointGeometry();
+    }
+
+    async function loadDefaultConfigs() {
+      const response = await fetch('/api/configuration/defaults', {cache:'no-store'});
+      if (response.ok) defaultConfigs = await response.json();
+    }
+
+    function shownValue(key, value) {
+      const centimetreFields = new Set([
+        'line_length',
+        'increment',
+        'high_low_distance',
+        'start',
+        'end',
+        'max_displacement',
+        'force_step_distance',
+      ]);
+      if (centimetreFields.has(key)) return (value * 100).toFixed(3);
+      if (Array.isArray(value)) return value.join(', ');
+      return String(value);
+    }
+
+    function setNamedValue(name, key, value) {
+      const input = form.elements.namedItem(name);
+      if (input) input.value = shownValue(key, value);
+    }
+
+    function applyModeDefaults(method) {
+      const config = defaultConfigs?.[method];
+      if (!config) return;
+      const parameters = config.line.parameters;
+      if (method === 'translation') {
+        setNamedValue('line.parameters.line_length', 'line_length', parameters.line_length);
+        setNamedValue('line.parameters.high_low_distance', 'high_low_distance', parameters.high_low_distance);
+        setNamedValue('line.parameters.direction_start_end', 'direction_start_end', parameters.direction_start_end);
+        setNamedValue('line.parameters.direction_high_low', 'direction_high_low', parameters.direction_high_low);
+      }
+      setNamedValue('line.parameters.increment', 'increment', parameters.increment);
+      spacingSourceInput.value = parameters.spacing_source || 'increment';
+      measurementCountInput.value = method === 'point_to_point'
+        ? String(parameters.number_of_measurements)
+        : String(Math.max(2, Math.round(parameters.line_length / parameters.increment) + 1));
+
+      obstacleEnabled.checked = Boolean(config.obstacle?.start !== undefined && config.obstacle?.end !== undefined);
+      if (config.obstacle) {
+        setNamedValue('obstacle.start', 'start', config.obstacle.start);
+        setNamedValue('obstacle.end', 'end', config.obstacle.end);
+      }
+      for (const [section, values] of Object.entries({motion:config.motion, measurement:config.measurement})) {
+        for (const [key, value] of Object.entries(values)) setNamedValue(`${section}.${key}`, key, value);
+      }
+      synchronizeFields();
+      drawVisualization();
+    }
+
+    function submittedFields() {
+      const fields = {};
+      for (const [name, value] of new FormData(form).entries()) {
+        if (!fields[name]) fields[name] = [];
+        fields[name].push(String(value));
+      }
+      return fields;
+    }
+
+    form.addEventListener('submit', async event => {
+      event.preventDefault();
+      runButton.click();
+    });
+
+    async function checkConfiguration(endpoint) {
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({fields: submittedFields()}),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.detail || `HTTP ${response.status}`);
+      formDirty = false;
+      return result;
+    }
+
+    saveDefaultButton.addEventListener('click', async () => {
+      if (!window.confirm(`Replace the saved ${lineMethod.value.replaceAll('_', ' ')} default with the values currently shown?`)) return;
+      saveDefaultButton.disabled = true;
+      try {
+        await checkConfiguration('/api/configuration/default');
+        await refreshMeasurement();
+      } catch (error) {
+        showImportant(error.message);
+      } finally {
+        saveDefaultButton.disabled = false;
+      }
+    });
+    document.getElementById('reset-default').addEventListener('click', async () => {
+      await fetch('/api/configuration/reset', {method:'POST'});
+      window.location.href = `/configuration?defaults=true&method=${encodeURIComponent(lineMethod.value)}`;
+    });
+
+    lineMethod.addEventListener('change', () => {
+      formDirty = true;
+      spacingSourceInput.value = 'increment';
+      applyModeDefaults(lineMethod.value);
+      if (pointGeometry) synchronizeSpacingFromSource();
+      synchronizeFields();
+      drawVisualization();
+    });
+    routineFileSelect.addEventListener('change', async () => {
+      try {
+        const response = await fetch('/api/configuration/routine-file', {
+          method:'POST',
+          headers:{'Content-Type':'application/json'},
+          body:JSON.stringify({routine_file:routineFileSelect.value}),
+        });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.detail || `HTTP ${response.status}`);
+        formDirty = true;
+        await loadPointGeometry();
+        await refreshMeasurement();
+      } catch (error) {
+        showImportant(error.message);
+      }
+    });
+    obstacleEnabled.addEventListener('change', drawVisualization);
+    form.addEventListener('input', () => {
+      formDirty = true;
+      lastImportantMessage = '';
+      drawVisualization();
+    });
+    form.addEventListener('reset', () => setTimeout(() => { updateMeasurementCount(); drawVisualization(); }, 0));
+    totalLengthInput?.addEventListener('input', updateMeasurementCount);
+    incrementInput?.addEventListener('input', () => {
+      spacingSourceInput.value = 'increment';
+      updateMeasurementCount();
+    });
+    incrementInput?.addEventListener('change', () => { updateMeasurementCount(); drawVisualization(); });
+    measurementCountInput?.addEventListener('input', () => {
+      spacingSourceInput.value = 'count';
+      updateIncrement();
+      drawVisualization();
+    });
+    document.getElementById('close-app').addEventListener('click', async () => {
+      await fetch('/api/close', {method: 'POST'});
+      document.body.innerHTML = '<main><h1>Application closed</h1><p>You can close this tab.</p></main>';
+    });
+
+    function completedState(point, programState) {
+      if (point.data?.force_reached === true) return 'complete';
+      if (point.data?.force_reached === false) return 'failed';
+      const mode = programState.mode || '';
+      const current = programState.measurement_index;
+      if (['measurements_done', 'end_routine', 'idle'].includes(mode)) return 'complete';
+      if (typeof current !== 'number') return 'pending';
+      if (point.measurement_index < current) return 'complete';
+      if (point.measurement_index > current) return 'pending';
+      if (programState.last_measurement_success === true) return 'complete';
+      if (programState.last_measurement_success === false) return 'failed';
+      const reachedPosition = programState.line_position;
+      const isReached = typeof reachedPosition === 'number'
+        && Math.abs(reachedPosition - point.line_position) < 1e-6;
+      return isReached ? 'current' : 'pending';
+    }
+
+    function humanizePhase(mode) {
+      const text = String(mode || 'running').replaceAll('_', ' ');
+      return text.charAt(0).toUpperCase() + text.slice(1);
+    }
+
+    function drawProgress(data) {
+      const config = data.config;
+      const plan = data.plan;
+      const programState = data.program_state || {};
+      const points = plan?.points || [];
+      const parameters = config?.line?.parameters || {};
+      const configuredLength = parameters.line_length;
+      const lastPosition = points.length ? Math.max(...points.map(point => point.line_position)) : 0;
+      const length = configuredLength || lastPosition || 1;
+      const currentPosition = typeof programState.line_position === 'number' ? programState.line_position : null;
+      const obstacle = config?.obstacle;
+      const left = 55, right = 585, highY = 90, lowY = 220;
+      const scale = value => left + Math.max(0, Math.min(1, value / length)) * (right - left);
+
+      svg.replaceChildren();
+      addSvg('line', {x1:left, y1:highY, x2:right, y2:highY, stroke:'#8295a5', 'stroke-width':2, 'stroke-dasharray':'7 6'});
+      addSvg('line', {x1:left, y1:lowY, x2:right, y2:lowY, stroke:'#17212b', 'stroke-width':5});
+      addSvg('text', {x:left, y:highY-15, fill:'#52606d', 'font-size':14}, 'Safe plane');
+      if (obstacle && obstacle.end >= obstacle.start) {
+        addSvg('rect', {x:scale(obstacle.start), y:highY+15, width:Math.max(2, scale(obstacle.end)-scale(obstacle.start)), height:lowY-highY-15, rx:5, fill:'#e05252', opacity:.72});
+        addSvg('text', {x:(scale(obstacle.start)+scale(obstacle.end))/2, y:highY+40, 'text-anchor':'middle', fill:'white', 'font-size':14}, 'Obstacle');
+      }
+
+      let complete = 0;
+      for (const [index, point] of points.entries()) {
+        const pointState = completedState(point, programState);
+        if (pointState === 'complete') complete += 1;
+        const colors = {pending:'#9aa9b8', current:'#1769aa', complete:'#159447', failed:'#b42318'};
+        addSvg('circle', {cx:scale(point.line_position), cy:lowY, r:pointState === 'current' ? 10 : 7, fill:colors[pointState], stroke:'white', 'stroke-width':2});
+        addSvg('text', {x:scale(point.line_position), y:lowY+25, 'text-anchor':'middle', fill:'#334e60', 'font-size':12}, String(index + 1));
+      }
+      if (currentPosition !== null) {
+        addSvg('text', {x:scale(currentPosition), y:lowY-20, 'text-anchor':'middle', fill:'#1769aa', 'font-size':14, 'font-weight':700}, `Current: ${formatCentimetres(currentPosition)}`);
+      }
+      addSvg('text', {x:left, y:285, fill:'#334e60', 'font-size':14}, 'Start');
+      addSvg('text', {x:right, y:285, 'text-anchor':'end', fill:'#334e60', 'font-size':14}, 'End');
+
+      document.getElementById('ongoing-mode').textContent = humanizePhase(programState.mode);
+      document.getElementById('ongoing-current').textContent = currentPosition === null ? '—' : (currentPosition * 100).toFixed(3);
+      document.getElementById('ongoing-progress').textContent = `${complete} / ${points.length}`;
+    }
+
+    function showMeasurement(data) {
+      latestMeasurement = data;
+      const running = data.worker.running === true;
+      const controlsLocked = running || operationPending;
+      configurationControls.inert = controlsLocked;
+      routineFileSelect.disabled = controlsLocked;
+      outputDirectory.disabled = controlsLocked;
+      browseOutputButton.disabled = controlsLocked;
+      showTerminal.disabled = controlsLocked;
+      createSessionFolder.disabled = controlsLocked;
+      runButton.disabled = operationPending;
+      runButton.textContent = running ? 'Stop program' : 'Start program';
+      runButton.classList.toggle('danger', running);
+      runButton.classList.toggle('primary', !running);
+      if (!outputInitialized) {
+        outputDirectory.value = data.default_output_directory;
+        outputInitialized = true;
+      }
+      if (running || (data.validated && !formDirty)) drawProgress(data);
+      else drawVisualization();
+    }
+
+    async function refreshMeasurement() {
+      try {
+        const response = await fetch(`/api/measurement?time=${Date.now()}`, {cache:'no-store'});
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        showMeasurement(await response.json());
+      } catch (error) {
+        showImportant(`State unavailable: ${error.message}`);
+      }
+    }
+
+    runButton.addEventListener('click', async () => {
+      const running = latestMeasurement?.worker?.running === true;
+      operationPending = true;
+      runButton.disabled = true;
+      try {
+        if (running) {
+          const response = await fetch('/api/worker/stop', {method:'POST'});
+          const result = await response.json();
+          if (!response.ok) throw new Error(result.detail || `HTTP ${response.status}`);
+        } else {
+          await checkConfiguration('/api/configuration/validate');
+          if (!window.confirm('Start robot motion? Confirm that the workspace is clear, tooling is secure, the robot is in Remote Control, and the emergency stop is accessible.')) return;
+          const response = await fetch('/api/measurement/start', {
+            method:'POST',
+            headers:{'Content-Type':'application/json'},
+            body:JSON.stringify({
+              output_directory:outputDirectory.value,
+              show_terminal:showTerminal.checked,
+              create_session_folder:createSessionFolder.checked,
+              operator_confirmed:true,
+            }),
+          });
+          const result = await response.json();
+          if (!response.ok) throw new Error(result.detail || `HTTP ${response.status}`);
+        }
+      } catch (error) {
+        showImportant(error.message);
+      } finally {
+        operationPending = false;
+        await refreshMeasurement();
+      }
+    });
+
+    browseOutputButton.addEventListener('click', async () => {
+      const response = await fetch('/api/select-directory');
+      const result = await response.json();
+      if (response.ok && result.path) outputDirectory.value = result.path;
+      else if (!response.ok) showImportant(result.detail || 'Folder picker failed.');
+    });
+
+    loadDefaultConfigs();
+    loadRoutineFiles().catch(error => showImportant(error.message));
+    updateMeasurementCount();
+    drawVisualization();
+    refreshMeasurement();
+    setInterval(refreshMeasurement, 500);
+  </script>
+</main></body>
+</html>

@@ -1,9 +1,16 @@
-"""Read measurement configuration."""
+"""Read and validate measurement configuration."""
 
 import json
 from pathlib import Path
 
-from line_planner import high_low_movement, obstacle_interval
+from line_planner import (
+    POINT_TO_POINT,
+    high_low_movement,
+    line_geometry,
+    line_parameters,
+    normalize,
+    obstacle_interval,
+)
 
 
 def validate_force_config(config: dict) -> None:
@@ -21,52 +28,102 @@ def validate_force_config(config: dict) -> None:
         )
     if holding < contact:
         raise ValueError("Holding force must be greater than or equal to contact force.")
+    if measurement["max_displacement"] <= 0:
+        raise ValueError("Maximum displacement must be positive.")
+    if not measurement["program_path"].strip():
+        raise ValueError("Robot program path cannot be empty.")
+    if "force_step_distance" in measurement and measurement["force_step_distance"] <= 0:
+        raise ValueError("Force step distance must be positive.")
+    if "force_direction" in measurement:
+        normalize(measurement["force_direction"])
     if contact == 0 and holding == 0:
         measurement["simulation"] = True
 
 
-def print_measurement_config_summary(config: dict) -> None:
-    """Print the measurement configuration in a compact form.
+def validate_measurement_config(
+    config: dict, routines_data: dict | None = None
+) -> dict:
+    """Validate line, obstacle, motion, and force configuration."""
 
-    This gives the operator a quick check before the robot starts moving.
-    """
+    geometry = line_geometry(config, routines_data)
+    high_low_movement(config, routines_data)
+    interval = obstacle_interval(config)
+    if interval is not None and interval[1] > geometry["length"] + 1e-9:
+        raise ValueError("Obstacle end must not exceed the measurement line length.")
 
-    line = config["line"]
+    motion = config["motion"]
+    if motion["type"].lower() != "l":
+        raise ValueError("Measurement motion type must be 'l'.")
+    if motion["acceleration"] <= 0 or motion["speed"] <= 0:
+        raise ValueError("Measurement acceleration and speed must be positive.")
+    validate_force_config(config)
+    return geometry
+
+
+def print_measurement_config_summary(
+    config: dict, routines_data: dict | None = None
+) -> None:
+    """Print the effective measurement geometry and force settings."""
+
+    geometry = validate_measurement_config(config, routines_data)
+    parameters = line_parameters(config)
     obstacle = obstacle_interval(config)
-    high_low = high_low_movement(config)
+    direction, height = high_low_movement(config, routines_data) or (None, None)
     measurement = config["measurement"]
     motion = config["motion"]
 
     print("Measurement config:")
-    print(f"  line: length={line['length']} m, increment={line['increment']} m, direction_start_end={line['direction_start_end']} in tool frame")
+    if geometry["method"] == POINT_TO_POINT:
+        print(
+            "  line: method=point_to_point, "
+            f"start={geometry['start_name']}, end={geometry['end_name']}, "
+            f"measurements={geometry['number_of_measurements']}, "
+            f"length={geometry['length']:.6f} m"
+        )
+        print(
+            f"  high-to-low: derived distance={height:.6f} m, "
+            f"base-frame direction={direction}"
+        )
+    else:
+        print(
+            "  line: method=translation, "
+            f"length={geometry['length']} m, increment={geometry['increment']} m, "
+            f"direction_start_end={parameters['direction_start_end']} in tool frame"
+        )
+        if direction is None:
+            print("  high-to-low movement: none")
+        else:
+            print(
+                f"  high-to-low: distance={height} m, direction={direction} in tool frame"
+            )
     if obstacle is None:
         print("  obstacle: none")
     else:
         print(f"  obstacle: start={obstacle[0]} m, end={obstacle[1]} m")
-    if high_low is None:
-        print("  high-to-low movement: none")
-    else:
-        direction, distance = high_low
-        print(f"  high-to-low: distance={distance} m, direction={direction} in tool frame")
-    print(f"  measurement: contact_threshold={measurement['contact_threshold']} N, holding_force={measurement['holding_force']} N, max_displacement={measurement['max_displacement']} m")
-    print(f"  measurement: program_path={measurement['program_path']}, simulation={measurement['simulation']}")
-    print(f"  motion: type={motion['type']}, acceleration={motion['acceleration']}, speed={motion['speed']}")
+    print(
+        f"  measurement: contact_threshold={measurement['contact_threshold']} N, "
+        f"holding_force={measurement['holding_force']} N, "
+        f"max_displacement={measurement['max_displacement']} m"
+    )
+    print(
+        f"  measurement: program_path={measurement['program_path']}, "
+        f"simulation={measurement['simulation']}"
+    )
+    print(
+        f"  motion: type={motion['type']}, acceleration={motion['acceleration']}, "
+        f"speed={motion['speed']}"
+    )
 
 
-def read_measurement_config(path: str | Path, verbose: bool = False) -> dict:
-    """Read the before-start measurement configuration.
-
-    If verbose is true, print a short summary of the loaded parameters.
-    """
+def read_measurement_config(
+    path: str | Path,
+    verbose: bool = False,
+    routines_data: dict | None = None,
+) -> dict:
+    """Read and validate a measurement configuration file."""
 
     config = json.loads(Path(path).read_text(encoding="utf-8"))
-
-    # Validate optional obstacle fields even for non-verbose callers.
-    obstacle_interval(config)
-    high_low_movement(config)
-    validate_force_config(config)
-
+    validate_measurement_config(config, routines_data)
     if verbose:
-        print_measurement_config_summary(config)
-
+        print_measurement_config_summary(config, routines_data)
     return config

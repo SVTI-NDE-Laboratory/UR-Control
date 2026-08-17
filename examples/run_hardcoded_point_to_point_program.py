@@ -1,7 +1,9 @@
-"""Run the complete cobot sequence with parameters defined in this file.
+"""Run the complete cobot sequence in point-to-point measurement mode.
 
-Open this file in the editor and press Run. No command-line arguments or
-browser configuration are required. Review the constants below before use.
+The start routine moves from Home to ``p_start_h``. Measurement traversal then
+moves to ``p_start_l`` and interpolates a three-dimensional line through
+``p_end_l`` while retaining the orientation taught at ``p_start_l``. Review
+all hard-coded parameters before running this file.
 """
 
 import json
@@ -18,6 +20,7 @@ for folder in [MEASUREMENT_DIR, ROBOT_DIR, ROUTINES_DIR]:
     if str(folder) not in sys.path:
         sys.path.insert(0, str(folder))
 
+from measurement_config import print_measurement_config_summary, validate_measurement_config
 from measurement_plan import write_measurement_plan
 from measurement_state import write_state
 from read_routines import get_waypoint, read_routines_file
@@ -27,51 +30,50 @@ from robot_connection import (
     assert_robot_running,
     get_rtde_receive,
 )
-from run_measurements import run_measurements
+from run_measurements import MeasurementUnavailableError, run_measurements
 from run_routine import run_routine
 
 
 # ---------------------------------------------------------------------------
-# Edit the hard-coded parameters in this section.
+# Review these hard-coded parameters before running the example.
 # ---------------------------------------------------------------------------
 
 ROBOT_IP = "192.168.3.10"
-ROUTINES_FILE = ROUTINES_DIR / "routine_files" / "routines_block.json"
+ROUTINES_FILE = (
+    ROUTINES_DIR / "routine_files" / "routines_block_diagonal.json"
+)
 OUTPUT_DIR = PROJECT_ROOT / "src" / "program" / "config"
 
-# Retaining an operator confirmation prevents an accidental editor Run click
-# from immediately moving the robot. Set this to False only if that is intended.
 REQUIRE_OPERATOR_CONFIRMATION = True
-
-# Routine motion is stored per step in routines_block.json.
 JOINT_TOLERANCE = 0.01
 WAIT_TIMEOUT = 30.0
 HOME_JOINT_TOLERANCE = 0.005
 
-# All distances are in metres, forces in newtons, acceleration in m/s^2, and
-# speed in m/s. Direction vectors are expressed in the tool coordinate frame.
+# number_of_measurements includes p_start_l and p_end_l. Candidate positions
+# inside the obstacle interval are skipped, so the number of force cycles can
+# be smaller than this configured value.
 MEASUREMENT_CONFIG = {
     "line": {
-        "method": "translation",
+        "method": "point_to_point",
         "parameters": {
-            "line_length": 0.4,
-            "increment": 0.1,
-            "direction_start_end": [-1.0, 0.0, 0.0],
-            "high_low_distance": 0.01,
-            "direction_high_low": [0.0, 0.0, 1.0],
+            "start_point": "p_start_l",
+            "end_point": "p_end_l",
+            "number_of_measurements": 10,
         },
     },
     "motion": {
         "type": "l",
-        "acceleration": 0.05,
-        "speed": 0.05,
+        "acceleration": 0.3,
+        "speed": 0.3,
     },
     "measurement": {
         "program_path": "Benoit/apply_force.urp",
         "contact_threshold": 30.0,
-        "holding_force": 30.0,
-        "max_displacement": 0.005,
-        "simulation": True,
+        "holding_force": 50.0,
+        "max_displacement": 0.001,
+        # With nonzero forces this still performs a physical force approach.
+        # Simulation only reports maximum displacement as a successful cycle.
+        "simulation": False,
     },
 }
 
@@ -85,30 +87,36 @@ def write_json_atomic(path: Path, value: dict) -> None:
 
 
 def run() -> None:
-    """Run start routine, measurements, and end routine."""
+    """Run the diagonal start routine, measurements, and end routine."""
 
     routines_data = read_routines_file(ROUTINES_FILE)
+    validate_measurement_config(MEASUREMENT_CONFIG, routines_data)
+    print_measurement_config_summary(MEASUREMENT_CONFIG, routines_data)
+
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     state_file = OUTPUT_DIR / "state.json"
-
     write_json_atomic(OUTPUT_DIR / "config_used.json", MEASUREMENT_CONFIG)
     write_measurement_plan(
-        OUTPUT_DIR / "measurement_plan.json", MEASUREMENT_CONFIG, routines_data
+        OUTPUT_DIR / "measurement_plan.json",
+        MEASUREMENT_CONFIG,
+        routines_data,
     )
 
     rtde_receive = None
     try:
         if REQUIRE_OPERATOR_CONFIRMATION:
             input(
-                "Press Enter to connect and start the hard-coded program, "
-                "or Ctrl+C to cancel."
+                "Confirm the diagonal path, obstacle interval, and force "
+                "parameters are safe, then press Enter to start, or Ctrl+C "
+                "to cancel."
             )
 
         assert_robot_running(ROBOT_IP)
         rtde_receive = get_rtde_receive(ROBOT_IP)
         home = get_waypoint(routines_data, "Home")
         if "q" not in home:
-            raise ValueError("The Home waypoint has no joint target for startup verification.")
+            raise ValueError("The Home waypoint has no joint target.")
+
         write_state(state_file, {"mode": "checking_home"})
         assert_at_home(rtde_receive, home["q"], HOME_JOINT_TOLERANCE)
         print("Startup position verified: robot is at Home.")
@@ -145,16 +153,18 @@ def run() -> None:
             False,
             True,
         )
-
         write_state(state_file, {"mode": "idle"})
 
     except UnsafeStartPositionError as error:
         write_state(state_file, {"mode": "unsafe_start", "message": str(error)})
         print(f"\n{error}", file=sys.stderr)
         raise SystemExit(3)
+    except MeasurementUnavailableError as error:
+        # run_measurements has already returned safely to p_start_h.
+        print(f"\n{error}")
+        raise SystemExit(2)
     except KeyboardInterrupt:
-        # run_routine/run_measurements send the physical stop command before
-        # propagating Ctrl+C to this level.
+        # Lower-level routine and measurement functions request a robot stop.
         write_state(state_file, {"mode": "stopped", "reason": "operator cancellation"})
         print("\nProgram cancelled; any active motion was stopped.")
         raise SystemExit(130)

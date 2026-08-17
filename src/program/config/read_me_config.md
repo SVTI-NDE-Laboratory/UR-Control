@@ -1,20 +1,51 @@
 # Measurement Configuration
 
-`config.json` contains the parameters used for the measurement line.
+`config.json` remains the default for direct `main.py` runs. The web panel keeps
+mode-specific defaults in `config_translation.json` and
+`config_point_to_point.json`, then writes the validated selection to
+`config_tmp.json` for a control-panel run.
 
 ## line
 
-`length`
+`method` selects `translation` or `point_to_point`. Parameters for the selected
+method are stored in `line.parameters`.
 
-Total measurement line length. Unit: `m`.
+### Translation parameters
 
-`increment`
+`line_length` is the total line length in metres. `increment` is the distance
+between measurements in metres. `direction_start_end` is the normalized
+tool-frame direction from the start toward the end.
 
-Distance between two consecutive measurement positions. Unit: `m`.
+`high_low_distance` is the safe-plane clearance in metres and
+`direction_high_low` is the normalized tool-frame direction from high to low.
+Both are required for translation mode.
 
-`direction_start_end`
+### Point-to-point parameters
 
-Direction of motion from the start of the line to the end of the line. Unit: none. This is a tool-frame vector and is normalized by the program.
+Point-to-point web configurations always use the Cartesian waypoints
+`p_start_l` and `p_end_l` from the routine file selected in the control panel.
+`number_of_measurements` includes both endpoints and must be at least two.
+`increment` is the corresponding distance between points; the web controls keep
+the two values synchronized, so either can be edited.
+
+The program interpolates all three base-frame position coordinates and keeps
+the orientation taught at the start waypoint. The end waypoint orientation is
+ignored. Safe clearance direction and distance are deduced from the full
+three-dimensional position difference between `p_start_h` and the configured
+start waypoint.
+
+Example:
+
+```json
+"line": {
+  "method": "point_to_point",
+  "parameters": {
+    "start_point": "p_start_l",
+    "end_point": "p_end_l",
+    "number_of_measurements": 5
+  }
+}
+```
 
 ## obstacle
 
@@ -29,18 +60,6 @@ Start of the obstacle zone measured along the line from the start point. Unit: `
 `end`
 
 End of the obstacle zone measured along the line from the start point. Unit: `m`.
-
-`high_low_distance`
-
-Distance between the high safe plane and the low measurement plane. Unit: `m`.
-
-`direction_high_low`
-
-Direction from high position to low position. Unit: none. This is a tool-frame vector and is normalized by the program.
-
-`high_low_distance` and `direction_high_low` are also optional and must be
-supplied together. They are required whenever `start` and `end` define an
-obstacle, because the robot must rise to the safe plane before crossing it.
 
 Obstacle avoidance considers the entire path between consecutive measurement
 points. An obstacle is therefore crossed at the high level even when it falls
@@ -93,7 +112,7 @@ Optional step size used by the Python-stepped fallback force approach. Unit: `m`
 
 `force_direction`
 
-Optional probing direction in the tool frame for the Python-stepped fallback. Unit: none. If omitted, the fallback uses `obstacle.direction_high_low`.
+Optional probing direction in the tool frame for the Python-stepped fallback. Unit: none.
 
 ## Force program
 
@@ -101,7 +120,7 @@ The Python force interface is `src/measurement/apply_force.py`. The readable
 source corresponding to the controller-side URP is stored at:
 
 ```text
-src/measurement/polyscope_scripts/apply_force_logic.script
+src/measurement/polyscope_scripts/apply_force_logic_2.script
 ```
 
 The force approach speed, force-mode `stopl` deceleration, and return `movel`
@@ -109,3 +128,18 @@ speed and acceleration remain hardcoded in that script. Python sends only the
 maximum distance, contact threshold, and holding force through input double
 registers 43-45. After changing the local script, update the Script node in
 `Benoit/apply_force.urp` on the robot controller.
+
+The controller limits a real force approach to 10 seconds. Simulation uses a
+2-second approach timeout and then reports `force_reached = True`. Python allows
+a 5-second communication margin when waiting for that controller result and
+waits at most 30 seconds for return completion. A host-side timeout requests a
+robot stop and aborts the measurement sequence.
+
+After force is reached, the controller waits up to 10 seconds for register 42
+acknowledgement. Main requests data acquisition during this hold and sends the
+acknowledgement only after the acquisition server replies `data_acquired`.
+
+The actual TCP pose is captured immediately before the URP is loaded. After the
+URP reports return completion, Python verifies that pose within the Cartesian
+motion tolerances. A mismatch is corrected with the bounded absolute-move retry
+logic before the next line translation can begin.

@@ -51,6 +51,7 @@ def create_routines_file(
     script_path: str | Path,
     output_path: str | Path,
     routines: list[dict],
+    additional_waypoint_names: list[str] | None = None,
 ) -> list[str]:
     """Read waypoint values and create a routines JSON file.
 
@@ -60,6 +61,8 @@ def create_routines_file(
         routines: List of routines. Each routine must have:
             - `name`: routine name.
             - `steps`: ordered dictionaries containing `waypoint` and `motion`.
+        additional_waypoint_names: Waypoints to store even though they are not
+            routine steps, such as measurement-line endpoints.
 
     Returns:
         Names of waypoints that were referenced by routines but not found in
@@ -70,6 +73,9 @@ def create_routines_file(
     output_path = Path(output_path)
 
     waypoint_names = unique_waypoint_names(routines)
+    for name in additional_waypoint_names or []:
+        if name not in waypoint_names:
+            waypoint_names.append(name)
     waypoints = extract_waypoints_from_script(script_path, waypoint_names)
     missing = [name for name, data in waypoints.items() if not data]
 
@@ -158,4 +164,9 @@ if __name__ == "__main__":
     ]
 
     # Create routines file
-    create_routines_file(script_path, output_path, routines)
+    create_routines_file(
+        script_path,
+        output_path,
+        routines,
+        additional_waypoint_names=["p_start_l", "p_end_l", "p_end_h"],
+    )
