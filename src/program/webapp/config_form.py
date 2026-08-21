@@ -149,7 +149,7 @@ def edited_config(
             raise ValueError(f"Missing field: {FIELD_LABELS.get(key, key)}")
         try:
             obstacle[key] = parse_field_value(
-                key, fields[field_name][0], defaults["obstacle"][key]
+                key, fields[field_name][0], defaults.get("obstacle", {}).get(key, 0.0)
             )
         except ValueError as error:
             label = FIELD_LABELS.get(key, key.replace("_", " ").title())
@@ -196,9 +196,19 @@ def form_html(
 
     if defaults is None:
         defaults = config
+    optional_defaults = {
+        "obstacle": {
+            "start": 0.0,
+            "end": 0.0,
+        },
+    }
 
     def current_value(section: str, key: str) -> Any:
-        return (config.get(section) or {}).get(key, defaults[section][key])
+        section_values = config.get(section) or {}
+        if key in section_values:
+            return section_values[key]
+        default_values = defaults.get(section) or optional_defaults.get(section) or {}
+        return default_values[key]
 
     def value_text(section: str, key: str) -> str:
         return html.escape(
@@ -215,7 +225,7 @@ def form_html(
 
     hidden_controls = []
     for section, keys in {
-        "measurement": ("program_path", "simulation", "force_direction"),
+        "measurement": ("program_path", "simulation", "force_direction", "data_server"),
     }.items():
         for key in keys:
             if key not in defaults.get(section, {}):
@@ -339,7 +349,15 @@ def form_html(
         f'<label for="measurement.max_displacement">Maximum Displacement [cm]</label>{maximum}</div>'
     )
     for key, default_value in defaults["measurement"].items():
-        if key in {"program_path", "simulation", "force_direction", "contact_threshold", "holding_force", "max_displacement"}:
+        if key in {
+            "program_path",
+            "simulation",
+            "force_direction",
+            "data_server",
+            "contact_threshold",
+            "holding_force",
+            "max_displacement",
+        }:
             continue
         label = html.escape(FIELD_LABELS.get(key, key.replace("_", " ").title()))
         measurement_controls += (

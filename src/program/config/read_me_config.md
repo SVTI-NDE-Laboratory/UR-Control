@@ -102,6 +102,16 @@ When `true`, reaching maximum displacement is reported as force success. The
 program sets this automatically when contact and holding force are both zero;
 that zero-force simulation skips the controller-side force cycle.
 
+`data_server`
+When `true`, the main program starts the Python data acquisition server and
+acknowledges the robot-side force hold only after that server replies. This is
+the default and keeps the existing external-acquisition workflow.
+
+When `false`, no data acquisition server is started. Use this with a URP in
+`program_path` that performs acquisition internally, for example by setting the
+tool voltage to 12 V, waiting 0.5 s, setting it back to 0 V, then returning to
+the initial measurement pose without waiting for Python acknowledgement.
+
 `max_displacement`
 
 Maximum probing displacement allowed while searching for contact. Unit: `m`.
@@ -135,9 +145,10 @@ a 5-second communication margin when waiting for that controller result and
 waits at most 30 seconds for return completion. A host-side timeout requests a
 robot stop and aborts the measurement sequence.
 
-After force is reached, the controller waits up to 10 seconds for register 42
-acknowledgement. Main requests data acquisition during this hold and sends the
-acknowledgement only after the acquisition server replies `data_acquired`.
+When `measurement.data_server` is `true`, after force is reached, the
+controller waits up to 10 seconds for register 42 acknowledgement. Main
+requests data acquisition during this hold and sends the acknowledgement only
+after the acquisition server replies `data_acquired`.
 
 The actual TCP pose is captured immediately before the URP is loaded. After the
 URP reports return completion, Python verifies that pose within the Cartesian

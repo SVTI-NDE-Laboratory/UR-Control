@@ -24,13 +24,13 @@ from create_routines_file import create_routines_file
 SCRIPT_PATH = (
     ROUTINES_DIR
     / "polyscope_scripts"
-    / "Define_Waypoints_Block_Diagonal2.script"
+    / "Define_Waypoints_PK-03-PRISM-A.script"
 )
 
 # Inspect this generated file before changing the path to routines_block.json.
-OUTPUT_PATH = PROJECT_ROOT / "src" / "routines" / "routine_files" / "routines_block_diagonal.json"
+OUTPUT_PATH = PROJECT_ROOT / "src" / "routines" / "routine_files" / "routines_pk-03-prism-a.json"
 
-START_WAYPOINTS = ["Home", "p_start_h"]
+START_WAYPOINTS = ["Home", "Tmp1", "Tmp2", "p_start_h"]
 END_WAYPOINTS = list(reversed(START_WAYPOINTS))
 
 # These are stored for point-to-point planning even though they are not routine

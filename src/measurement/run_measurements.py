@@ -201,6 +201,7 @@ def _run_measurements(
                 "measurement_index": measurement_index,
                 "line_position": position,
             },
+            acknowledge_force_hold=measurement.get("data_server", True),
         )
         if measurement_plan_path is not None:
             record_measurement_result(

@@ -40,7 +40,7 @@ from run_routine import run_routine
 
 ROBOT_IP = "192.168.3.10"
 ROUTINES_FILE = (
-    ROUTINES_DIR / "routine_files" / "routines_block_diagonal.json"
+    ROUTINES_DIR / "routine_files" / "routines_pk-03-prism-a.json"
 )
 OUTPUT_DIR = PROJECT_ROOT / "src" / "program" / "config"
 
@@ -68,8 +68,8 @@ MEASUREMENT_CONFIG = {
     },
     "measurement": {
         "program_path": "Benoit/apply_force.urp",
-        "contact_threshold": 30.0,
-        "holding_force": 50.0,
+        "contact_threshold": 0.0,
+        "holding_force": 0.0,
         "max_displacement": 0.001,
         # With nonzero forces this still performs a physical force approach.
         # Simulation only reports maximum displacement as a successful cycle.

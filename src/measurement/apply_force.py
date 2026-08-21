@@ -125,6 +125,7 @@ def apply_force(
     simulation: bool = False,
     acquire_data: Callable[[dict], dict] | None = None,
     acquisition_context: dict | None = None,
+    acknowledge_force_hold: bool = True,
 ) -> tuple[bool, str]:
     """Run a force cycle and return its result plus measurement timestamp."""
 
@@ -218,6 +219,7 @@ def apply_force(
         )
 
         if status == 1:
+            force_reached = True
             if acquire_data is not None:
                 print("Data acquisition: requesting measurement.")
                 acquisition_result = acquire_data(dict(acquisition_context or {}))
@@ -231,7 +233,7 @@ def apply_force(
                     else ""
                 )
                 print(f"Data acquisition: measurement completed{duration_text}.")
-            else:
+            elif acknowledge_force_hold:
                 print(
                     "Data acquisition callback unavailable; using standalone "
                     f"{fallback_hold_duration:.1f} s hold."
@@ -243,20 +245,25 @@ def apply_force(
                         break
                     assert_robot_safe(rtde_receive)
                     time.sleep(min(0.05, remaining))
-
-            # Do not acknowledge a controller that has already left its hold
-            # because its own acknowledgement deadline expired.
-            assert_robot_safe(rtde_receive)
-            current_status = rtde_receive.getOutputIntRegister(status_register)
-            if current_status != 1:
-                raise TimeoutError(
-                    "Force hold ended before data acquisition acknowledgement "
-                    f"could be sent; robot status is {current_status}."
+            else:
+                print(
+                    "Data acquisition server disabled; robot program owns "
+                    "acquisition and return."
                 )
-            if not rtde_io.setInputIntRegister(status_register, 1):
-                raise RuntimeError("Could not send return acknowledgement.")
-            print("Force program: acquisition acknowledged; releasing force hold.")
-            force_reached = True
+
+            if acknowledge_force_hold:
+                # Do not acknowledge a controller that has already left its hold
+                # because its own acknowledgement deadline expired.
+                assert_robot_safe(rtde_receive)
+                current_status = rtde_receive.getOutputIntRegister(status_register)
+                if current_status != 1:
+                    raise TimeoutError(
+                        "Force hold ended before data acquisition acknowledgement "
+                        f"could be sent; robot status is {current_status}."
+                    )
+                if not rtde_io.setInputIntRegister(status_register, 1):
+                    raise RuntimeError("Could not send return acknowledgement.")
+                print("Force program: acquisition acknowledged; releasing force hold.")
         elif status == 3:
             raise TimeoutError("Robot timed out while waiting for acknowledgement.")
 

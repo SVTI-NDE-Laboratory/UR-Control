@@ -1,0 +1,242 @@
+def Define_Waypoints_PK03PRISMA():
+  global _hidden_verificationVariable=0
+  set_gravity([0.0, -9.82, 6.013015783813504E-16])
+  tool_wrench_limit_disable()
+  set_target_payload(1.970000, [-0.003000, -0.010000, 0.017000], [0.004766, 0.004766, 0.004766, 0.000000, 0.000000, 0.000000])
+  set_safety_mode_transition_hardness(1)
+  set_tool_communication(False, 115200, 0, 1, 1.5, 3.5)
+  set_tool_output_mode(0)
+  set_tool_digital_output_mode(0, 2)
+  set_tool_digital_output_mode(1, 2)
+  set_tool_voltage(0)
+  motion_version_set(2)
+  set_tcp(p[0.0,0.0,0.0,0.0,0.0,0.0])
+  set_standard_analog_input_domain(0, 1)
+  set_standard_analog_input_domain(1, 1)
+  set_tool_analog_input_domain(0, 1)
+  set_tool_analog_input_domain(1, 1)
+  set_analog_outputdomain(0, 0)
+  set_analog_outputdomain(1, 0)
+  set_input_actions_to_default()
+  global line_length=0
+  global line_incr=0
+  global avoid_start=0
+  global avoid_end=0
+  global avoid_gap=0
+  global Plane_1=p[0.0,0.58,0.0,-1.5707963267948963,-2.9874637964168546E-16,-2.9874637964168546E-16]
+  # begin: URCap Installation Node
+  #   Source: UR Connect, 2.3.8, Universal Robots
+  #   Type: UR Connect
+  myurRPC = rpc_factory("xmlrpc","http://127.0.0.1:40474")
+  # end: URCap Installation Node
+  step_count_0586720e_c819_41dd_b5ab_188c435dd8c8 = 0.0
+  thread Step_Counter_Thread_df27a1df_28ce_49b8_b9ee_c3f7b0136fab():
+    while (True):
+      step_count_0586720e_c819_41dd_b5ab_188c435dd8c8 = step_count_0586720e_c819_41dd_b5ab_188c435dd8c8 + 1.0
+      sync()
+    end
+  end
+  run Step_Counter_Thread_df27a1df_28ce_49b8_b9ee_c3f7b0136fab()
+  global Tmp1_p=p[-.113570752216, -.547327865608, .239361202951, 1.385438791499, -.741806238285, -.067300078544]
+  global Tmp1_q=[1.0432738785984936, -1.3090128761580964, 2.443455998097555, -1.134462670688965, 1.5708153247833252, 0.4531631838747341]
+  global Tmp2_p=p[-.444834692656, -.337815986851, .480775811434, .947192126213, -1.626640383866, -2.056220047865]
+  global Tmp2_q=[0.5832937190602365, -1.5257649386645697, 2.1092993209304187, -1.1277588162187717, 2.9204955021238326, -0.8221830109535082]
+  global p_start_h_p=p[-.495944703212, .447917880087, .996475130056, -1.204631333120, -1.199836266992, -1.199836237349]
+  global p_start_h_q=[-0.8629212922482861, -1.5154481223515068, 1.5253087846485078, -3.155534695060618, 4.021592887651877, -1.5594201726354022]
+  global p_start_l_p=p[-.496588647755, .547924315194, .997110793774, -1.204641278569, -1.199841033265, -1.199828459831]
+  global p_start_l_q=[-0.9668322910176528, -1.4204889233395228, 1.4165978367852115, -3.141366876995381, 4.125468745205985, -1.5578593593032686]
+  global p_end_l_p=p[.602865603289, .554990388495, .991630006385, -1.204641278578, -1.199841033282, -1.199828459820]
+  global p_end_l_q=[-2.7903952404260295, -1.2629730363420402, 1.2242071190678816, -3.1410767210977872, 5.948627400931023, -1.5220080350728473]
+  global p_end_h_p=p[.603494412994, .454997142607, .990991421367, -1.204625727258, -1.199847911447, -1.199816304459]
+  global p_end_h_q=[-2.9313026401330298, -1.3420160165168085, 1.3306746735842905, -3.193534917925538, 6.0895219209044775, -1.497095713867921]
+  $ 2 "Robot Program"
+  $ 3 "Home"
+  movej([1.5704206228256226, -1.3090128761580964, 2.443455998097555, -1.134462670688965, 1.5708153247833252, 1.5707963267948966], a=1.3962634015954636, v=1.0471975511965976)
+  $ 4 "MoveJ"
+  $ 5 "Tmp1" "breakAfter"
+  movej(get_inverse_kin(Tmp1_p, qnear=Tmp1_q), a=1.3962634015954636, v=1.0471975511965976)
+  $ 6 "Tmp2" "breakAfter"
+  movej(get_inverse_kin(Tmp2_p, qnear=Tmp2_q), a=1.3962634015954636, v=1.0471975511965976)
+  $ 7 "MoveJ"
+  $ 8 "p_start_h" "breakAfter"
+  movej(get_inverse_kin(p_start_h_p, qnear=p_start_h_q), a=1.3962634015954636, v=1.0471975511965976)
+  $ 9 "MoveL"
+  $ 10 "p_start_l" "breakAfter"
+  movel(p_start_l_p, a=1.2, v=0.25)
+  $ 11 "p_end_l" "breakAfter"
+  movel(p_end_l_p, a=1.2, v=0.25)
+  $ 12 "p_end_h" "breakAfter"
+  movel(p_end_h_p, a=1.2, v=0.25)
+  $ 13 "MoveL"
+  $ 14 "p_start_h" "breakAfter"
+  movel(p_start_h_p, a=1.2, v=0.25)
+  $ 15 "Script: apply_force_logic.script"
+  # This is the Script-node source for Benoit/apply_force.urp.
+  # Keep the source name different from apply_force.script because PolyScope
+  # generates apply_force.script automatically when it saves apply_force.urp.
+  
+  # ---------- Configuration ----------
+  register = 42
+  
+  # Global variables appear with live values in PolyScope's Variables pane.
+  global apply_force_phase = "Setting program variables"
+  global apply_force_max_distance = read_input_float_register(43)
+  global apply_force_contact_threshold = read_input_float_register(44)
+  global apply_force_holding_force = read_input_float_register(45)
+  global apply_force_simulation = read_input_integer_register(46) == 1
+  global apply_force_force_reached = False
+  
+  # Fixed safety settings
+  
+  max_approach_speed = 0.02
+  contact_timeout = 10.0
+  
+  return_speed = 0.04
+  return_acceleration = 0.100
+  
+  # Status:
+  # 0 = initialized / completed
+  # 1 = force reached (real or simulated); waiting for Python acknowledgement
+  # 2 = maximum distance reached without contact
+  # 3 = acknowledgement timeout
+  
+  write_output_integer_register(register, 0)
+  
+  # Reject acknowledgement remaining from an earlier run
+  while read_input_integer_register(register) != 0:
+      sync()
+  end
+  
+  start_pose = get_actual_tcp_pose()
+  force_frame = start_pose
+  
+  zero_ftsensor()
+  sleep(0.2)
+  
+  contact_detected = False
+  maximum_reached = False
+  
+  # Approach along the starting TCP Z+ direction
+  apply_force_phase = "Moving to reach contact force"
+  
+  while (contact_detected == False) and (maximum_reached == False):
+  
+      force_mode(
+          force_frame,
+          [0, 0, 1, 0, 0, 0],
+          [0, 0, apply_force_holding_force, 0, 0, 0],
+          2,
+          [0.010, 0.010, max_approach_speed, 0.10, 0.10, 0.10]
+      )
+  
+      current_pose = get_actual_tcp_pose()
+      relative_pose = pose_trans(pose_inv(start_pose), current_pose)
+      travelled_z = relative_pose[2]
+  
+      measured_force = force()
+  
+      if measured_force >= apply_force_contact_threshold:
+          contact_detected = True
+      elif travelled_z >= apply_force_max_distance:
+          maximum_reached = True
+      end
+  
+      sync()
+  end
+  
+  # In simulation, reaching maximum distance is reported as force reached. Stop
+  # force mode first so the robot cannot move beyond the configured distance while
+  # Python performs the simulated hold/acknowledgement sequence.
+  force_mode_stopped = False
+  
+  if contact_detected:
+      apply_force_force_reached = True
+  elif maximum_reached and apply_force_simulation:
+      apply_force_force_reached = True
+      end_force_mode()
+      stopl(1.0)
+      sleep(0.1)
+      force_mode_stopped = True
+  end
+  
+  if apply_force_force_reached:
+  
+      if contact_detected:
+          apply_force_phase = "Force reached"
+      else:
+          apply_force_phase = "Maximum displacement reached; simulating force reached"
+      end
+      write_output_integer_register(register, 1)
+  
+      acknowledged = False
+      timed_out = False
+      elapsed_time = 0.0
+  
+      # Maintain real force while waiting for Python. In simulation, force mode was
+      # already stopped at maximum distance and this loop only waits for the same
+      # acknowledgement, allowing the rest of the workflow to be tested.
+      if contact_detected:
+          apply_force_phase = "Waiting for end of force hold"
+      else:
+          apply_force_phase = "Waiting for end of simulated hold"
+      end
+  
+      while (acknowledged == False) and (timed_out == False):
+  
+          if contact_detected:
+              force_mode(
+                  force_frame,
+                  [0, 0, 1, 0, 0, 0],
+                  [0, 0, apply_force_holding_force, 0, 0, 0],
+                  2,
+                  [0.010, 0.010, max_approach_speed, 0.10, 0.10, 0.10]
+              )
+          end
+  
+          if read_input_integer_register(register) == 1:
+              acknowledged = True
+          end
+  
+          elapsed_time = elapsed_time + get_steptime()
+  
+          if elapsed_time >= contact_timeout:
+              timed_out = True
+          end
+  
+          sync()
+      end
+  
+      if timed_out:
+          apply_force_phase = "Force hold acknowledgement timed out"
+          write_output_integer_register(register, 3)
+      else:
+          apply_force_phase = "Force hold completed"
+      end
+  
+  else:
+  
+      apply_force_phase = "Maximum displacement reached"
+      write_output_integer_register(register, 2)
+  
+  end
+  
+  if force_mode_stopped == False:
+      end_force_mode()
+      stopl(1.0)
+      sleep(0.1)
+  end
+  
+  apply_force_phase = "Moving back to initial position"
+  
+  movel(
+      start_pose,
+      a=return_acceleration,
+      v=return_speed
+  )
+  
+  apply_force_phase = "Initial position reached"
+  
+  write_output_integer_register(register, 0)
+  
+  apply_force_phase = "Cycle completed"
+end

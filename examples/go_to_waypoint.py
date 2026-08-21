@@ -20,11 +20,11 @@ from robot_connection import assert_robot_running, get_rtde_receive
 
 
 ROBOT_IP = "192.168.3.10"
-ROUTINES_FILE = ROUTINES_DIR / "routine_files" / "routines_block_diagonal.json"
+ROUTINES_FILE = ROUTINES_DIR / "routine_files" / "routines_pk-03-prism-a.json"
 
 # WAYPOINT_NAME = "Home"
-WAYPOINT_NAME = "Home"
-USE_LINEAR_MOVE = False  # Set to False to use movej instead of movel
+WAYPOINT_NAME = "p_start_h"
+USE_LINEAR_MOVE = True  # Set to False to use movej instead of movel
 
 A = 0.1
 V = 0.05

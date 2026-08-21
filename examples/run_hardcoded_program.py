@@ -36,7 +36,7 @@ from run_routine import run_routine
 # ---------------------------------------------------------------------------
 
 ROBOT_IP = "192.168.3.10"
-ROUTINES_FILE = ROUTINES_DIR / "routine_files" / "routines_block.json"
+ROUTINES_FILE = ROUTINES_DIR / "routine_files" / "routines_pk-03-prism-a.json"
 OUTPUT_DIR = PROJECT_ROOT / "src" / "program" / "config"
 
 # Retaining an operator confirmation prevents an accidental editor Run click

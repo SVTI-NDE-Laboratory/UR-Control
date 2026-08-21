@@ -17,6 +17,7 @@ def validate_force_config(config: dict) -> None:
     """Validate force settings before any routine can move the robot."""
 
     measurement = config["measurement"]
+    measurement.setdefault("data_server", True)
     contact = measurement["contact_threshold"]
     holding = measurement["holding_force"]
     if contact < 0 or holding < 0:
@@ -32,6 +33,8 @@ def validate_force_config(config: dict) -> None:
         raise ValueError("Maximum displacement must be positive.")
     if not measurement["program_path"].strip():
         raise ValueError("Robot program path cannot be empty.")
+    if not isinstance(measurement["data_server"], bool):
+        raise ValueError("Data server must be true or false.")
     if "force_step_distance" in measurement and measurement["force_step_distance"] <= 0:
         raise ValueError("Force step distance must be positive.")
     if "force_direction" in measurement:
@@ -107,7 +110,8 @@ def print_measurement_config_summary(
     )
     print(
         f"  measurement: program_path={measurement['program_path']}, "
-        f"simulation={measurement['simulation']}"
+        f"simulation={measurement['simulation']}, "
+        f"data_server={measurement['data_server']}"
     )
     print(
         f"  motion: type={motion['type']}, acceleration={motion['acceleration']}, "

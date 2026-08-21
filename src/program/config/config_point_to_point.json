@@ -2,16 +2,12 @@
   "line": {
     "method": "point_to_point",
     "parameters": {
-      "increment": 0.1,
-      "number_of_measurements": 9,
+      "increment": 0.175,
+      "number_of_measurements": 7,
       "start_point": "p_start_l",
       "end_point": "p_end_l",
       "spacing_source": "increment"
     }
-  },
-  "obstacle": {
-    "start": 0.21,
-    "end": 0.31
   },
   "motion": {
     "type": "l",
@@ -19,10 +15,11 @@
     "speed": 0.1
   },
   "measurement": {
-    "program_path": "Benoit/apply_force.urp",
-    "contact_threshold": 30.0,
-    "holding_force": 50.0,
+    "program_path": "Inspection/Programs/apply_force_mira.urp",
+    "contact_threshold": 140.0,
+    "holding_force": 160.0,
     "max_displacement": 0.05,
-    "simulation": false
+    "simulation": false,
+    "data_server": false
   }
 }

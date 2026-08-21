@@ -130,25 +130,29 @@ if __name__ == "__main__":
     acquisition_process = None
 
     try:
-        # Start the acquisition service before any robot connection or motion.
-        # The launcher returns only after an application-level handshake proves
-        # that the expected server and protocol are available.
-        acquisition_process, acquisition_config = start_data_acquisition_server(
-            output_dir / "data_acquisition_server.log"
-        )
-        handshake = acquisition_config["handshake"]
-        print(
-            "Data acquisition handshake confirmed: "
-            f"{handshake['server']} protocol {handshake['protocol_version']}."
-        )
-
-        def acquire_measurement(payload: dict) -> dict:
-            return request_data_acquisition(
-                acquisition_config["host"],
-                acquisition_config["port"],
-                payload,
-                acquisition_config["request_timeout"],
+        acquire_measurement = None
+        if measurement_config["measurement"].get("data_server", True):
+            # Start the acquisition service before any robot connection or motion.
+            # The launcher returns only after an application-level handshake proves
+            # that the expected server and protocol are available.
+            acquisition_process, acquisition_config = start_data_acquisition_server(
+                output_dir / "data_acquisition_server.log"
             )
+            handshake = acquisition_config["handshake"]
+            print(
+                "Data acquisition handshake confirmed: "
+                f"{handshake['server']} protocol {handshake['protocol_version']}."
+            )
+
+            def acquire_measurement(payload: dict) -> dict:
+                return request_data_acquisition(
+                    acquisition_config["host"],
+                    acquisition_config["port"],
+                    payload,
+                    acquisition_config["request_timeout"],
+                )
+        else:
+            print("Data acquisition server disabled by measurement.data_server=false.")
 
         # Direct terminal runs retain their confirmation. The control panel
         # supplies --operator-confirmed only after its safety dialog is accepted.

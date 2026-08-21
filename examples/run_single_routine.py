@@ -18,7 +18,7 @@ from run_routine import run_routine
 
 
 ROBOT_IP = "192.168.3.10"
-ROUTINES_FILE = ROUTINES_DIR / "routine_files" / "routines_block_diagonal.json"
+ROUTINES_FILE = ROUTINES_DIR / "routine_files" / "routines_pk-03-prism-a.json"
 
 ROUTINE_NAME = "end"
 JOINT_TOLERANCE = 0.01

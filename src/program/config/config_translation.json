@@ -23,6 +23,7 @@
     "contact_threshold": 30.0,
     "holding_force": 30.0,
     "max_displacement": 0.05,
-    "simulation": false
+    "simulation": false,
+    "data_server": true
   }
 }
