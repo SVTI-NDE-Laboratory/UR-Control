@@ -42,16 +42,31 @@ def high_to_low(
     config: dict,
     routines_data: dict | None = None,
     line_position: float = 0.0,
+    lateral_offset: bool = True,
 ) -> None:
     """Move from the safe high plane to the low measurement plane."""
 
     geometry = line_geometry(config, routines_data)
     if geometry["method"] == POINT_TO_POINT:
         acceleration, speed = motion_parameters(config)
+        if lateral_offset and abs(geometry["offset_y"]) > 1e-12:
+            movel_pose(
+                robot_ip,
+                rtde_receive,
+                point_pose(geometry, line_position, "low", lateral_offset=False),
+                acceleration,
+                speed,
+                30.0,
+            )
         movel_pose(
             robot_ip,
             rtde_receive,
-            point_pose(geometry, line_position, "low"),
+            point_pose(
+                geometry,
+                line_position,
+                "low",
+                lateral_offset=lateral_offset,
+            ),
             acceleration,
             speed,
             30.0,
@@ -73,6 +88,7 @@ def low_to_high(
     config: dict,
     routines_data: dict | None = None,
     line_position: float = 0.0,
+    lateral_offset: bool = True,
 ) -> None:
     """Move from the low measurement plane back to the safe high plane."""
 
@@ -82,7 +98,12 @@ def low_to_high(
         movel_pose(
             robot_ip,
             rtde_receive,
-            point_pose(geometry, line_position, "high"),
+            point_pose(
+                geometry,
+                line_position,
+                "high",
+                lateral_offset=lateral_offset,
+            ),
             acceleration,
             speed,
             30.0,
@@ -106,6 +127,7 @@ def translate_along_line(
     routines_data: dict | None = None,
     target_position: float | None = None,
     height_mode: str = "low",
+    lateral_offset: bool = True,
 ) -> None:
     """Move along the configured line, relatively or to an absolute taught line pose."""
 
@@ -117,7 +139,12 @@ def translate_along_line(
         movel_pose(
             robot_ip,
             rtde_receive,
-            point_pose(geometry, target_position, height_mode),
+            point_pose(
+                geometry,
+                target_position,
+                height_mode,
+                lateral_offset=lateral_offset,
+            ),
             acceleration,
             speed,
             30.0,
@@ -132,18 +159,43 @@ def translate_along_line(
 def move_to_start_high(
     robot_ip: str, rtde_receive, config: dict, routines_data: dict | None = None
 ) -> None:
-    """Move to the effective safe start pose for point-to-point measurements."""
+    """Move to the effective safe start pose without applying any Y offset."""
 
     geometry = line_geometry(config, routines_data)
     if geometry["method"] != POINT_TO_POINT:
         return
-    if max(abs(value) for value in geometry["offset_vector"]) <= 1e-12:
+    if max(abs(value) for value in geometry["start_x_vector"]) <= 1e-12:
         return
     acceleration, speed = motion_parameters(config)
     movel_pose(
         robot_ip,
         rtde_receive,
-        geometry["safe_pose"],
+        geometry["zero_y_safe_pose"],
+        acceleration,
+        speed,
+        30.0,
+    )
+
+
+def move_to_zero_y_low(
+    robot_ip: str,
+    rtde_receive,
+    config: dict,
+    routines_data: dict | None = None,
+    line_position: float = 0.0,
+) -> None:
+    """Move from a Y-offset low point back to the taught X/Z line."""
+
+    geometry = line_geometry(config, routines_data)
+    if geometry["method"] != POINT_TO_POINT:
+        return
+    if abs(geometry["offset_y"]) <= 1e-12:
+        return
+    acceleration, speed = motion_parameters(config)
+    movel_pose(
+        robot_ip,
+        rtde_receive,
+        point_pose(geometry, line_position, "low", lateral_offset=False),
         acceleration,
         speed,
         30.0,

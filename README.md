@@ -311,7 +311,8 @@ Translation and point-to-point defaults are stored separately:
 
 ```text
 src/program/config/config_translation.json
-src/program/config/config_point_to_point.json
+src/program/config/config_mira.json
+src/program/config/config_server.json
 ```
 
 ### Run Measurement
@@ -323,9 +324,9 @@ Windows folder picker.
 
 **Show program terminal**
 
-Opens the main measurement worker in a visible terminal. The data-acquisition
-server always opens in its own popup terminal so its handshake and requests can
-be observed.
+Opens the main measurement worker in a visible terminal. Data-acquisition
+control messages are handled by that same worker through the configured TCP
+listener.
 
 **Create dated session folder**
 
@@ -353,22 +354,20 @@ later run can replace files with the same names.
 4. A new session ID and output location are created.
 5. `commands/run_measurement_sequence.py` starts as a measurement worker.
 6. The measurement command writes the effective configuration and measurement plan.
-7. The measurement command launches the local data-acquisition server on `127.0.0.1:5055`.
-8. An application-level handshake verifies the expected server and protocol.
+7. The measurement command starts the data-acquisition control listener.
+8. The measurement command waits until the external client sends `ALIVE` and receives `OK`.
 9. The measurement command repeats the robot readiness and Home checks.
-10. The `start` routine moves to the safe measurement start.
+10. The `home_to_start` routine moves to the safe measurement start, falling back to `start` for legacy routine files.
 11. Every valid line point is approached and verified.
 12. The force URP runs.
-13. When force is reached, Python requests one data acquisition.
-14. The server waits a random `1–3 s`, then returns `data_acquired` with a
-    request ID and timestamp.
-15. Python acknowledges input register 42 only after that matching response.
+13. When force is reached, `ISREADY` returns `T`; otherwise it returns `F`.
+14. The external client records data, then sends `GO` and receives `ACK`.
+15. Python acknowledges input register 42 only after `GO` is received during force hold.
 16. The force script releases the hold and returns to its pre-force pose.
 17. Python verifies/corrects that return pose before continuing.
-18. After the final point, the `end` routine returns the robot to Home.
+18. After the final point, the `end_to_home` routine returns the robot to Home, falling back to `end` for legacy routine files.
 
-The current acquisition server simulates timing and completion; it does not yet
-produce scientific sensor data.
+The current protocol is documented in `src/program/data_acquisition/protocol.md`.
 
 ## 8. Live visualization and controls
 
@@ -396,7 +395,6 @@ A normal session folder contains:
 | `measurement_plan.json` | Planned measurement positions and per-point results |
 | `state.json` | Latest live worker state consumed by the web page |
 | `program.log` | Timestamped main-program stdout and stderr |
-| `data_acquisition_server.log` | Timestamped acquisition-server terminal output |
 
 Both logs are flushed as messages occur. A log line looks like:
 
@@ -420,6 +418,7 @@ Both logs are flushed as messages occur. A log line looks like:
 - `line_position` is stored in millimetres.
 - The timestamp is the acquisition completion timestamp when acquisition runs.
 - A failed force attempt records `force_reached: false` before the run stops.
+- Obstacle-skipped points remain listed with `measured: false` and `skip_reason: "obstacle"`.
 - Untouched points retain `null` results.
 - Files are updated atomically to avoid exposing partially written JSON.
 
@@ -435,24 +434,19 @@ force_contact reached
 → force_reached = True
 → robot output register 42 = 1
 → maintain force_holding
-→ request data acquisition
-→ receive data_acquired
+→ ISREADY returns T
+→ external client sends GO
+→ Python replies ACK
 → Python input register 42 = 1
 → end force mode
 → return to saved pose
 → robot output register 42 = 0
 ```
 
-The simulated acquisition delay is configured in:
+Data-acquisition listener settings are configured in:
 
 ```text
-data_acquisition_server/config_server.json
-```
-
-Default data-acquisition communication settings are configured in:
-
-```text
-src/program/data_acquisition/config_client.json
+src/program/data_acquisition/config_server.json
 ```
 
 Current defaults are:
@@ -461,15 +455,12 @@ Current defaults are:
 |---|---:|
 | Host | `127.0.0.1` |
 | Port | `5055` |
-| Startup handshake timeout | `5 s` |
-| Acquisition client timeout | `6 s` |
-| Heartbeat interval | `2 s` |
-| Heartbeat timeout | `1 s` |
-| Simulated delay | `1–3 s` |
+| Client ready timeout | `30 s` |
+| GO wait timeout | `8 s` |
 
-The `6 s` client timeout is shorter than the robot's `10 s` acknowledgement
-timeout. If acquisition fails or replies too late, Python does not claim a
-successful measurement and requests a robot stop.
+The external client must send `GO` while the robot-side force program is still
+holding force. If `GO` arrives too late, Python does not claim a successful
+measurement and requests a robot stop.
 
 ## 11. Direct command-line operation
 
@@ -488,7 +479,7 @@ The web app is recommended, but the measurement command can be run directly:
 It asks for Enter before connecting and uses:
 
 ```text
-src/program/config/config.json
+src/program/config/config_mira.json
 src/routines/routine_files/routines_block.json
 src/program/config/                 as the output folder
 ```
@@ -585,9 +576,9 @@ after `10 s` or at the distance limit.
 
 ### Acquisition acknowledgement timeout
 
-Check the acquisition popup and `data_acquisition_server.log`. Confirm that
-port `5055` is free and that the simulated delay plus communication remains
-below the `10 s` robot acknowledgement deadline.
+Check that the external acquisition client can reach the configured listener
+host/port and sends `GO` while `ISREADY` is true. Confirm that port `5055` is
+free before starting the measurement worker.
 
 ### Waypoint is physically wrong although verification succeeds
 
@@ -625,7 +616,7 @@ not all provide the same browser confirmation flow as the main application.
 ## 15. Project structure
 
 ```text
-data_acquisition_server/     reference simulated acquisition server
+data_acquisition_server/     legacy simulated acquisition server
 examples/                    focused experimental scripts and utilities
 src/measurement/             line planning, traversal, force integration, state
 src/program/                 supported command programs, defaults, and FastAPI web app

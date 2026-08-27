@@ -1,9 +1,9 @@
 """Run the complete robot measurement sequence.
 
 Program order:
-    1. Move through the configured ``start`` routine.
+    1. Move through the configured ``home_to_start`` routine.
     2. Perform all configured measurements.
-    3. Move through the configured ``end`` routine.
+    3. Move through the configured ``end_to_home`` routine.
 
 The robot does not move until the operator confirms in the control panel or terminal.
 """
@@ -12,8 +12,6 @@ import argparse
 import json
 import sys
 from pathlib import Path
-from subprocess import Popen
-from threading import Event, Thread
 from typing import Any, Callable
 
 
@@ -46,10 +44,9 @@ from robot_connection import (
 )
 from run_measurements import MeasurementUnavailableError, run_measurements
 from run_routine import run_routine
-from data_acquisition.client import request_data_acquisition, start_heartbeat_thread
-from data_acquisition.process import (
-    start_data_acquisition_server,
-    stop_data_acquisition_server,
+from data_acquisition.control_server import (
+    AcquisitionControlServer,
+    start_acquisition_control_server,
 )
 from data_acquisition.timestamped_logging import install_timestamped_tee
 
@@ -57,7 +54,7 @@ from data_acquisition.timestamped_logging import install_timestamped_tee
 # Connection and configuration locations.
 ROBOT_IP = "192.168.3.10"
 ROUTINES_FILE = ROUTINES_DIR / "routine_files" / "routines_block.json"
-CONFIG_FILE = CONFIG_DIR / "config.json"
+CONFIG_FILE = CONFIG_DIR / "config_mira.json"
 
 # A joint move counts as complete when every joint is within this many radians.
 JOINT_TOLERANCE = 0.01
@@ -66,9 +63,15 @@ WAIT_TIMEOUT = 30.0
 # Home is joint-only in the active routine file. Require every joint to be
 # within this many radians of the taught target before permitting any motion.
 HOME_JOINT_TOLERANCE = 0.005
+HOME_TO_START_ROUTINE = "home_to_start"
+START_TO_HOME_ROUTINE = "start_to_home"
+HOME_TO_END_ROUTINE = "home_to_end"
+END_TO_HOME_ROUTINE = "end_to_home"
+LEGACY_START_ROUTINE = "start"
+LEGACY_END_ROUTINE = "end"
 
 AcquireMeasurement = Callable[[dict[str, Any]], dict[str, Any]]
-AcquisitionResources = tuple[Popen | None, Event | None, Thread | None, AcquireMeasurement | None]
+AcquisitionResources = tuple[AcquisitionControlServer | None, AcquireMeasurement | None]
 
 
 def tee_terminal_output(log_path: Path) -> None:
@@ -85,7 +88,7 @@ def parse_args() -> argparse.Namespace:
         "--config",
         type=Path,
         default=CONFIG_FILE,
-        help="Measurement configuration file (defaults to config/config.json).",
+        help="Measurement configuration file (defaults to config/config_mira.json).",
     )
     parser.add_argument(
         "--operator-confirmed",
@@ -140,56 +143,43 @@ def load_run_inputs(
     return routines_data, measurement_config, state_file, measurement_plan_file
 
 
+def read_state_snapshot(state_file: Path) -> dict[str, Any]:
+    """Return the latest program state for ALIVE responses."""
+
+    try:
+        return json.loads(state_file.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return {"mode": "starting"}
+
+
 def start_acquisition_if_enabled(
-    measurement_config: dict[str, Any], output_dir: Path
+    measurement_config: dict[str, Any], state_file: Path
 ) -> AcquisitionResources:
     """Start data acquisition communication when the run configuration needs it."""
 
     if not measurement_config["measurement"].get("data_server", True):
-        print("Data acquisition server disabled by measurement.data_server=false.")
-        return None, None, None, None
+        print("Data acquisition control server disabled by measurement.data_server=false.")
+        return None, None
 
-    # Start the acquisition service before any robot connection or motion. The
-    # launcher returns only after an application-level handshake proves that the
-    # expected server and protocol are available.
-    acquisition_process, acquisition_config = start_data_acquisition_server(
-        output_dir / "data_acquisition_server.log"
+    control_server, acquisition_config = start_acquisition_control_server(
+        state_provider=lambda: read_state_snapshot(state_file)
     )
-    handshake = acquisition_config["handshake"]
     print(
-        "Data acquisition handshake confirmed: "
-        f"{handshake['server']} protocol {handshake['protocol_version']}."
-    )
-    heartbeat_stop, heartbeat_thread = start_heartbeat_thread(
-        acquisition_config["host"],
-        acquisition_config["port"],
-        acquisition_config["heartbeat_interval"],
-        acquisition_config["heartbeat_timeout"],
+        "Data acquisition control server listening on "
+        f"{acquisition_config['host']}:{acquisition_config['port']}."
     )
 
     def acquire_measurement(payload: dict[str, Any]) -> dict[str, Any]:
-        return request_data_acquisition(
-            acquisition_config["host"],
-            acquisition_config["port"],
-            payload,
-            acquisition_config["request_timeout"],
-        )
+        return control_server.wait_for_go(payload)
 
-    return acquisition_process, heartbeat_stop, heartbeat_thread, acquire_measurement
+    return control_server, acquire_measurement
 
 
-def stop_acquisition_resources(
-    acquisition_process: Popen | None,
-    heartbeat_stop: Event | None,
-    heartbeat_thread: Thread | None,
-) -> None:
-    """Stop heartbeat communication and the reference acquisition server."""
+def stop_acquisition_resources(control_server: AcquisitionControlServer | None) -> None:
+    """Stop the data acquisition control server."""
 
-    if heartbeat_stop is not None:
-        heartbeat_stop.set()
-    if heartbeat_thread is not None:
-        heartbeat_thread.join(timeout=1)
-    stop_data_acquisition_server(acquisition_process)
+    if control_server is not None:
+        control_server.stop()
 
 
 def confirm_operator_if_needed(operator_confirmed: bool) -> None:
@@ -220,6 +210,23 @@ def verify_robot_startup(routines_data: dict[str, Any], state_file: Path) -> Any
     return rtde_receive
 
 
+def routine_exists(routines_data: dict[str, Any], routine_name: str) -> bool:
+    """Return whether a named routine is present in loaded routine data."""
+
+    return any(
+        routine.get("name") == routine_name
+        for routine in routines_data.get("routines", [])
+    )
+
+
+def preferred_routine(
+    routines_data: dict[str, Any], preferred_name: str, legacy_name: str
+) -> str:
+    """Use the new routine name when present, otherwise keep legacy files usable."""
+
+    return preferred_name if routine_exists(routines_data, preferred_name) else legacy_name
+
+
 def run_robot_sequence(
     rtde_receive,
     routines_data: dict[str, Any],
@@ -232,7 +239,7 @@ def run_robot_sequence(
 
     write_state(state_file, {"mode": "start_routine"})
     run_routine(
-        "start",
+        preferred_routine(routines_data, HOME_TO_START_ROUTINE, LEGACY_START_ROUTINE),
         routines_data,
         ROBOT_IP,
         rtde_receive,
@@ -252,11 +259,14 @@ def run_robot_sequence(
         routines_data,
         measurement_plan_file,
         acquire_measurement,
+        JOINT_TOLERANCE,
+        WAIT_TIMEOUT,
+        True,
     )
 
     write_state(state_file, {"mode": "end_routine"})
     run_routine(
-        "end",
+        preferred_routine(routines_data, END_TO_HOME_ROUTINE, LEGACY_END_ROUTINE),
         routines_data,
         ROBOT_IP,
         rtde_receive,
@@ -280,13 +290,11 @@ def main() -> None:
 
     # Keep the connection reference for cleanup if startup fails partway through.
     rtde_receive = None
-    acquisition_process = None
-    heartbeat_stop = None
-    heartbeat_thread = None
+    control_server = None
 
     try:
-        acquisition_process, heartbeat_stop, heartbeat_thread, acquire_measurement = (
-            start_acquisition_if_enabled(measurement_config, output_dir)
+        control_server, acquire_measurement = start_acquisition_if_enabled(
+            measurement_config, state_file
         )
         confirm_operator_if_needed(args.operator_confirmed)
         rtde_receive = verify_robot_startup(routines_data, state_file)
@@ -342,11 +350,7 @@ def main() -> None:
         # exception. This cleanup does not command the robot back to Home.
         if rtde_receive is not None:
             rtde_receive.disconnect()
-        stop_acquisition_resources(
-            acquisition_process,
-            heartbeat_stop,
-            heartbeat_thread,
-        )
+        stop_acquisition_resources(control_server)
 
 
 if __name__ == "__main__":

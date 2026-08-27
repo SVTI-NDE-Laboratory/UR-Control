@@ -30,8 +30,13 @@ SCRIPT_PATH = (
 # Inspect this generated file before changing the path to routines_block.json.
 OUTPUT_PATH = PROJECT_ROOT / "src" / "routines" / "routine_files" / "routines_pk-03-prism-a.json"
 
-START_WAYPOINTS = ["Home", "Tmp1", "Tmp2", "p_start_h"]
-END_WAYPOINTS = list(reversed(START_WAYPOINTS))
+HOME_TO_START_WAYPOINTS = ["Home", "Tmp1", "Tmp2", "p_start_h"]
+START_TO_HOME_WAYPOINTS = list(reversed(HOME_TO_START_WAYPOINTS))
+
+# Review and adjust these routes for the physical setup before generating a
+# routine file. They are used only by the new large-obstacle Home detour.
+HOME_TO_END_WAYPOINTS = ["Home", "p_end_h"]
+END_TO_HOME_WAYPOINTS = list(reversed(HOME_TO_END_WAYPOINTS))
 
 # These are stored for point-to-point planning even though they are not routine
 # steps. Their names must match the taught labels in the PolyScope script.
@@ -82,17 +87,33 @@ def run() -> None:
 
     routines = [
         {
-            "name": "start",
+            "name": "home_to_start",
             "steps": make_steps(
-                START_WAYPOINTS,
+                HOME_TO_START_WAYPOINTS,
                 HOME_MOTION,
                 STOPPED_JOINT_MOTION,
             ),
         },
         {
-            "name": "end",
+            "name": "start_to_home",
             "steps": make_steps(
-                END_WAYPOINTS,
+                START_TO_HOME_WAYPOINTS,
+                LEAVE_MEASUREMENT_LINE_MOTION,
+                STOPPED_JOINT_MOTION,
+            ),
+        },
+        {
+            "name": "home_to_end",
+            "steps": make_steps(
+                HOME_TO_END_WAYPOINTS,
+                HOME_MOTION,
+                STOPPED_JOINT_MOTION,
+            ),
+        },
+        {
+            "name": "end_to_home",
+            "steps": make_steps(
+                END_TO_HOME_WAYPOINTS,
                 LEAVE_MEASUREMENT_LINE_MOTION,
                 STOPPED_JOINT_MOTION,
             ),

@@ -1,0 +1,7 @@
+{
+  "host": "127.0.0.1",
+  "port": 5055,
+  "startup_timeout": 5.0,
+  "client_ready_timeout": 30.0,
+  "go_timeout": 8.0
+}

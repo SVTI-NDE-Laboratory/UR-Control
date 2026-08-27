@@ -37,7 +37,7 @@ python src\program\commands\run_measurement_sequence.py
 By default, it reads:
 
 ```text
-src/program/config/config.json
+src/program/config/config_mira.json
 src/routines/routine_files/routines_block.json
 ```
 
@@ -56,9 +56,9 @@ confirmation and read-only Home preflight.
 
 ## Runtime and outputs
 
-At startup, main validates the configuration, writes the plan, launches the
-local simulated acquisition server, and verifies it with a protocol handshake.
-It then checks the robot state and requires all six joints to be within
+At startup, main validates the configuration, writes the plan, starts the data
+acquisition control listener, and waits for external client messages on the
+configured host/port. It then checks the robot state and requires all six joints to be within
 `0.005 rad` of the selected routine's `Home` waypoint before sending motion.
 
 The output directory contains:
@@ -68,7 +68,6 @@ config_used.json
 state.json
 measurement_plan.json
 program.log
-data_acquisition_server.log
 ```
 
 Web sessions also contain `session.json` when the dated-session-folder option
@@ -77,12 +76,13 @@ is enabled. Both logs are written in real time with local ISO timestamps.
 Each entry in `measurement_plan.json` has a one-based `measurement_index`, a
 `line_position` in millimetres, and a `data` result. After a force cycle, `data`
 records the acquisition timestamp and whether the requested force was reached.
-Points excluded by an obstacle are not included in the plan.
+Points excluded by an obstacle remain in the plan with `measured=false` and
+`skip_reason="obstacle"` so their original point IDs are visible.
 
-When contact is reached, the acquisition server simulates a measurement for a
-random 1-3 seconds. Python acknowledges robot input register 42 only after the
-matching `data_acquired` response. A failed force attempt is saved against its
-measurement index before traversal stops and recovery begins.
+When contact is reached, `ISREADY` returns true. The external client records the
+data, then sends `GO`. Python acknowledges robot input register 42 only after
+`GO` is accepted. A failed force attempt is saved against its measurement index
+before traversal stops and recovery begins.
 
 `Ctrl+C`, the web Stop button, robot safety faults, stalled motion, and protocol
 timeouts all request a controlled stop. See the root guide for the exact

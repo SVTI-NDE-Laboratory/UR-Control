@@ -14,21 +14,28 @@ def display_tcp_pose(pose: list[float]) -> list[float]:
 
 
 def create_measurement_plan(config: dict, routines_data: dict | None = None) -> dict:
-    """Return a plan containing only positions where measurements will occur."""
+    """Return a plan for every sampled line point.
+
+    ``measurement_index`` is the original one-based sample number. Points inside
+    an obstacle remain in the plan with ``measured=false`` so the output shows
+    exactly which original IDs were skipped.
+    """
 
     points = []
     geometry = line_geometry(config, routines_data)
-    for _, line_position in line_positions(config, routines_data):
-        if is_obstacle(line_position, config):
-            continue
+    for sample_index, line_position in line_positions(config, routines_data):
+        blocked = is_obstacle(line_position, config)
         point = {
-            "measurement_index": len(points) + 1,
+            "measurement_index": sample_index + 1,
             "line_position": round(line_position, 12),
+            "measured": not blocked,
             "data": {
                 "timestamp": None,
                 "force_reached": None,
             },
         }
+        if blocked:
+            point["skip_reason"] = "obstacle"
         if geometry["method"] == POINT_TO_POINT:
             point["tcp_pose"] = [
                 round(value, 12)
@@ -41,7 +48,7 @@ def create_measurement_plan(config: dict, routines_data: dict | None = None) -> 
         units["tcp_pose"] = ["mm", "mm", "mm", "rad", "rad", "rad"]
 
     return {
-        "schema_version": 3,
+        "schema_version": 4,
         "created_at": datetime.now().isoformat(timespec="seconds"),
         "line_method": geometry["method"],
         "units": units,

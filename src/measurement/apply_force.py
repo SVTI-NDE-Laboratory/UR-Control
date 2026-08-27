@@ -143,7 +143,7 @@ def apply_force(
     simulation_register = 46
 
     # Retain a bounded standalone fallback for examples that do not launch the
-    # acquisition server. Main supplies ``acquire_data`` instead.
+    # acquisition control listener. Main supplies ``acquire_data`` instead.
     fallback_hold_duration = 3.0
 
     # Validate values before connecting.
@@ -252,7 +252,7 @@ def apply_force(
                     time.sleep(min(0.05, remaining))
             else:
                 print(
-                    "Data acquisition server disabled; robot program owns "
+                    "Data acquisition control disabled; robot program owns "
                     "acquisition and return."
                 )
 

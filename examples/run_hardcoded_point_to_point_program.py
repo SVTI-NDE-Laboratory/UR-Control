@@ -1,9 +1,9 @@
 """Run the complete cobot sequence in point-to-point measurement mode.
 
-The start routine moves from Home to ``p_start_h``. Measurement traversal then
-moves to ``p_start_l`` and interpolates a three-dimensional line through
-``p_end_l`` while retaining the orientation taught at ``p_start_l``. Review
-all hard-coded parameters before running this file.
+The ``home_to_start`` routine moves from Home to ``p_start_h``. Measurement
+traversal then moves to ``p_start_l`` and interpolates a three-dimensional line
+through ``p_end_l`` while retaining the orientation taught at ``p_start_l``.
+Review all hard-coded parameters before running this file.
 """
 
 import json
@@ -48,6 +48,10 @@ REQUIRE_OPERATOR_CONFIRMATION = True
 JOINT_TOLERANCE = 0.01
 WAIT_TIMEOUT = 30.0
 HOME_JOINT_TOLERANCE = 0.005
+HOME_TO_START_ROUTINE = "home_to_start"
+END_TO_HOME_ROUTINE = "end_to_home"
+LEGACY_START_ROUTINE = "start"
+LEGACY_END_ROUTINE = "end"
 
 # number_of_measurements includes p_start_l and p_end_l. Candidate positions
 # inside the obstacle interval are skipped, so the number of force cycles can
@@ -84,6 +88,21 @@ def write_json_atomic(path: Path, value: dict) -> None:
     temporary_path = path.with_suffix(path.suffix + ".tmp")
     temporary_path.write_text(json.dumps(value, indent=2) + "\n", encoding="utf-8")
     temporary_path.replace(path)
+
+
+def routine_exists(routines_data: dict, routine_name: str) -> bool:
+    """Return whether a named routine is present in loaded routine data."""
+
+    return any(
+        routine.get("name") == routine_name
+        for routine in routines_data.get("routines", [])
+    )
+
+
+def preferred_routine(routines_data: dict, preferred_name: str, legacy_name: str) -> str:
+    """Use the new routine name when present, otherwise keep old files usable."""
+
+    return preferred_name if routine_exists(routines_data, preferred_name) else legacy_name
 
 
 def run() -> None:
@@ -123,7 +142,7 @@ def run() -> None:
 
         write_state(state_file, {"mode": "start_routine"})
         run_routine(
-            "start",
+            preferred_routine(routines_data, HOME_TO_START_ROUTINE, LEGACY_START_ROUTINE),
             routines_data,
             ROBOT_IP,
             rtde_receive,
@@ -140,11 +159,13 @@ def run() -> None:
             MEASUREMENT_CONFIG,
             state_file,
             routines_data,
+            routine_joint_tolerance=JOINT_TOLERANCE,
+            routine_wait_timeout=WAIT_TIMEOUT,
         )
 
         write_state(state_file, {"mode": "end_routine"})
         run_routine(
-            "end",
+            preferred_routine(routines_data, END_TO_HOME_ROUTINE, LEGACY_END_ROUTINE),
             routines_data,
             ROBOT_IP,
             rtde_receive,

@@ -25,7 +25,7 @@ plan, and writes `../config/config_tmp.json`. An invalid value is reported and
 the robot program is not launched. **Save as default** performs the same checks
 and explicitly replaces the
 default for the selected mode: `config_translation.json` or
-`config_point_to_point.json`. **Reset default** reloads that mode's saved
+`config_mira.json`. **Reset default** reloads that mode's saved
 default. Configuration values are locked while the program is running.
 
 Point-to-point geometry is fixed to `p_start_l → p_end_l`; safe clearance is
@@ -44,10 +44,9 @@ stored in millimetres, mm/s, and mm/s^2.
 Starting requires an explicit safety confirmation and a read-only Home-position
 preflight. `commands/run_measurement_sequence.py` then runs as a separate
 worker process. The selected output folder receives `config_used.json`,
-`state.json`, `measurement_plan.json`, `program.log`, and
-`data_acquisition_server.log`. Both logs are updated in real time and prefix
-terminal lines with local ISO timestamps. Each program start generates a fresh
-local date-and-time session ID. The
+`state.json`, `measurement_plan.json`, and `program.log`. The log is updated in
+real time and prefixes terminal lines with local ISO timestamps. Each program
+start generates a fresh local date-and-time session ID. The
 **Create dated session folder** checkbox is enabled by default and stores the
 complete run under `<selected folder>/<session ID>/`, including a `session.json`
 file containing the ID, timestamp, and resolved paths. If unchecked, the

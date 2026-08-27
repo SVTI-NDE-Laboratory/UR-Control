@@ -1,0 +1,86 @@
+def Define_Points_Wall():
+  global _hidden_verificationVariable=0
+  step_count_f9f82051_b39e_4f67_90b8_daadeea980d8 = 0.0
+  thread Step_Counter_Thread_4cdf24b9_728a_4c2a_9582_88533fecaaa5():
+    while (True):
+      step_count_f9f82051_b39e_4f67_90b8_daadeea980d8 = step_count_f9f82051_b39e_4f67_90b8_daadeea980d8 + 1.0
+      sync()
+    end
+  end
+  run Step_Counter_Thread_4cdf24b9_728a_4c2a_9582_88533fecaaa5()
+  set_gravity([0.0, -9.82, 6.013015783813504E-16])
+  set_tcp(p[0.0,0.0,0.0,0.0,0.0,0.0])
+  tool_wrench_limit_disable()
+  motion_version_set(2)
+  set_tool_communication(False, 115200, 0, 1, 1.5, 3.5)
+  set_tool_output_mode(0)
+  set_tool_digital_output_mode(0, 2)
+  set_tool_digital_output_mode(1, 2)
+  set_tool_voltage(0)
+  set_target_payload(1.970000, [-0.003000, -0.010000, 0.017000], [0.004766, 0.004766, 0.004766, 0.000000, 0.000000, 0.000000])
+  set_standard_analog_input_domain(0, 1)
+  set_standard_analog_input_domain(1, 1)
+  set_tool_analog_input_domain(0, 1)
+  set_tool_analog_input_domain(1, 1)
+  set_analog_outputdomain(0, 0)
+  set_analog_outputdomain(1, 0)
+  set_input_actions_to_default()
+  set_safety_mode_transition_hardness(1)
+  global line_length=0
+  global line_incr=0
+  global avoid_start=0
+  global avoid_end=0
+  global avoid_gap=0
+  global Plane_1=p[0.0,0.58,0.0,-1.5707963267948963,-2.9874637964168546E-16,-2.9874637964168546E-16]
+  # begin: URCap Installation Node
+  #   Source: UR Connect, 2.3.8, Universal Robots
+  #   Type: UR Connect
+  myurRPC = rpc_factory("xmlrpc","http://127.0.0.1:40474")
+  # end: URCap Installation Node
+  global home_to_start1_p=p[-.416261113684, -.624832127451, .390995298765, .795772896314, -1.353753791803, 1.179921906218]
+  global home_to_start1_q=[-1.9272143397342738, -3.4980757240555, 1.994602583404407, 1.6205508673739057, -1.6187287368850933, -4.495178559360486]
+  global home_to_start2_p=p[-.683818853332, -.752186441355, .360103851256, .620526651496, -1.525234022673, 1.074292747194]
+  global home_to_start2_q=[-2.1422131006914533, -3.436473746318299, 1.3924905314688023, 2.0737319688126057, -1.6433438857362477, -4.397960413608025]
+  global p_start_h_p=p[-1.002559466645, -.680894329001, .421715704237, -.006481627498, .016654934026, 1.579672836466]
+  global p_start_h_q=[-2.3967738562941143, -3.456759776316904, 0.8343173877098071, 4.208307409435492, -1.5529128531639351, -3.879768270119019]
+  global p_start_l_p=p[-1.000000000000, -.675000000000, .821659031922, -.006477150094, .016651173909, 1.579644773184]
+  global p_start_l_q=[-2.396345396125813, -2.859145911100602, 0.2788747879768554, 4.166077853729782, -1.5526359302820447, -3.8747176858672883]
+  global p_end_l_p=p[1.000000000000, -.674996040449, .821662090788, -.006476581163, .016651093424, 1.579638154749]
+  global p_end_l_q=[-0.4449705278302236, -2.860739729456474, 0.28713263783669607, 4.145352531048195, -1.5752102116769535, -5.825866382983115]
+  global p_end_h_p=p[.997442320637, -.680879273391, .421713333272, -.006461731008, .016632877560, 1.579638888274]
+  global p_end_h_q=[-0.45297623137091136, -3.4651590936457666, 0.8585845235490336, 4.178374499347261, -1.5754249310142363, -5.823397641955797]
+  global end_to_home1_p=p[1.009004460463, -.636504068397, .186019235333, 1.064324059176, -1.539890765969, .748831235137]
+  global end_to_home1_q=[-0.2939697763553948, -3.4699912161692232, 0.8887577785002521, 3.6385017675074405, 0.2846300046994048, -5.826311211091177]
+  global end_to_home2_p=p[.362754890547, -.813358026796, .398627995202, 1.030948256915, -1.207237191352, 1.181871820504]
+  global end_to_home2_q=[-0.8214492782684406, -3.4632406120462074, 1.6644639392875593, 1.9435694400189678, -0.6992223781109708, -4.785339127031791]
+  global end_to_home3_p=p[-.078493514694, -.569526471149, .407772289715, .936654343007, -1.027812117222, 1.273777359925]
+  global end_to_home3_q=[-1.3010547796832483, -3.3991180859007777, 2.3753774801837366, 1.3308061796375732, -1.2325103918658655, -4.798051897679464]
+  $ 2 "Robot Program"
+  $ 3 "Home"
+  movej([-1.6285470325428602, -3.3567042067227497, 2.7138996728568237, 1.4149792855763983, -1.5987551088451042, -4.806884276597282], a=1.3962634015954636, v=1.0471975511965976)
+  $ 4 "MoveJ"
+  $ 5 "home_to_start1" "breakAfter"
+  movej(get_inverse_kin(home_to_start1_p, qnear=home_to_start1_q), a=1.3962634015954636, v=1.0471975511965976)
+  $ 6 "home_to_start2" "breakAfter"
+  movej(get_inverse_kin(home_to_start2_p, qnear=home_to_start2_q), a=1.3962634015954636, v=1.0471975511965976)
+  $ 7 "p_start_h" "breakAfter"
+  movej(get_inverse_kin(p_start_h_p, qnear=p_start_h_q), a=1.3962634015954636, v=1.0471975511965976)
+  $ 8 "MoveL"
+  $ 9 "p_start_l" "breakAfter"
+  movel(p_start_l_p, a=1.2, v=0.25)
+  $ 10 "MoveL"
+  $ 11 "p_end_l" "breakAfter"
+  movel(p_end_l_p, a=1.2, v=0.25)
+  $ 12 "MoveL"
+  $ 13 "p_end_h" "breakAfter"
+  movel(p_end_h_p, a=1.2, v=0.25)
+  $ 14 "MoveJ"
+  $ 15 "end_to_home1" "breakAfter"
+  movej(get_inverse_kin(end_to_home1_p, qnear=end_to_home1_q), a=1.3962634015954636, v=1.0471975511965976)
+  $ 16 "end_to_home2" "breakAfter"
+  movej(get_inverse_kin(end_to_home2_p, qnear=end_to_home2_q), a=1.3962634015954636, v=1.0471975511965976)
+  $ 17 "end_to_home3" "breakAfter"
+  movej(get_inverse_kin(end_to_home3_p, qnear=end_to_home3_q), a=1.3962634015954636, v=1.0471975511965976)
+  $ 18 "Home"
+  movej([-1.6285470325428602, -3.3567042067227497, 2.7138996728568237, 1.4149792855763983, -1.5987551088451042, -4.806884276597282], a=1.3962634015954636, v=1.0471975511965976)
+end

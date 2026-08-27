@@ -137,6 +137,7 @@
       safeHeightRow.classList.toggle('optional-disabled', pointToPoint);
       if (pointToPoint && pointGeometry) {
         if (xEndInput && Number.parseFloat(xEndInput.value) <= 0) {
+          if (xStartInput) xStartInput.value = '0.000';
           xEndInput.value = pointGeometry.line_length.toFixed(3);
         }
         totalLengthInput.value = selectedPointLength().toFixed(3);
@@ -227,28 +228,28 @@
         addSvg('text', {x:(scale(start)+scale(end))/2, y:highY+40, 'text-anchor':'middle', fill:'white', 'font-size':14}, 'Obstacle');
       }
 
-      let visibleMeasurements = 0;
       for (let index = 0; index < count; index++) {
         const position = index * increment;
         if (position > length + 1e-9) break;
         const blocked = hasObstacle && position >= obstacleStart - 1e-9 && position <= obstacleEnd + 1e-9;
-        if (blocked) continue;
-        visibleMeasurements += 1;
-        addSvg('circle', {cx:scale(position), cy:lowY, r:6, fill:'#2474a9', stroke:'white', 'stroke-width':2});
-        addSvg('text', {x:scale(position), y:lowY+25, 'text-anchor':'middle', fill:'#334e60', 'font-size':12}, String(visibleMeasurements));
+        addSvg('circle', {cx:scale(position), cy:lowY, r:6, fill:blocked ? '#b85b5b' : '#2474a9', stroke:'white', 'stroke-width':2});
+        addSvg('text', {x:scale(position), y:lowY+25, 'text-anchor':'middle', fill:'#334e60', 'font-size':12}, String(index + 1));
       }
       addSvg('text', {x:left, y:285, fill:'#334e60', 'font-size':14}, translation ? '0 mm' : 'p_start_l');
       addSvg('text', {x:right, y:285, 'text-anchor':'end', fill:'#334e60', 'font-size':14}, translation ? formatMillimetres(length) : `p_end_l (${formatMillimetres(length)})`);
 
     }
 
-    async function loadPointGeometry() {
+    async function loadPointGeometry(resetLineEnd = false) {
       try {
         const response = await fetch('/api/configuration/geometry', {cache:'no-store'});
         const result = await response.json();
         if (!response.ok) throw new Error(result.detail || `HTTP ${response.status}`);
         pointGeometry = result;
         pointMethodNote.textContent = 'Fixed: p_start_l → p_end_l';
+        if (resetLineEnd && lineMethod.value === 'point_to_point' && xEndInput) {
+          xEndInput.value = pointGeometry.line_length.toFixed(3);
+        }
         synchronizeSpacingFromSource();
         drawVisualization();
       } catch (error) {
@@ -382,7 +383,7 @@
         const result = await response.json();
         if (!response.ok) throw new Error(result.detail || `HTTP ${response.status}`);
         formDirty = true;
-        await loadPointGeometry();
+        await loadPointGeometry(true);
         await refreshMeasurement();
       } catch (error) {
         showImportant(error.message);
@@ -418,6 +419,7 @@
     });
 
     function completedState(point, programState) {
+      if (point.measured === false) return 'skipped';
       if (point.data?.force_reached === true) return 'complete';
       if (point.data?.force_reached === false) return 'failed';
       const mode = programState.mode || '';
@@ -463,12 +465,13 @@
       }
 
       let complete = 0;
-      for (const [index, point] of points.entries()) {
+      const measuredTotal = points.filter(point => point.measured !== false).length;
+      for (const point of points) {
         const pointState = completedState(point, programState);
         if (pointState === 'complete') complete += 1;
-        const colors = {pending:'#9aa9b8', current:'#1769aa', complete:'#159447', failed:'#b42318'};
+        const colors = {pending:'#9aa9b8', current:'#1769aa', complete:'#159447', failed:'#b42318', skipped:'#b85b5b'};
         addSvg('circle', {cx:scale(point.line_position), cy:lowY, r:pointState === 'current' ? 10 : 7, fill:colors[pointState], stroke:'white', 'stroke-width':2});
-        addSvg('text', {x:scale(point.line_position), y:lowY+25, 'text-anchor':'middle', fill:'#334e60', 'font-size':12}, String(index + 1));
+        addSvg('text', {x:scale(point.line_position), y:lowY+25, 'text-anchor':'middle', fill:'#334e60', 'font-size':12}, String(point.measurement_index));
       }
       if (currentPosition !== null) {
         addSvg('text', {x:scale(currentPosition), y:lowY-20, 'text-anchor':'middle', fill:'#1769aa', 'font-size':14, 'font-weight':700}, `Current: ${formatMillimetres(currentPosition)}`);
@@ -478,7 +481,7 @@
 
       document.getElementById('ongoing-mode').textContent = humanizePhase(programState.mode);
       document.getElementById('ongoing-current').textContent = currentPosition === null ? '—' : currentPosition.toFixed(3);
-      document.getElementById('ongoing-progress').textContent = `${complete} / ${points.length}`;
+      document.getElementById('ongoing-progress').textContent = `${complete} / ${measuredTotal}`;
     }
 
     function showMeasurement(data) {

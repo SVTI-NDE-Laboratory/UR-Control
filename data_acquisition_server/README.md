@@ -1,7 +1,7 @@
-# Reference Data Acquisition Server
+# Legacy Reference Data Acquisition Server
 
-This folder contains the simulated data acquisition server used for local
-development and protocol testing.
+This folder contains the older simulated data acquisition server. The current
+main robot program is now the TCP server and listens according to:
 
 The communication contract for the real server is documented in:
 
@@ -9,19 +9,19 @@ The communication contract for the real server is documented in:
 src/program/data_acquisition/protocol.md
 ```
 
-The main robot program reads its client connection settings from:
+The main robot program reads its listener settings from:
 
 ```text
-src/program/data_acquisition/config_client.json
+src/program/data_acquisition/config_server.json
 ```
 
-This reference server reads only its own simulation defaults from:
+This legacy reference server reads only its own simulation defaults from:
 
 ```text
 data_acquisition_server/config_server.json
 ```
 
-Run it manually for protocol testing:
+Run it manually only when testing the previous client/server design:
 
 ```powershell
 python data_acquisition_server\data_acquisition_server.py
@@ -34,4 +34,5 @@ python data_acquisition_server\example_cobot_client.py
 ```
 
 The example client prints each JSON request/response, keeps a heartbeat active,
-and prompts before sending each fake `acquire_data` request.
+and prompts before sending each fake `acquire_data` request. It does not speak
+the current `ISREADY`/`GO`/`ALIVE` protocol.
