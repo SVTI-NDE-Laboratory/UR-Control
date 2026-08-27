@@ -63,14 +63,14 @@ MEASUREMENT_CONFIG = {
     },
     "motion": {
         "type": "l",
-        "acceleration": 0.3,
-        "speed": 0.3,
+        "acceleration": 300.0,
+        "speed": 300.0,
     },
     "measurement": {
         "program_path": "Benoit/apply_force.urp",
         "contact_threshold": 0.0,
         "holding_force": 0.0,
-        "max_displacement": 0.001,
+        "max_displacement": 1.0,
         # With nonzero forces this still performs a physical force approach.
         # Simulation only reports maximum displacement as a successful cycle.
         "simulation": False,

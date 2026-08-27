@@ -14,6 +14,7 @@ from line_planner import (
     high_low_movement,
     line_geometry,
     line_parameters,
+    millimetres_to_metres,
     normalize,
     point_pose,
     scale,
@@ -22,14 +23,17 @@ from robot_move import movel_pose, translate_tool
 
 
 def motion_parameters(config: dict) -> tuple[float, float]:
-    """Return the general linear motion acceleration and speed."""
+    """Return linear motion acceleration/speed converted from mm units to metres."""
 
     motion = config["motion"]
     if motion["type"].lower() != "l":
         raise ValueError("Measurement motion type must be 'l'.")
     if motion["acceleration"] <= 0 or motion["speed"] <= 0:
         raise ValueError("Measurement acceleration and speed must be positive.")
-    return motion["acceleration"], motion["speed"]
+    return (
+        millimetres_to_metres(motion["acceleration"]),
+        millimetres_to_metres(motion["speed"]),
+    )
 
 
 def high_to_low(
@@ -59,7 +63,7 @@ def high_to_low(
         return
     acceleration, speed = motion_parameters(config)
     direction, distance = movement
-    offset = scale(normalize(direction), distance)
+    offset = scale(normalize(direction), millimetres_to_metres(distance))
     translate_tool(robot_ip, rtde_receive, offset, acceleration, speed, 30.0)
 
 
@@ -90,7 +94,7 @@ def low_to_high(
         return
     acceleration, speed = motion_parameters(config)
     direction, distance = movement
-    offset = scale(normalize(direction), -distance)
+    offset = scale(normalize(direction), -millimetres_to_metres(distance))
     translate_tool(robot_ip, rtde_receive, offset, acceleration, speed, 30.0)
 
 
@@ -121,8 +125,54 @@ def translate_along_line(
         return
 
     direction = normalize(line_parameters(config)["direction_start_end"])
-    offset = scale(direction, distance)
+    offset = scale(direction, millimetres_to_metres(distance))
     translate_tool(robot_ip, rtde_receive, offset, acceleration, speed, 30.0)
+
+
+def move_to_start_high(
+    robot_ip: str, rtde_receive, config: dict, routines_data: dict | None = None
+) -> None:
+    """Move to the effective safe start pose for point-to-point measurements."""
+
+    geometry = line_geometry(config, routines_data)
+    if geometry["method"] != POINT_TO_POINT:
+        return
+    if max(abs(value) for value in geometry["offset_vector"]) <= 1e-12:
+        return
+    acceleration, speed = motion_parameters(config)
+    movel_pose(
+        robot_ip,
+        rtde_receive,
+        geometry["safe_pose"],
+        acceleration,
+        speed,
+        30.0,
+    )
+
+
+def move_to_zero_y_high(
+    robot_ip: str,
+    rtde_receive,
+    config: dict,
+    routines_data: dict | None = None,
+    line_position: float = 0.0,
+) -> None:
+    """Move from a Y-offset high point back to the taught X/Z line."""
+
+    geometry = line_geometry(config, routines_data)
+    if geometry["method"] != POINT_TO_POINT:
+        return
+    if abs(geometry["offset_y"]) <= 1e-12:
+        return
+    acceleration, speed = motion_parameters(config)
+    movel_pose(
+        robot_ip,
+        rtde_receive,
+        point_pose(geometry, line_position, "high", lateral_offset=False),
+        acceleration,
+        speed,
+        30.0,
+    )
 
 
 def return_to_start_high(

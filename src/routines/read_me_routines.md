@@ -49,9 +49,9 @@ Each generated routine step contains:
 ```
 
 For type `j`, acceleration and speed use `rad/s^2` and `rad/s`. For type `l`,
-they use `m/s^2` and `m/s`.
+they use `mm/s^2` and `mm/s`.
 
-`blend_radius` is the URScript `r` parameter in metres. Routine steps are sent
+`blend_radius` is stored in millimetres. Routine steps are sent
 to the controller as one program, so nonzero radii on intermediate steps blend
 into the following move. The final step must use `0.0` so completion can be
 verified at its exact target. `confirm_each_step` also requires zero radii.

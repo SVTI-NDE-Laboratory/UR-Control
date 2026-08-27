@@ -36,13 +36,16 @@ program and the retained routine example.
 
 Each step defines `type` (`j` or `l`), `acceleration`, `speed`, and
 `blend_radius`. Joint steps use the waypoint's `q` target; linear steps use its
-`p` target. The routine is sent as one URScript program so intermediate radii
-can blend into the following step; the final radius must be zero.
+`p` target. Joint acceleration/speed use rad/s^2 and rad/s; linear
+acceleration/speed use mm/s^2 and mm/s. `blend_radius` is stored in
+millimetres for both motion types. The routine is sent as one URScript program
+so intermediate radii can blend into the following step; the final radius must
+be zero.
 
 ## Recovery Routine
 
-`examples/run_single_routine.py` runs one routine only. It is useful if the main program
-gets interrupted and you want to return to a known position.
+`src/program/commands/run_single_routine.py` runs one routine only. It is useful
+if the main program gets interrupted and you want to return to a known position.
 
 By default it runs:
 
@@ -53,12 +56,12 @@ ROUTINE_NAME = "end"
 Run it:
 
 ```powershell
-python examples\run_single_routine.py
+python src\program\commands\run_single_routine.py
 ```
 
 ## Single Waypoint
 
-`examples/go_to_waypoint.py` moves directly to one waypoint from the active
+`src/program/commands/go_to_waypoint.py` moves directly to one waypoint from the active
 `src/routines/routine_files/routines.json` file.
 
 Edit these variables at the top of the file:
@@ -71,5 +74,5 @@ USE_LINEAR_MOVE = False
 Run it:
 
 ```powershell
-python examples\go_to_waypoint.py
+python src\program\commands\go_to_waypoint.py
 ```

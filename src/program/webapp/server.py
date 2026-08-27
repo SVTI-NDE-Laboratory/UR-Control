@@ -254,10 +254,10 @@ def configuration_geometry() -> dict[str, Any]:
         safe = get_waypoint(routines_data, "p_start_h")["p"]
         line_length = sum(
             (end[index] - start[index]) ** 2 for index in range(3)
-        ) ** 0.5
+        ) ** 0.5 * 1000.0
         safe_height = sum(
             (safe[index] - start[index]) ** 2 for index in range(3)
-        ) ** 0.5
+        ) ** 0.5 * 1000.0
     except (KeyError, TypeError, ValueError) as error:
         raise HTTPException(status_code=422, detail=str(error)) from error
     return {

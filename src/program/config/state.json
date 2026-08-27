@@ -1,4 +1,0 @@
-{
-  "mode": "unsafe_start",
-  "message": "Unsafe start prevented: robot is not at the taught Home position. Joint 6 differs by 0.0078 rad; allowed difference is 0.0050 rad. Move the robot to Home before starting."
-}

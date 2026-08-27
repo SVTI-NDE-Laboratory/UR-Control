@@ -6,14 +6,12 @@ from typing import Any
 
 if __package__:
     from .settings import (
-        CENTIMETRE_FIELDS,
         FIELD_LABELS,
         HTML_TEMPLATE_FILE,
         ROUTINES_FILE,
     )
 else:
     from settings import (
-        CENTIMETRE_FIELDS,
         FIELD_LABELS,
         HTML_TEMPLATE_FILE,
         ROUTINES_FILE,
@@ -41,8 +39,8 @@ def display_value(value: Any) -> str:
 def display_field_value(key: str, value: Any) -> str:
     """Return a field value in its operator-facing unit."""
 
-    if key in CENTIMETRE_FIELDS:
-        return f"{value * 100:.3f}"
+    if isinstance(value, float):
+        return f"{value:.3f}"
     return display_value(value)
 
 
@@ -67,12 +65,9 @@ def parse_value(text: str, template: Any) -> Any:
 
 
 def parse_field_value(key: str, text: str, template: Any) -> Any:
-    """Parse a form field and convert displayed centimetres back to metres."""
+    """Parse a form field in the same units used by the config file."""
 
-    value = parse_value(text, template)
-    if key in CENTIMETRE_FIELDS:
-        return value / 100
-    return value
+    return parse_value(text, template)
 
 
 def edited_config(
@@ -86,16 +81,19 @@ def edited_config(
     method = fields.get("line.method", [""])[0]
     if method == "translation":
         parameter_templates = {
-            "line_length": 0.4,
-            "increment": 0.1,
+            "line_length": 400.0,
+            "increment": 100.0,
             "direction_start_end": [-1.0, 0.0, 0.0],
-            "high_low_distance": 0.15,
+            "high_low_distance": 150.0,
             "direction_high_low": [0.0, 0.0, 1.0],
         }
     elif method == "point_to_point":
         parameter_templates = {
-            "increment": 0.1,
+            "increment": 100.0,
             "number_of_measurements": 5,
+            "x_start": 0.0,
+            "x_end": 0.0,
+            "offset_y": 0.0,
         }
     else:
         raise ValueError("Measurement line method is invalid.")
@@ -174,6 +172,7 @@ def edited_config(
             "number_of_measurements"
         ]
         config["line"]["parameters"]["increment"] = geometry["increment"]
+        config["line"]["parameters"]["x_end"] = geometry["x_end"]
     validate_config(config, routines_data)
     return config
 
@@ -255,16 +254,19 @@ def form_html(
         )
     )
     translation_values = {
-        "line_length": parameters.get("line_length", parameters.get("length", 0.4)),
-        "increment": parameters.get("increment", 0.1),
+        "line_length": parameters.get("line_length", parameters.get("length", 400.0)),
+        "increment": parameters.get("increment", 100.0),
         "direction_start_end": parameters.get("direction_start_end", [-1.0, 0.0, 0.0]),
-        "high_low_distance": parameters.get("high_low_distance", 0.15),
+        "high_low_distance": parameters.get("high_low_distance", 150.0),
         "direction_high_low": parameters.get("direction_high_low", [0.0, 0.0, 1.0]),
     }
     point_values = {
-        "increment": parameters.get("increment", 0.1),
+        "increment": parameters.get("increment", 100.0),
         "number_of_measurements": parameters.get("number_of_measurements", 5),
         "spacing_source": parameters.get("spacing_source", "increment"),
+        "x_start": parameters.get("x_start", parameters.get("offset_x", 0.0)),
+        "x_end": parameters.get("x_end", 0.0),
+        "offset_y": parameters.get("offset_y", 0.0),
     }
     length = line_input("line_length", translation_values["line_length"])
     increment_value = (
@@ -298,6 +300,7 @@ def form_html(
         'name="line.parameters.spacing_source" '
         f'value="{html.escape(point_values["spacing_source"], quote=True)}">'
     )
+    point_offset_attributes = 'required data-line-method="point_to_point"'
     sections = [
         '<fieldset><legend>Measurement Line</legend>'
         '<div class="parameter-row routine-file-row"><label for="routine-file">Routine File</label>'
@@ -306,11 +309,16 @@ def form_html(
         f'<select id="line.method" name="line.method">{method_options}</select>'
         '<small id="point-method-note" class="muted">Fixed: p_start_l → p_end_l</small></div>'
         '<div class="parameter-row single">'
-        f'<label for="line.parameters.line_length">Total Length [cm]</label>{length}</div>'
+        f'<label for="line.parameters.line_length">Total Length [mm]</label>{length}</div>'
         '<div class="parameter-row double line-spacing-row">'
-        f'<span>Increment [cm] / # Measurements</span>{increment}'
+        f'<span>Increment [mm] / # Measurements</span>{increment}'
         f'<input id="measurement-count" name="line.parameters.number_of_measurements" type="number" min="2" step="1" value="{measurement_count}" aria-label="Number of measurements" required>'
         '</div>'
+        '<div class="parameter-row double" data-line-method="point_to_point">'
+        f'<span>X Start / X End [mm]</span>{line_input("x_start", point_values["x_start"], point_offset_attributes)}'
+        f'{line_input("x_end", point_values["x_end"], point_offset_attributes)}</div>'
+        '<div class="parameter-row single" data-line-method="point_to_point">'
+        f'<label for="line.parameters.offset_y">Y Offset [mm]</label>{line_input("offset_y", point_values["offset_y"], point_offset_attributes)}</div>'
         '</fieldset>'
     ]
 
@@ -324,9 +332,9 @@ def form_html(
         '<label class="option-toggle"><input id="obstacle-enabled" name="obstacle.enabled" type="checkbox" value="true"'
         f'{obstacle_checked}>Obstacle Exists</label></div>'
         '<div class="parameter-row double obstacle-position-row" data-optional-group="obstacle-position">'
-        f'<span>Positions Start / End [cm]</span>{start}{end}</div>'
+        f'<span>Positions Start / End [mm]</span>{start}{end}</div>'
         '<div id="safe-height-row" class="parameter-row single">'
-        f'<label for="line.parameters.high_low_distance">Safe Height [cm]</label>{height}</div>'
+        f'<label for="line.parameters.high_low_distance">Safe Height [mm]</label>{height}</div>'
         '</fieldset>'
     )
 
@@ -335,8 +343,8 @@ def form_html(
     hidden_controls.append('<input type="hidden" name="motion.type" value="l">')
     sections.append(
         '<fieldset><legend>Measurement Motion <span class="legend-note">Linear (l)</span></legend>'
-        f'<div class="parameter-row single"><label for="motion.speed">Speed [m/s]</label>{speed}</div>'
-        f'<div class="parameter-row single"><label for="motion.acceleration">Acceleration [m/s²]</label>{acceleration}</div>'
+        f'<div class="parameter-row single"><label for="motion.speed">Speed [mm/s]</label>{speed}</div>'
+        f'<div class="parameter-row single"><label for="motion.acceleration">Acceleration [mm/s^2]</label>{acceleration}</div>'
         '</fieldset>'
     )
 
@@ -346,7 +354,7 @@ def form_html(
     measurement_controls = (
         f'<div class="parameter-row double force-row"><span>Force Contact / Holding [N]</span>{contact}{holding}</div>'
         '<div class="parameter-row single">'
-        f'<label for="measurement.max_displacement">Maximum Displacement [cm]</label>{maximum}</div>'
+        f'<label for="measurement.max_displacement">Maximum Displacement [mm]</label>{maximum}</div>'
     )
     for key, default_value in defaults["measurement"].items():
         if key in {

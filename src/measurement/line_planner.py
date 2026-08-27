@@ -5,6 +5,23 @@ import math
 
 TRANSLATION = "translation"
 POINT_TO_POINT = "point_to_point"
+MM_PER_METRE = 1000.0
+
+
+def as_millimetres(value: float) -> float:
+    """Return ``value`` as a float in millimetres.
+
+    Measurement configuration values are stored in millimetres. Robot poses from
+    RTDE/routine files remain in metres because that is the UR native format.
+    """
+
+    return float(value)
+
+
+def millimetres_to_metres(value: float) -> float:
+    """Convert a distance from millimetres to metres for robot API calls."""
+
+    return float(value) / MM_PER_METRE
 
 
 def line_method(config: dict) -> str:
@@ -72,6 +89,22 @@ def scale(vector: list[float], distance: float) -> list[float]:
     return [value * distance for value in vector]
 
 
+def add_vectors(*vectors: list[float]) -> list[float]:
+    """Return the component-wise sum of three-dimensional vectors."""
+
+    return [sum(vector[index] for vector in vectors) for index in range(3)]
+
+
+def cross(left: list[float], right: list[float]) -> list[float]:
+    """Return the three-dimensional cross product ``left x right``."""
+
+    return [
+        left[1] * right[2] - left[2] * right[1],
+        left[2] * right[0] - left[0] * right[2],
+        left[0] * right[1] - left[1] * right[0],
+    ]
+
+
 def _waypoint_pose(routines_data: dict | None, name: str) -> list[float]:
     """Return a validated Cartesian waypoint pose."""
 
@@ -87,6 +120,79 @@ def _waypoint_pose(routines_data: dict | None, name: str) -> list[float]:
     if not isinstance(pose, list) or len(pose) != 6:
         raise ValueError(f"Waypoint '{name}' must contain a six-value Cartesian pose 'p'.")
     return pose
+
+
+def point_to_point_offsets(parameters: dict, line_length: float) -> tuple[float, float, float]:
+    """Return configured point-to-point X start/end and Y offset in millimetres."""
+
+    x_start = float(parameters.get("x_start", parameters.get("offset_x", 0.0)))
+    x_end = float(parameters.get("x_end", line_length))
+    if x_end <= 0:
+        x_end = line_length
+    return x_start, x_end, float(parameters.get("offset_y", 0.0))
+
+
+def point_to_point_offset_geometry(
+    parameters: dict,
+    safe_pose: list[float],
+    start_pose: list[float],
+    end_pose: list[float],
+    line_length: float,
+) -> dict:
+    """Resolve the selected point-to-point segment and lateral offset.
+
+    X follows ``p_start_l -> p_end_l`` and is bounded by those taught
+    endpoints. Z is used only to derive the local point-to-point frame from
+    ``p_start_h -> p_start_l``. Y is perpendicular to the X/Z plane using the
+    right-hand convention
+    ``y = z cross x``.
+    """
+
+    x_start, x_end, offset_y = point_to_point_offsets(parameters, line_length)
+    if x_start < 0:
+        raise ValueError("X Start must not be negative.")
+    if x_end > line_length + 1e-9:
+        raise ValueError("X End must not exceed the taught point-to-point line length.")
+    if x_start >= x_end:
+        raise ValueError("X Start must be smaller than X End.")
+
+    z_axis = normalize([start_pose[index] - safe_pose[index] for index in range(3)])
+    x_axis = normalize([end_pose[index] - start_pose[index] for index in range(3)])
+    y_axis = None
+
+    if abs(offset_y) > 1e-12:
+        try:
+            y_axis = normalize(cross(z_axis, x_axis))
+        except ValueError as error:
+            raise ValueError(
+                "Offset Y cannot be resolved because p_start_l -> p_end_l "
+                "and p_start_h -> p_start_l are parallel."
+            ) from error
+    else:
+        y_axis = [0.0, 0.0, 0.0]
+
+    start_x_vector = scale(x_axis, millimetres_to_metres(x_start))
+    end_x_vector = scale(x_axis, millimetres_to_metres(x_end))
+    y_offset_vector = scale(y_axis, millimetres_to_metres(offset_y))
+
+    return {
+        "x_start": x_start,
+        "x_end": x_end,
+        "offset_y": offset_y,
+        "offset_vector": add_vectors(start_x_vector, y_offset_vector),
+        "start_x_vector": start_x_vector,
+        "end_x_vector": end_x_vector,
+        "y_offset_vector": y_offset_vector,
+        "x_axis": x_axis,
+        "y_axis": y_axis,
+        "z_axis": z_axis,
+    }
+
+
+def shifted_pose(pose: list[float], offset_vector: list[float]) -> list[float]:
+    """Return a pose translated by a base-frame offset while keeping orientation."""
+
+    return add_vectors(pose[:3], offset_vector) + list(pose[3:6])
 
 
 def line_geometry(config: dict, routines_data: dict | None = None) -> dict:
@@ -108,8 +214,8 @@ def line_geometry(config: dict, routines_data: dict | None = None) -> dict:
         normalize(direction)
         return {
             "method": method,
-            "length": float(length),
-            "increment": float(increment),
+            "length": as_millimetres(length),
+            "increment": as_millimetres(increment),
             "direction_start_end": direction,
         }
 
@@ -121,12 +227,23 @@ def line_geometry(config: dict, routines_data: dict | None = None) -> dict:
     if not start_name or not end_name:
         raise ValueError("Point-to-point requires start_point and end_point names.")
 
-    start_pose = _waypoint_pose(routines_data, start_name)
-    end_pose = _waypoint_pose(routines_data, end_name)
-    displacement = [end_pose[index] - start_pose[index] for index in range(3)]
-    length = math.sqrt(sum(value * value for value in displacement))
-    if length <= 1e-12:
+    taught_start_pose = _waypoint_pose(routines_data, start_name)
+    taught_end_pose = _waypoint_pose(routines_data, end_name)
+    displacement = [taught_end_pose[index] - taught_start_pose[index] for index in range(3)]
+    taught_length = math.sqrt(sum(value * value for value in displacement)) * MM_PER_METRE
+    if taught_length <= 1e-12:
         raise ValueError("Point-to-point start and end positions must be different.")
+
+    safe_name = parameters.get("safe_start_point", "p_start_h")
+    taught_safe_pose = _waypoint_pose(routines_data, safe_name)
+    offset_geometry = point_to_point_offset_geometry(
+        parameters,
+        taught_safe_pose,
+        taught_start_pose,
+        taught_end_pose,
+        taught_length,
+    )
+    length = offset_geometry["x_end"] - offset_geometry["x_start"]
 
     if count is not None and (
         isinstance(count, bool) or not isinstance(count, int) or count < 2
@@ -159,10 +276,25 @@ def line_geometry(config: dict, routines_data: dict | None = None) -> dict:
             "Point-to-point requires a positive increment or number_of_measurements."
         )
 
-    safe_name = parameters.get("safe_start_point", "p_start_h")
-    safe_pose = _waypoint_pose(routines_data, safe_name)
+    start_pose = shifted_pose(
+        taught_start_pose,
+        add_vectors(offset_geometry["start_x_vector"], offset_geometry["y_offset_vector"]),
+    )
+    end_pose = shifted_pose(
+        taught_start_pose,
+        add_vectors(offset_geometry["end_x_vector"], offset_geometry["y_offset_vector"]),
+    )
+    safe_pose = shifted_pose(
+        taught_safe_pose,
+        add_vectors(offset_geometry["start_x_vector"], offset_geometry["y_offset_vector"]),
+    )
+    zero_y_start_pose = shifted_pose(taught_start_pose, offset_geometry["start_x_vector"])
+    zero_y_end_pose = shifted_pose(taught_start_pose, offset_geometry["end_x_vector"])
+    zero_y_safe_pose = shifted_pose(taught_safe_pose, offset_geometry["start_x_vector"])
     clearance_offset = [safe_pose[index] - start_pose[index] for index in range(3)]
-    clearance_distance = math.sqrt(sum(value * value for value in clearance_offset))
+    clearance_distance = (
+        math.sqrt(sum(value * value for value in clearance_offset)) * MM_PER_METRE
+    )
     if clearance_distance <= 1e-12:
         raise ValueError(
             f"Safe waypoint '{safe_name}' and low waypoint '{start_name}' "
@@ -172,6 +304,7 @@ def line_geometry(config: dict, routines_data: dict | None = None) -> dict:
     return {
         "method": method,
         "length": length,
+        "taught_length": taught_length,
         "increment": increment,
         "number_of_measurements": count,
         "spacing_source": spacing_source,
@@ -181,15 +314,19 @@ def line_geometry(config: dict, routines_data: dict | None = None) -> dict:
         "start_pose": list(start_pose),
         "end_pose": list(end_pose),
         "safe_pose": list(safe_pose),
+        "zero_y_start_pose": list(zero_y_start_pose),
+        "zero_y_end_pose": list(zero_y_end_pose),
+        "zero_y_safe_pose": list(zero_y_safe_pose),
         "clearance_offset": clearance_offset,
         "clearance_distance": clearance_distance,
+        **offset_geometry,
     }
 
 
 def high_low_movement(
     config: dict, routines_data: dict | None = None
 ) -> tuple[list[float], float] | None:
-    """Return high-to-low direction and distance for the selected method."""
+    """Return high-to-low direction and distance in millimetres."""
 
     geometry = line_geometry(config, routines_data)
     if geometry["method"] == POINT_TO_POINT:
@@ -214,12 +351,21 @@ def high_low_movement(
     return parameters["direction_high_low"], parameters["high_low_distance"]
 
 
-def point_pose(geometry: dict, position: float, height_mode: str = "low") -> list[float]:
-    """Return the absolute point-to-point pose at a distance along the line."""
+def point_pose(
+    geometry: dict,
+    position: float,
+    height_mode: str = "low",
+    lateral_offset: bool = True,
+) -> list[float]:
+    """Return the absolute point-to-point pose at a millimetre line position."""
 
     fraction = position / geometry["length"]
-    start_pose = geometry["start_pose"]
-    end_pose = geometry["end_pose"]
+    if lateral_offset:
+        start_pose = geometry["start_pose"]
+        end_pose = geometry["end_pose"]
+    else:
+        start_pose = geometry["zero_y_start_pose"]
+        end_pose = geometry["zero_y_end_pose"]
     pose = [
         start_pose[index] + fraction * (end_pose[index] - start_pose[index])
         for index in range(3)

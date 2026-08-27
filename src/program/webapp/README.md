@@ -8,7 +8,8 @@ python src\program\webapp\app.py
 
 Uvicorn serves the FastAPI application on a free local `127.0.0.1` port and
 opens it in the default browser. The web layer is an operator interface around
-the robot modules; the complete measurement sequence remains in `../main.py`.
+the robot modules; the complete measurement sequence is the command in
+`../commands/run_measurement_sequence.py`.
 
 ## Single-page workflow
 
@@ -36,15 +37,17 @@ point-to-point increment is preserved; when it does not divide the line exactly,
 only complete increments are measured. A remaining partial interval at the end
 is not measured. The displayed measurement count is always an integer. When the
 operator edits that integer count directly, the exact internal increment divides
-the complete line evenly and includes the endpoint; the three-decimal display
-does not alter that geometry.
+the complete line evenly and includes the endpoint. Linear distances and
+measurement motion speeds in the form, saved config, live state, and plan are
+stored in millimetres, mm/s, and mm/s^2.
 
 Starting requires an explicit safety confirmation and a read-only Home-position
-preflight. `main.py` then runs as a separate worker process. The selected output
-folder receives `config_used.json`, `state.json`, `measurement_plan.json`,
-`program.log`, and `data_acquisition_server.log`. Both logs are updated in real
-time and prefix terminal lines with local ISO timestamps. Each program start
-generates a fresh local date-and-time session ID. The
+preflight. `commands/run_measurement_sequence.py` then runs as a separate
+worker process. The selected output folder receives `config_used.json`,
+`state.json`, `measurement_plan.json`, `program.log`, and
+`data_acquisition_server.log`. Both logs are updated in real time and prefix
+terminal lines with local ISO timestamps. Each program start generates a fresh
+local date-and-time session ID. The
 **Create dated session folder** checkbox is enabled by default and stores the
 complete run under `<selected folder>/<session ID>/`, including a `session.json`
 file containing the ID, timestamp, and resolved paths. If unchecked, the

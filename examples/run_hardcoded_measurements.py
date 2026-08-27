@@ -47,29 +47,29 @@ REQUIRE_OPERATOR_CONFIRMATION = True
 # skips the start routine. This is the allowed error for every joint, in rad.
 START_JOINT_TOLERANCE = 0.005
 
-# Distances are metres, forces are newtons, acceleration is m/s^2, and speed
-# is m/s. Direction vectors are expressed in the tool coordinate frame.
+# Linear distances are in millimetres, forces in newtons, acceleration is
+# mm/s^2, and speed is mm/s. Direction vectors are expressed in the tool frame.
 MEASUREMENT_CONFIG = {
     "line": {
         "method": "translation",
         "parameters": {
-            "line_length": 0.4,
-            "increment": 0.2,
+            "line_length": 400.0,
+            "increment": 200.0,
             "direction_start_end": [-1.0, 0.0, 0.0],
-            "high_low_distance": 0.01,
+            "high_low_distance": 10.0,
             "direction_high_low": [0.0, 0.0, 1.0],
         },
     },
     "motion": {
         "type": "l",
-        "acceleration": 0.1,
-        "speed": 0.1,
+        "acceleration": 100.0,
+        "speed": 100.0,
     },
     "measurement": {
         "program_path": "Benoit/apply_force.urp",
         "contact_threshold": 80.0,
         "holding_force": 100.0,
-        "max_displacement": 0.04,
+        "max_displacement": 40.0,
         "simulation": True,
     },
 }

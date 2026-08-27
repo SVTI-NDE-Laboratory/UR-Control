@@ -36,7 +36,7 @@ from run_routine import run_routine
 # ---------------------------------------------------------------------------
 
 ROBOT_IP = "192.168.3.10"
-ROUTINES_FILE = ROUTINES_DIR / "routine_files" / "routines_pk-03-prism-a.json"
+ROUTINES_FILE = ROUTINES_DIR / "routine_files" / "routines_block.json"
 OUTPUT_DIR = PROJECT_ROOT / "src" / "program" / "config"
 
 # Retaining an operator confirmation prevents an accidental editor Run click
@@ -48,29 +48,29 @@ JOINT_TOLERANCE = 0.01
 WAIT_TIMEOUT = 30.0
 HOME_JOINT_TOLERANCE = 0.005
 
-# All distances are in metres, forces in newtons, acceleration in m/s^2, and
-# speed in m/s. Direction vectors are expressed in the tool coordinate frame.
+# Linear distances are in millimetres, forces in newtons, acceleration in
+# mm/s^2, and speed in mm/s. Direction vectors are expressed in the tool frame.
 MEASUREMENT_CONFIG = {
     "line": {
         "method": "translation",
         "parameters": {
-            "line_length": 0.4,
-            "increment": 0.1,
+            "line_length": 400.0,
+            "increment": 100.0,
             "direction_start_end": [-1.0, 0.0, 0.0],
-            "high_low_distance": 0.01,
+            "high_low_distance": 10.0,
             "direction_high_low": [0.0, 0.0, 1.0],
         },
     },
     "motion": {
         "type": "l",
-        "acceleration": 0.05,
-        "speed": 0.05,
+        "acceleration": 50.0,
+        "speed": 50.0,
     },
     "measurement": {
         "program_path": "Benoit/apply_force.urp",
         "contact_threshold": 30.0,
         "holding_force": 30.0,
-        "max_displacement": 0.005,
+        "max_displacement": 5.0,
         "simulation": True,
     },
 }

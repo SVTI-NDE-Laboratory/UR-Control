@@ -89,7 +89,7 @@ def start_program(
     show_terminal: bool,
     routine_file: Path,
 ) -> subprocess.Popen:
-    """Write the temporary config and launch main.py visibly or in the background."""
+    """Write the temporary config and launch the measurement command worker."""
 
     TEMP_CONFIG_FILE.write_text(json.dumps(config, indent=2) + "\n", encoding="utf-8")
     output_directory.mkdir(parents=True, exist_ok=True)

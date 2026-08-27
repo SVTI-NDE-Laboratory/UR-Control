@@ -1,6 +1,6 @@
 # Measurement Configuration
 
-`config.json` remains the default for direct `main.py` runs. The web panel keeps
+`config.json` remains the default for direct measurement-command runs. The web panel keeps
 mode-specific defaults in `config_translation.json` and
 `config_point_to_point.json`, then writes the validated selection to
 `config_tmp.json` for a control-panel run.
@@ -12,11 +12,11 @@ method are stored in `line.parameters`.
 
 ### Translation parameters
 
-`line_length` is the total line length in metres. `increment` is the distance
-between measurements in metres. `direction_start_end` is the normalized
+`line_length` is the total line length in millimetres. `increment` is the distance
+between measurements in millimetres. `direction_start_end` is the normalized
 tool-frame direction from the start toward the end.
 
-`high_low_distance` is the safe-plane clearance in metres and
+`high_low_distance` is the safe-plane clearance in millimetres and
 `direction_high_low` is the normalized tool-frame direction from high to low.
 Both are required for translation mode.
 
@@ -24,15 +24,31 @@ Both are required for translation mode.
 
 Point-to-point web configurations always use the Cartesian waypoints
 `p_start_l` and `p_end_l` from the routine file selected in the control panel.
-`number_of_measurements` includes both endpoints and must be at least two.
-`increment` is the corresponding distance between points; the web controls keep
-the two values synchronized, so either can be edited.
+`x_start` and `x_end` define the measured segment in millimetres along the
+taught `p_start_l -> p_end_l` line. `x_start` defaults to `0`, and `x_end`
+defaults to the full taught line length. The program never measures before
+`p_start_l` or after `p_end_l`. The effective line length is `x_end - x_start`.
+
+`number_of_measurements` includes both selected segment endpoints and must be
+at least two. `increment` is the corresponding distance between points; the web
+controls keep the two values synchronized, so either can be edited.
 
 The program interpolates all three base-frame position coordinates and keeps
 the orientation taught at the start waypoint. The end waypoint orientation is
 ignored. Safe clearance direction and distance are deduced from the full
 three-dimensional position difference between `p_start_h` and the configured
 start waypoint.
+
+`offset_y` is an optional lateral point-to-point offset in millimetres,
+resolved from the taught point-to-point frame:
+
+- X follows `p_start_l -> p_end_l`.
+- Z follows `p_start_h -> p_start_l` only to define the local frame.
+- Y is `Z cross X`, perpendicular to the X/Z plane by the right-hand rule.
+
+The Y offset shifts the selected segment without changing orientations. At the
+end of the segment, the robot returns to the taught line at zero Y offset before
+the regular end routine returns to `p_start_h` and Home.
 
 Example:
 
@@ -42,7 +58,10 @@ Example:
   "parameters": {
     "start_point": "p_start_l",
     "end_point": "p_end_l",
-    "number_of_measurements": 5
+    "number_of_measurements": 5,
+    "x_start": 0.0,
+    "x_end": 0.0,
+    "offset_y": 0.0
   }
 }
 ```
@@ -55,11 +74,11 @@ and `end` must always be supplied together.
 
 `start`
 
-Start of the obstacle zone measured along the line from the start point. Unit: `m`.
+Start of the obstacle zone measured along the line from the start point. Unit: `mm`.
 
 `end`
 
-End of the obstacle zone measured along the line from the start point. Unit: `m`.
+End of the obstacle zone measured along the line from the start point. Unit: `mm`.
 
 Obstacle avoidance considers the entire path between consecutive measurement
 points. An obstacle is therefore crossed at the high level even when it falls
@@ -78,11 +97,11 @@ linear Cartesian motion.
 
 `acceleration`
 
-Acceleration for measurement-related `movel` commands. Unit: `m/s^2`.
+Acceleration for measurement-related `movel` commands. Unit: `mm/s^2`.
 
 `speed`
 
-Speed for measurement-related `movel` commands. Unit: `m/s`.
+Speed for measurement-related `movel` commands. Unit: `mm/s`.
 
 ## measurement
 
@@ -114,11 +133,13 @@ the initial measurement pose without waiting for Python acknowledgement.
 
 `max_displacement`
 
-Maximum probing displacement allowed while searching for contact. Unit: `m`.
+Maximum probing displacement allowed while searching for contact. Unit: `mm`.
 
 `force_step_distance`
 
-Optional step size used by the Python-stepped fallback force approach. Unit: `m`. If omitted, the fallback uses the smaller of `0.001 m` and `max_displacement`.
+Optional step size used by the Python-stepped fallback force approach. Unit:
+`mm`. If omitted, the fallback uses the smaller of `1 mm` and
+`max_displacement`.
 
 `force_direction`
 

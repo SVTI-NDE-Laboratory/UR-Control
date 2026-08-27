@@ -8,8 +8,8 @@ start/stop control.
 The normal sequence is:
 
 ```text
-verify Home → start routine → move along measurement line
-→ apply force → acquire data → end routine → Home
+verify Home -> start routine -> move along measurement line
+-> apply force -> acquire data -> end routine -> Home
 ```
 
 > **Safety:** This software commands a real industrial robot. Before starting,
@@ -66,7 +66,7 @@ The current code expects:
 - Remote Control mode enabled on the teach pendant
 - Robot powered on, brakes released, and robot mode `RUNNING`
 
-The IP is defined in `src/program/main.py` and
+The IP is defined in `src/program/commands/run_measurement_sequence.py` and
 `src/program/webapp/settings.py`. Update both if the controller address changes.
 
 The computer firewall and network adapter must permit communication with these
@@ -99,12 +99,12 @@ The force protocol uses these registers:
 
 | Register | Direction | Meaning |
 |---|---|---|
-| Integer 42 | Robot → Python | `0` ready/complete, `1` force reached, `2` distance/time limit, `3` acknowledgement timeout |
-| Integer 42 | Python → Robot | `1` acquisition completed; release the force hold |
-| Double 43 | Python → Robot | Maximum approach distance [m] |
-| Double 44 | Python → Robot | Contact-force threshold [N] |
-| Double 45 | Python → Robot | Holding force [N] |
-| Integer 46 | Python → Robot | Simulation flag |
+| Integer 42 | Robot -> Python | `0` ready/complete, `1` force reached, `2` distance/time limit, `3` acknowledgement timeout |
+| Integer 42 | Python -> Robot | `1` acquisition completed; release the force hold |
+| Double 43 | Python -> Robot | Maximum approach distance [m] |
+| Double 44 | Python -> Robot | Contact-force threshold [N] |
+| Double 45 | Python -> Robot | Holding force [N] |
+| Integer 46 | Python -> Robot | Simulation flag |
 
 The script approaches along the positive Z axis of the TCP pose captured at
 force-cycle startup. Confirm that this is the intended physical direction.
@@ -116,7 +116,7 @@ Current fixed controller-side values are:
 - Simulation approach timeout: `2 s`
 - Python acknowledgement timeout: `10 s`
 - Return speed: `0.04 m/s`
-- Return acceleration: `0.1 m/s²`
+- Return acceleration: `0.1 m/s^2`
 
 ## 3. Prepare waypoint and routine data
 
@@ -140,6 +140,12 @@ For point-to-point mode:
 - `p_start_l → p_end_l` defines the physical measurement line.
 - `p_start_h → p_start_l` defines the safe-height offset.
 - The orientation from `p_start_l` is retained along the line.
+- X Start and X End select the measured segment along the taught
+  `p_start_l -> p_end_l` line. Measurements never go before `p_start_l` or past
+  `p_end_l`.
+- Optional Y offset shifts the selected segment sideways. Y is perpendicular to
+  the X/Z plane using the right-hand rule; Z follows `p_start_h` to `p_start_l`
+  only to define that local frame.
 
 Regenerate routine JSON after changing taught waypoints or routine ordering.
 The complete export procedure is documented in
@@ -211,12 +217,12 @@ Translation direction vectors are stored in
 page controls. Direction vectors are normalized by the program and cannot be
 zero.
 
-**Total Length [cm]**
+**Total Length [mm]**
 
 The physical translation-line length. It must be positive. In point-to-point
 mode it is calculated from the two low waypoints.
 
-**Increment [cm] / # Measurements**
+**Increment [mm] / # Measurements**
 
 Either field can drive spacing:
 
@@ -228,8 +234,22 @@ Either field can drive spacing:
 - The measurement count itself must be an integer of at least two.
 - In point-to-point mode, an increment cannot exceed the line length.
 
-Displayed lengths use centimetres and three decimal places. Configuration and
-output JSON files use metres.
+Displayed lengths, configuration files, live state, and measurement-plan line
+positions use millimetres.
+
+**X Start / X End [mm]**
+
+Available in point-to-point mode. These values select the measured segment
+along `p_start_l -> p_end_l`. X Start defaults to `0`, and X End defaults to
+the full taught line length. For example, setting X Start to `100 mm` reduces
+the effective line length by `100 mm`.
+
+**Y Offset [mm]**
+
+Available in point-to-point mode. This shifts the selected segment sideways
+without changing orientation. After finishing at the high level, the robot moves
+back to the taught line at zero Y offset before the regular end routine returns
+to `p_start_h` and Home.
 
 ### Obstacle
 
@@ -243,7 +263,7 @@ along the line from its start.
 - Any movement segment crossing the interval rises to the safe plane, even if
   no sampled point lies inside the obstacle.
 
-**Safe Height [cm]** is editable in translation mode. In point-to-point mode it
+**Safe Height [mm]** is editable in translation mode. In point-to-point mode it
 is derived from `p_start_h → p_start_l` and is locked.
 
 ### Measurement Motion
@@ -252,11 +272,12 @@ Measurement-line movements are linear:
 
 | Input | Unit | Rule |
 |---|---|---|
-| Speed | m/s | Must be positive |
-| Acceleration | m/s² | Must be positive |
+| Speed | mm/s | Must be positive |
+| Acceleration | mm/s^2 | Must be positive |
 
 Start/end routine motions are defined independently inside the selected routine
-JSON. Joint steps use `rad/s` and `rad/s²`; linear steps use `m/s` and `m/s²`.
+JSON. Joint steps use `rad/s` and `rad/s^2`; linear steps use `mm/s` and
+`mm/s^2`. Blend radii are stored in millimetres.
 
 ### Force Measurement
 
@@ -264,7 +285,7 @@ JSON. Joint steps use `rad/s` and `rad/s²`; linear steps use `m/s` and `m/s²`.
 |---|---|---|
 | Force Contact | N | Threshold that marks physical contact |
 | Force Holding | N | Force maintained while data acquisition runs |
-| Maximum Displacement | cm | Maximum permitted approach travel |
+| Maximum Displacement | mm | Maximum permitted approach travel |
 
 Rules:
 
@@ -330,11 +351,11 @@ later run can replace files with the same names.
 2. A safety confirmation popup is shown.
 3. The web server checks Remote Control, robot mode, safety state, and Home.
 4. A new session ID and output location are created.
-5. `main.py` starts as a measurement worker.
-6. Main writes the effective configuration and measurement plan.
-7. Main launches the local data-acquisition server on `127.0.0.1:5055`.
+5. `commands/run_measurement_sequence.py` starts as a measurement worker.
+6. The measurement command writes the effective configuration and measurement plan.
+7. The measurement command launches the local data-acquisition server on `127.0.0.1:5055`.
 8. An application-level handshake verifies the expected server and protocol.
-9. Main repeats the robot readiness and Home checks.
+9. The measurement command repeats the robot readiness and Home checks.
 10. The `start` routine moves to the safe measurement start.
 11. Every valid line point is approached and verified.
 12. The force URP runs.
@@ -355,7 +376,7 @@ During a run, configuration controls are locked. The visualization shows
 pending, current, completed, and failed measurement points.
 
 - **Phase** displays a human-readable program phase.
-- **Current position [cm]** changes only after the exact lateral/contact pose is
+- **Current position [mm]** changes only after the exact lateral/contact pose is
   reached and verified.
 - **Progress** changes only after the force/acquisition result is recorded.
 - **Stop program** replaces Start while the worker is running. It requests both
@@ -396,7 +417,7 @@ Both logs are flushed as messages occur. A log line looks like:
 }
 ```
 
-- `line_position` is stored in metres.
+- `line_position` is stored in millimetres.
 - The timestamp is the acquisition completion timestamp when acquisition runs.
 - A failed force attempt records `force_reached: false` before the run stops.
 - Untouched points retain `null` results.
@@ -425,10 +446,16 @@ force_contact reached
 The simulated acquisition delay is configured in:
 
 ```text
-data_acquisition_server/config.json
+data_acquisition_server/config_server.json
 ```
 
-Default local-server settings are:
+Default data-acquisition communication settings are configured in:
+
+```text
+src/program/data_acquisition/config_client.json
+```
+
+Current defaults are:
 
 | Setting | Default |
 |---|---:|
@@ -436,6 +463,8 @@ Default local-server settings are:
 | Port | `5055` |
 | Startup handshake timeout | `5 s` |
 | Acquisition client timeout | `6 s` |
+| Heartbeat interval | `2 s` |
+| Heartbeat timeout | `1 s` |
 | Simulated delay | `1–3 s` |
 
 The `6 s` client timeout is shorter than the robot's `10 s` acknowledgement
@@ -444,10 +473,16 @@ successful measurement and requests a robot stop.
 
 ## 11. Direct command-line operation
 
-The web app is recommended, but main can be run directly:
+The web app is recommended, but the measurement command can be run directly:
 
 ```powershell
 .\.venv\Scripts\python.exe src\program\main.py
+```
+
+`src\program\main.py` is a compatibility wrapper around:
+
+```powershell
+.\.venv\Scripts\python.exe src\program\commands\run_measurement_sequence.py
 ```
 
 It asks for Enter before connecting and uses:
@@ -461,7 +496,7 @@ src/program/config/                 as the output folder
 Available options:
 
 ```powershell
-python src\program\main.py `
+python src\program\commands\run_measurement_sequence.py `
   --config C:\path\to\config.json `
   --routines-file C:\path\to\routines.json `
   --output-dir C:\path\to\output
@@ -470,7 +505,7 @@ python src\program\main.py `
 `--operator-confirmed` skips the terminal Enter prompt and is intended for the
 web launcher after its safety dialog—not for routine manual use.
 
-Direct `main.py` execution uses the exact output folder supplied; automatic
+Direct command execution uses the exact output folder supplied; automatic
 dated session-folder creation is a web-app option.
 
 ## 12. Safety and reliability behavior
@@ -566,11 +601,17 @@ enabled. When it is disabled, later runs intentionally reuse the same filenames.
 
 ## 14. Useful standalone tools
 
-These scripts are intended for controlled setup, diagnostics, or recovery:
+These supported commands are intended for controlled setup, diagnostics, or recovery:
 
 ```powershell
-python examples\go_to_waypoint.py
-python examples\run_single_routine.py
+python src\program\commands\go_to_waypoint.py
+python src\program\commands\run_single_routine.py
+python src\program\commands\run_repeated_single_point_measurement.py
+```
+
+These remaining examples are focused experiments and utilities:
+
+```powershell
 python examples\run_force_approach.py
 python examples\run_hardcoded_program.py
 python examples\run_hardcoded_point_to_point_program.py
@@ -584,10 +625,10 @@ not all provide the same browser confirmation flow as the main application.
 ## 15. Project structure
 
 ```text
-data_acquisition_server/     simulated acquisition service and protocol
-examples/                    focused setup and diagnostic scripts
+data_acquisition_server/     reference simulated acquisition server
+examples/                    focused experimental scripts and utilities
 src/measurement/             line planning, traversal, force integration, state
-src/program/                 main program, defaults, and FastAPI web app
+src/program/                 supported command programs, defaults, and FastAPI web app
 src/robot/                   robot communication and verified movements
 src/routines/                waypoint extraction and routine JSON files
 ```
@@ -595,6 +636,7 @@ src/routines/                waypoint extraction and routine JSON files
 Additional focused documentation:
 
 - `src/program/webapp/README.md`
+- `src/program/data_acquisition/protocol.md`
 - `src/program/config/read_me_config.md`
 - `src/robot/README.md`
 - `src/routines/read_me_routines.md`

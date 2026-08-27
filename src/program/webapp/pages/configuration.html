@@ -34,7 +34,7 @@
         <div id="ongoing-measurement" class="ongoing-measurement" aria-live="polite">
           <dl class="state-grid">
             <dt>Phase</dt><dd id="ongoing-mode">—</dd>
-            <dt>Current position [cm]</dt><dd id="ongoing-current">—</dd>
+            <dt>Current position [mm]</dt><dd id="ongoing-current">—</dd>
             <dt>Progress</dt><dd id="ongoing-progress">—</dd>
           </dl>
         </div>
@@ -75,6 +75,8 @@
     const incrementInput = document.getElementById('line.parameters.increment');
     const measurementCountInput = document.getElementById('measurement-count');
     const spacingSourceInput = document.getElementById('spacing-source');
+    const xStartInput = document.getElementById('line.parameters.x_start');
+    const xEndInput = document.getElementById('line.parameters.x_end');
     const pointMethodNote = document.getElementById('point-method-note');
     const routineFileSelect = document.getElementById('routine-file');
     const runButton = document.getElementById('run-program');
@@ -97,8 +99,16 @@
       return Number.isFinite(value) ? value : fallback;
     }
 
-    function formatCentimetres(metres) {
-      return `${Number((metres * 100).toFixed(3))} cm`;
+    function formatMillimetres(millimetres) {
+      return `${Number(millimetres.toFixed(3))} mm`;
+    }
+
+    function selectedPointLength() {
+      if (!pointGeometry) return 0;
+      const xStart = Number.parseFloat(xStartInput?.value || '0');
+      const xEnd = Number.parseFloat(xEndInput?.value || String(pointGeometry.line_length));
+      if (!Number.isFinite(xStart) || !Number.isFinite(xEnd)) return 0;
+      return Math.max(0, xEnd - xStart);
     }
 
     function addSvg(tag, attributes, text = '') {
@@ -126,8 +136,11 @@
       totalLengthInput.classList.toggle('optional-disabled', pointToPoint);
       safeHeightRow.classList.toggle('optional-disabled', pointToPoint);
       if (pointToPoint && pointGeometry) {
-        totalLengthInput.value = (pointGeometry.line_length * 100).toFixed(3);
-        safeHeightInput.value = (pointGeometry.safe_height * 100).toFixed(3);
+        if (xEndInput && Number.parseFloat(xEndInput.value) <= 0) {
+          xEndInput.value = pointGeometry.line_length.toFixed(3);
+        }
+        totalLengthInput.value = selectedPointLength().toFixed(3);
+        safeHeightInput.value = pointGeometry.safe_height.toFixed(3);
       }
       for (const element of document.querySelectorAll('[data-line-method]')) {
         const active = element.dataset.lineMethod === method;
@@ -150,7 +163,7 @@
     function updateMeasurementCount() {
       if (!totalLengthInput || !incrementInput || !measurementCountInput) return;
       const length = lineMethod.value === 'point_to_point'
-        ? (pointGeometry?.line_length || 0) * 100
+        ? selectedPointLength()
         : Number.parseFloat(totalLengthInput.value);
       const increment = Number.parseFloat(incrementInput.value);
       if (length > 0 && increment > 0) {
@@ -167,7 +180,7 @@
     function updateIncrement() {
       if (!totalLengthInput || !incrementInput || !measurementCountInput) return;
       const length = lineMethod.value === 'point_to_point'
-        ? (pointGeometry?.line_length || 0) * 100
+        ? selectedPointLength()
         : Number.parseFloat(totalLengthInput.value);
       const count = Number(measurementCountInput.value);
       if (length > 0 && Number.isInteger(count) && count >= 2) {
@@ -189,14 +202,14 @@
       const requestedCount = Number(measurementCountInput?.value || '2');
       const count = Number.isInteger(requestedCount) && requestedCount >= 2 ? requestedCount : 2;
       const length = translation
-        ? numberValue('line.parameters.line_length') / 100
-        : pointGeometry?.line_length || 0;
-      const requestedIncrement = numberValue('line.parameters.increment') / 100;
+        ? numberValue('line.parameters.line_length')
+        : selectedPointLength();
+      const requestedIncrement = numberValue('line.parameters.increment');
       const increment = !translation && spacingSourceInput.value === 'count' && length > 0
         ? length / (count - 1)
         : requestedIncrement;
-      const obstacleStart = numberValue('obstacle.start') / 100;
-      const obstacleEnd = numberValue('obstacle.end') / 100;
+      const obstacleStart = numberValue('obstacle.start');
+      const obstacleEnd = numberValue('obstacle.end');
       const hasObstacle = obstacleEnabled.checked && obstacleStart >= 0 && obstacleEnd >= obstacleStart;
       const left = 55, right = 585, highY = 90, lowY = 220;
       const width = right - left;
@@ -224,8 +237,8 @@
         addSvg('circle', {cx:scale(position), cy:lowY, r:6, fill:'#2474a9', stroke:'white', 'stroke-width':2});
         addSvg('text', {x:scale(position), y:lowY+25, 'text-anchor':'middle', fill:'#334e60', 'font-size':12}, String(visibleMeasurements));
       }
-      addSvg('text', {x:left, y:285, fill:'#334e60', 'font-size':14}, translation ? '0 cm' : 'p_start_l');
-      addSvg('text', {x:right, y:285, 'text-anchor':'end', fill:'#334e60', 'font-size':14}, translation ? formatCentimetres(length) : `p_end_l (${formatCentimetres(length)})`);
+      addSvg('text', {x:left, y:285, fill:'#334e60', 'font-size':14}, translation ? '0 mm' : 'p_start_l');
+      addSvg('text', {x:right, y:285, 'text-anchor':'end', fill:'#334e60', 'font-size':14}, translation ? formatMillimetres(length) : `p_end_l (${formatMillimetres(length)})`);
 
     }
 
@@ -266,16 +279,7 @@
     }
 
     function shownValue(key, value) {
-      const centimetreFields = new Set([
-        'line_length',
-        'increment',
-        'high_low_distance',
-        'start',
-        'end',
-        'max_displacement',
-        'force_step_distance',
-      ]);
-      if (centimetreFields.has(key)) return (value * 100).toFixed(3);
+      if (typeof value === 'number') return value.toFixed(3);
       if (Array.isArray(value)) return value.join(', ');
       return String(value);
     }
@@ -294,6 +298,10 @@
         setNamedValue('line.parameters.high_low_distance', 'high_low_distance', parameters.high_low_distance);
         setNamedValue('line.parameters.direction_start_end', 'direction_start_end', parameters.direction_start_end);
         setNamedValue('line.parameters.direction_high_low', 'direction_high_low', parameters.direction_high_low);
+      } else {
+        setNamedValue('line.parameters.x_start', 'x_start', parameters.x_start || parameters.offset_x || 0);
+        setNamedValue('line.parameters.x_end', 'x_end', parameters.x_end || pointGeometry?.line_length || 0);
+        setNamedValue('line.parameters.offset_y', 'offset_y', parameters.offset_y || 0);
       }
       setNamedValue('line.parameters.increment', 'increment', parameters.increment);
       spacingSourceInput.value = parameters.spacing_source || 'increment';
@@ -388,6 +396,12 @@
     });
     form.addEventListener('reset', () => setTimeout(() => { updateMeasurementCount(); drawVisualization(); }, 0));
     totalLengthInput?.addEventListener('input', updateMeasurementCount);
+    for (const input of [xStartInput, xEndInput]) {
+      input?.addEventListener('input', () => {
+        synchronizeSpacingFromSource();
+        drawVisualization();
+      });
+    }
     incrementInput?.addEventListener('input', () => {
       spacingSourceInput.value = 'increment';
       updateMeasurementCount();
@@ -457,13 +471,13 @@
         addSvg('text', {x:scale(point.line_position), y:lowY+25, 'text-anchor':'middle', fill:'#334e60', 'font-size':12}, String(index + 1));
       }
       if (currentPosition !== null) {
-        addSvg('text', {x:scale(currentPosition), y:lowY-20, 'text-anchor':'middle', fill:'#1769aa', 'font-size':14, 'font-weight':700}, `Current: ${formatCentimetres(currentPosition)}`);
+        addSvg('text', {x:scale(currentPosition), y:lowY-20, 'text-anchor':'middle', fill:'#1769aa', 'font-size':14, 'font-weight':700}, `Current: ${formatMillimetres(currentPosition)}`);
       }
       addSvg('text', {x:left, y:285, fill:'#334e60', 'font-size':14}, 'Start');
       addSvg('text', {x:right, y:285, 'text-anchor':'end', fill:'#334e60', 'font-size':14}, 'End');
 
       document.getElementById('ongoing-mode').textContent = humanizePhase(programState.mode);
-      document.getElementById('ongoing-current').textContent = currentPosition === null ? '—' : (currentPosition * 100).toFixed(3);
+      document.getElementById('ongoing-current').textContent = currentPosition === null ? '—' : currentPosition.toFixed(3);
       document.getElementById('ongoing-progress').textContent = `${complete} / ${points.length}`;
     }
 

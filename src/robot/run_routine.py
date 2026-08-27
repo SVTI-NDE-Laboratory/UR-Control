@@ -20,6 +20,24 @@ from robot_connection import assert_robot_running, send_script, stop_robot
 from robot_scripts import routine_script, ur_pose
 from read_routines import get_routine, get_waypoint
 
+MM_PER_METRE = 1000.0
+
+
+def linear_motion_for_robot(motion: dict) -> tuple[float, float, float]:
+    """Convert a linear routine motion from mm units to UR metre units."""
+
+    return (
+        motion["acceleration"] / MM_PER_METRE,
+        motion["speed"] / MM_PER_METRE,
+        motion["blend_radius"] / MM_PER_METRE,
+    )
+
+
+def blend_radius_for_robot(motion: dict) -> float:
+    """Convert a routine blend radius from millimetres to metres."""
+
+    return motion["blend_radius"] / MM_PER_METRE
+
 
 def run_routine(
     routine_name: str,
@@ -96,10 +114,14 @@ def _run_routine(
         if motion_type == "l":
             if "p" not in waypoint:
                 raise ValueError(f"Waypoint '{waypoint_name}' has no p target for linear motion.")
+            robot_acceleration, robot_speed, robot_blend_radius = (
+                linear_motion_for_robot(motion)
+            )
             if verbose:
                 print(
                     f"Moving to {waypoint_name}. Target: {ur_pose(waypoint['p'])} "
-                    f"(movel, a={acceleration}, v={speed}, r={blend_radius})"
+                    f"(movel, a={acceleration} mm/s^2, "
+                    f"v={speed} mm/s, r={blend_radius} mm)"
                 )
             target = waypoint["p"]
         elif motion_type == "j":
@@ -112,6 +134,9 @@ def _run_routine(
                     f"(movej, a={acceleration}, v={speed}, r={blend_radius})"
                 )
             target = q_target
+            robot_acceleration = acceleration
+            robot_speed = speed
+            robot_blend_radius = blend_radius_for_robot(motion)
         else:
             raise ValueError(
                 f"Routine '{routine_name}', waypoint '{waypoint_name}' has motion type "
@@ -120,17 +145,32 @@ def _run_routine(
 
         prepared_motion = {
             "type": motion_type,
-            "acceleration": acceleration,
-            "speed": speed,
-            "blend_radius": blend_radius,
+            "acceleration": robot_acceleration,
+            "speed": robot_speed,
+            "blend_radius": robot_blend_radius,
         }
         moves.append({"target": target, "motion": prepared_motion})
 
         if confirm_each_step:
             if motion_type == "l":
-                movel_pose(robot_ip, rtde_receive, target, acceleration, speed, wait_timeout)
+                movel_pose(
+                    robot_ip,
+                    rtde_receive,
+                    target,
+                    robot_acceleration,
+                    robot_speed,
+                    wait_timeout,
+                )
             else:
-                movej(robot_ip, rtde_receive, target, acceleration, speed, joint_tolerance, wait_timeout)
+                movej(
+                    robot_ip,
+                    rtde_receive,
+                    target,
+                    robot_acceleration,
+                    robot_speed,
+                    joint_tolerance,
+                    wait_timeout,
+                )
             input("Confirm position, then press Enter for the next move.")
 
     if confirm_each_step or not moves:

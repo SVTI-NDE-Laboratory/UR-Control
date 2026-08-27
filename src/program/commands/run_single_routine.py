@@ -4,7 +4,7 @@ import sys
 from pathlib import Path
 
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
 ROBOT_DIR = PROJECT_ROOT / "src" / "robot"
 ROUTINES_DIR = PROJECT_ROOT / "src" / "routines"
 

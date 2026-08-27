@@ -21,6 +21,7 @@ from robot_connection import (
     load_and_play_urp,
     stop_robot,
 )
+from line_planner import millimetres_to_metres
 from robot_move import ensure_at_tcp_target, tcp_target_errors
 
 
@@ -31,8 +32,8 @@ INITIALIZATION_TIMEOUT = 5.0
 APPROACH_STATUS_TIMEOUT = 15.0
 SIMULATION_STATUS_TIMEOUT = 7.0
 RETURN_TIMEOUT = 30.0
-RETURN_ACCELERATION = 0.1
-RETURN_SPEED = 0.02
+RETURN_ACCELERATION = 100.0
+RETURN_SPEED = 20.0
 FORCE_MOTION_START_TIMEOUT = 2.0
 FORCE_MOTION_STALL_TIMEOUT = 2.0
 FORCE_POSITION_PROGRESS_THRESHOLD = 0.00005
@@ -127,7 +128,11 @@ def apply_force(
     acquisition_context: dict | None = None,
     acknowledge_force_hold: bool = True,
 ) -> tuple[bool, str]:
-    """Run a force cycle and return its result plus measurement timestamp."""
+    """Run a force cycle and return its result plus measurement timestamp.
+
+    ``max_distance`` is configured in millimetres. It is converted to metres
+    only when written to the robot input register.
+    """
 
     # Integer registers: status/ack 42 and simulation 46.
     # Double registers: max distance 43, contact threshold 44, holding force 45.
@@ -172,7 +177,7 @@ def apply_force(
 
         # Send physical values before starting the URP.
         parameters = {
-            max_distance_register: max_distance,
+            max_distance_register: millimetres_to_metres(max_distance),
             contact_threshold_register: contact_threshold,
             holding_force_register: holding_force,
         }
@@ -281,8 +286,8 @@ def apply_force(
             robot_ip,
             rtde_receive,
             pre_force_pose,
-            RETURN_ACCELERATION,
-            RETURN_SPEED,
+            millimetres_to_metres(RETURN_ACCELERATION),
+            millimetres_to_metres(RETURN_SPEED),
             RETURN_TIMEOUT,
         )
         position_error, rotation_error = tcp_target_errors(
@@ -320,7 +325,7 @@ if __name__ == "__main__":
     force_reached, measurement_timestamp = apply_force(
         "192.168.3.10",
         "Benoit/apply_force.urp",
-        0.050,
+        50.0,
         15.0,
         20.0,
         simulation=False,

@@ -4,7 +4,7 @@ For installation, robot preparation, every control-panel input, session
 outputs, safety behavior, and troubleshooting, see the project-level
 [`README.md`](../../README.md).
 
-`main.py` runs the complete robot sequence:
+`commands/run_measurement_sequence.py` runs the complete robot sequence:
 
 ```text
 Home check -> start routine -> measurements -> end routine -> Home
@@ -22,10 +22,16 @@ in [`webapp/README.md`](webapp/README.md).
 
 ## Direct command-line use
 
-`main.py` can also be run directly:
+The compatibility wrapper can still be run directly:
 
 ```powershell
 python src\program\main.py
+```
+
+The named command entry point is:
+
+```powershell
+python src\program\commands\run_measurement_sequence.py
 ```
 
 By default, it reads:
@@ -38,7 +44,7 @@ src/routines/routine_files/routines_block.json
 Explicit paths can be supplied when needed:
 
 ```powershell
-python src\program\main.py `
+python src\program\commands\run_measurement_sequence.py `
   --config C:\path\to\config.json `
   --routines-file C:\path\to\routines.json `
   --output-dir C:\path\to\output
@@ -69,7 +75,7 @@ Web sessions also contain `session.json` when the dated-session-folder option
 is enabled. Both logs are written in real time with local ISO timestamps.
 
 Each entry in `measurement_plan.json` has a one-based `measurement_index`, a
-`line_position` in metres, and a `data` result. After a force cycle, `data`
+`line_position` in millimetres, and a `data` result. After a force cycle, `data`
 records the acquisition timestamp and whether the requested force was reached.
 Points excluded by an obstacle are not included in the plan.
 

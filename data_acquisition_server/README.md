@@ -1,25 +1,37 @@
-# Simulated Data Acquisition Server
+# Reference Data Acquisition Server
 
-The main robot program starts this local TCP server and verifies it with an
-application-level handshake before connecting to the robot. When force is
-reached, the main program requests one acquisition and keeps the robot force
-hold active until the server replies.
+This folder contains the simulated data acquisition server used for local
+development and protocol testing.
 
-- `data_acquisition_server.py`: simulated server.
-- `data_acquisition_client.py`: request client.
-- `data_acquisition_server_process.py`: child-process lifecycle and handshake.
-- `config.json`: local network, timeout, and simulated-delay settings.
+The communication contract for the real server is documented in:
 
-The simulated server waits a random 1-3 seconds and returns `data_acquired` with
-a completion timestamp. On Windows, main launches it in a separate visible
-console so its handshake and acquisition messages can be monitored directly.
-The same timestamped output is flushed in real time to
-`data_acquisition_server.log` in the active program output folder.
-It can also be tested manually:
+```text
+src/program/data_acquisition/protocol.md
+```
+
+The main robot program reads its client connection settings from:
+
+```text
+src/program/data_acquisition/config_client.json
+```
+
+This reference server reads only its own simulation defaults from:
+
+```text
+data_acquisition_server/config_server.json
+```
+
+Run it manually for protocol testing:
 
 ```powershell
 python data_acquisition_server\data_acquisition_server.py
 ```
 
-It accepts an `acquire_data` JSON message and replies with `data_acquired`
-after a simulated delay.
+Run the interactive fake cobot client in a second terminal:
+
+```powershell
+python data_acquisition_server\example_cobot_client.py
+```
+
+The example client prints each JSON request/response, keeps a heartbeat active,
+and prompts before sending each fake `acquire_data` request.

@@ -114,8 +114,8 @@
           "waypoint": "p_start_h",
           "motion": {
             "type": "l",
-            "acceleration": 0.2,
-            "speed": 0.25,
+            "acceleration": 200.0,
+            "speed": 250.0,
             "blend_radius": 0.0
           }
         },

@@ -2,7 +2,9 @@
 
 The server waits for JSON messages from the robot control program.
 When it receives `{"message": "acquire_data"}`, it waits 1-3 seconds and
-responds with `{"message": "data_acquired"}`.
+responds with `{"message": "data_acquired"}`. It also responds to handshake
+and heartbeat messages used by the main program to verify the communication
+endpoint.
 """
 
 import argparse
@@ -10,16 +12,22 @@ import json
 import os
 import random
 import socket
+import sys
 import threading
 import time
 from datetime import datetime
 from pathlib import Path
 
-from timestamped_logging import install_timestamped_tee
-
 
 SERVER_DIR = Path(__file__).resolve().parent
-CONFIG_FILE = SERVER_DIR / "config.json"
+PROJECT_ROOT = SERVER_DIR.parent
+PROGRAM_DIR = PROJECT_ROOT / "src" / "program"
+if str(PROGRAM_DIR) not in sys.path:
+    sys.path.insert(0, str(PROGRAM_DIR))
+
+from data_acquisition.timestamped_logging import install_timestamped_tee
+
+CONFIG_SERVER_FILE = SERVER_DIR / "config_server.json"
 
 
 def process_is_running(process_id: int) -> bool:
@@ -101,6 +109,17 @@ def handle_request(
             "protocol_version": 1,
         }
 
+    if request.get("message") == "heartbeat":
+        return {
+            "message": "heartbeat_ack",
+            "server": "data_acquisition_server",
+            "protocol_version": 1,
+            "heartbeat_id": request.get("heartbeat_id"),
+            "received_at": datetime.now()
+            .astimezone()
+            .isoformat(timespec="milliseconds"),
+        }
+
     if request.get("message") != "acquire_data":
         return {"message": "error", "error": "unknown message", "request": request}
 
@@ -139,21 +158,43 @@ def run_server(
 
         while True:
             connection, address = server.accept()
-            with connection:
-                print(f"Connection from {address}")
-                request = read_json_line(connection)
-                if not request:
-                    continue
-                response = handle_request(
-                    request,
+            threading.Thread(
+                target=serve_connection,
+                args=(
+                    connection,
+                    address,
                     minimum_acquisition_delay,
                     maximum_acquisition_delay,
-                )
-                send_json_line(connection, response)
+                ),
+                daemon=True,
+            ).start()
+
+
+def serve_connection(
+    connection,
+    address,
+    minimum_acquisition_delay: float,
+    maximum_acquisition_delay: float,
+) -> None:
+    """Serve one JSON-line request on one TCP connection."""
+
+    with connection:
+        print(f"Connection from {address}")
+        request = read_json_line(connection)
+        if not request:
+            return
+        response = handle_request(
+            request,
+            minimum_acquisition_delay,
+            maximum_acquisition_delay,
+        )
+        send_json_line(connection, response)
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--host")
+    parser.add_argument("--port", type=int)
     parser.add_argument("--parent-pid", type=int)
     parser.add_argument("--log-file", type=Path)
     arguments = parser.parse_args()
@@ -166,10 +207,10 @@ if __name__ == "__main__":
             daemon=True,
             name="parent-process-watchdog",
         ).start()
-    config = json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
+    config = json.loads(CONFIG_SERVER_FILE.read_text(encoding="utf-8"))
     run_server(
-        config["host"],
-        config["port"],
+        arguments.host or config["host"],
+        arguments.port or config["port"],
         config["minimum_acquisition_delay"],
         config["maximum_acquisition_delay"],
     )

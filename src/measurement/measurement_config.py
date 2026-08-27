@@ -81,32 +81,38 @@ def print_measurement_config_summary(
             "  line: method=point_to_point, "
             f"start={geometry['start_name']}, end={geometry['end_name']}, "
             f"measurements={geometry['number_of_measurements']}, "
-            f"length={geometry['length']:.6f} m"
+            f"length={geometry['length']:.3f} mm"
         )
         print(
-            f"  high-to-low: derived distance={height:.6f} m, "
+            f"  high-to-low: derived distance={height:.3f} mm, "
             f"base-frame direction={direction}"
+        )
+        print(
+            "  point segment: "
+            f"x_start={geometry['x_start']:.3f} mm, "
+            f"x_end={geometry['x_end']:.3f} mm, "
+            f"y_offset={geometry['offset_y']:.3f} mm"
         )
     else:
         print(
             "  line: method=translation, "
-            f"length={geometry['length']} m, increment={geometry['increment']} m, "
+            f"length={geometry['length']} mm, increment={geometry['increment']} mm, "
             f"direction_start_end={parameters['direction_start_end']} in tool frame"
         )
         if direction is None:
             print("  high-to-low movement: none")
         else:
             print(
-                f"  high-to-low: distance={height} m, direction={direction} in tool frame"
+                f"  high-to-low: distance={height} mm, direction={direction} in tool frame"
             )
     if obstacle is None:
         print("  obstacle: none")
     else:
-        print(f"  obstacle: start={obstacle[0]} m, end={obstacle[1]} m")
+        print(f"  obstacle: start={obstacle[0]} mm, end={obstacle[1]} mm")
     print(
         f"  measurement: contact_threshold={measurement['contact_threshold']} N, "
         f"holding_force={measurement['holding_force']} N, "
-        f"max_displacement={measurement['max_displacement']} m"
+        f"max_displacement={measurement['max_displacement']} mm"
     )
     print(
         f"  measurement: program_path={measurement['program_path']}, "

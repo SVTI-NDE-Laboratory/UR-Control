@@ -37,7 +37,8 @@ END_WAYPOINTS = list(reversed(START_WAYPOINTS))
 # steps. Their names must match the taught labels in the PolyScope script.
 MEASUREMENT_WAYPOINTS = ["p_start_l", "p_end_l", "p_end_h"]
 
-# Joint motion uses rad/s^2 and rad/s. Linear motion uses m/s^2 and m/s.
+# Joint speed/acceleration use rad/s and rad/s^2. Linear speed/acceleration
+# use mm/s and mm/s^2. All blend radii use mm.
 HOME_MOTION = {
     "type": "j",
     "acceleration": 0.2,
@@ -48,7 +49,7 @@ INTERMEDIATE_MOTION = {
     "type": "j",
     "acceleration": 1.0,
     "speed": 10.0,
-    "blend_radius": 0.02,
+    "blend_radius": 20.0,
 }
 STOPPED_JOINT_MOTION = {
     "type": "j",
@@ -58,8 +59,8 @@ STOPPED_JOINT_MOTION = {
 }
 LEAVE_MEASUREMENT_LINE_MOTION = {
     "type": "l",
-    "acceleration": 0.2,
-    "speed": 0.25,
+    "acceleration": 200.0,
+    "speed": 250.0,
     "blend_radius": 0.0,
 }
 

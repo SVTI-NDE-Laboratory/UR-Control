@@ -105,8 +105,9 @@ if __name__ == "__main__":
     script_path = routines_dir / "polyscope_scripts" / "Define_Waypoints_Block.script"
     output_path = routines_dir / "routine_files" / "routines_block.json"
     
-    # Define routines and the motion used to reach each waypoint. Joint motion
-    # uses rad/s^2 and rad/s; linear motion uses m/s^2 and m/s.
+    # Define routines and the motion used to reach each waypoint. Joint speed
+    # and acceleration use rad/s and rad/s^2. Linear speed and acceleration
+    # use mm/s and mm/s^2. All blend radii use mm.
     start_order = ["Home", "Tmp1", "Tmp2", "p_start_h"]
     end_order = list(reversed(start_order))
 
@@ -114,7 +115,7 @@ if __name__ == "__main__":
         "type": "j",
         "acceleration": 1.0,
         "speed": 10.0,
-        "blend_radius": 0.02,
+        "blend_radius": 20.0,
     }
     conservative_joint_motion = {
         "type": "j",
@@ -124,8 +125,8 @@ if __name__ == "__main__":
     }
     conservative_linear_motion = {
         "type": "l",
-        "acceleration": 0.2,
-        "speed": 0.25,
+        "acceleration": 200.0,
+        "speed": 250.0,
         "blend_radius": 0.0,
     }
     end_joint_motion = {

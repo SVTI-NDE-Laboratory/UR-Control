@@ -31,6 +31,7 @@ from measurement_movement import (
     high_to_low,
     low_to_high,
     motion_parameters,
+    move_to_zero_y_high,
     return_to_start_high,
     translate_along_line,
 )
@@ -49,7 +50,8 @@ class MeasurementUnavailableError(RuntimeError):
         self.line_position = line_position
         super().__init__(
             "Could not complete measurement "
-            f"{measurement_index} at {line_position:.3f} m: force threshold was not reached."
+            f"{measurement_index} at {line_position:.3f} mm: "
+            "force threshold was not reached."
         )
 
 
@@ -132,7 +134,7 @@ def _run_measurements(
         write_state(state_path, state)
 
         if not in_obstacle:
-            print(f"\nMeasurement {measurement_index}, position {position:.3f} m")
+            print(f"\nMeasurement {measurement_index}, position {position:.3f} mm")
 
         # Never measure inside an obstacle: rise if needed, then jump directly
         # to the next valid measurement point while staying high.
@@ -148,7 +150,7 @@ def _run_measurements(
                 break
 
             next_position = positions[next_step][1]
-            print(f"Obstacle: jump to next measurement position {next_position:.3f} m")
+            print(f"Obstacle: jump to next measurement position {next_position:.3f} mm")
             translate_along_line(
                 robot_ip,
                 rtde_receive,
@@ -216,7 +218,7 @@ def _run_measurements(
         if not measurement_success:
             message = (
                 f"Could not complete measurement {measurement_index} "
-                f"at {position:.3f} m: "
+                f"at {position:.3f} mm: "
                 "force threshold was not reached before the distance/time limit. "
                 "Returning to p_start_h."
             )
@@ -264,7 +266,7 @@ def _run_measurements(
                     low_to_high(robot_ip, rtde_receive, config, routines_data, position)
                     height_mode = "high"
 
-                print(f"Pass obstacle at safe height: translate to {next_position:.3f} m")
+                print(f"Pass obstacle at safe height: translate to {next_position:.3f} mm")
                 translate_along_line(
                     robot_ip,
                     rtde_receive,
@@ -302,6 +304,18 @@ def _run_measurements(
         )
         height_mode = "high"
 
+    if geometry["method"] == "point_to_point":
+        final_position = positions[-1][1]
+        if abs(geometry["offset_y"]) > 1e-12:
+            print("End of line: return from Y offset to taught line")
+            move_to_zero_y_high(
+                robot_ip,
+                rtde_receive,
+                config,
+                routines_data,
+                final_position,
+            )
+
     # Publish a final state so the caller knows traversal has finished.
     write_state(
         state_path,
@@ -329,7 +343,13 @@ def measurement_target_pose(
 
     parameters = line_parameters(config)
     high_low_direction, high_low_distance = high_low_movement(config)
-    low_offset = scale(normalize(high_low_direction), high_low_distance)
+    low_offset = scale(
+        normalize(high_low_direction),
+        millimetres_to_metres(high_low_distance),
+    )
     start_low_pose = translated_tool_target(traversal_start_pose, low_offset)
-    line_offset = scale(normalize(parameters["direction_start_end"]), line_position)
+    line_offset = scale(
+        normalize(parameters["direction_start_end"]),
+        millimetres_to_metres(line_position),
+    )
     return translated_tool_target(start_low_pose, line_offset)

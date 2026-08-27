@@ -1,18 +1,23 @@
-"""Start and stop the simulated data acquisition server process."""
+"""Start and stop the reference data acquisition server process."""
 
+import json
 import os
 import subprocess
 import sys
 import time
-import json
 from pathlib import Path
 
-from data_acquisition_client import handshake_data_acquisition_server
+if __package__:
+    from .client import handshake_data_acquisition_server
+else:
+    from client import handshake_data_acquisition_server
 
 
-SERVER_DIR = Path(__file__).resolve().parent
+CLIENT_DIR = Path(__file__).resolve().parent
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
+SERVER_DIR = PROJECT_ROOT / "data_acquisition_server"
 SERVER_SCRIPT = SERVER_DIR / "data_acquisition_server.py"
-CONFIG_FILE = SERVER_DIR / "config.json"
+CONFIG_CLIENT_FILE = CLIENT_DIR / "config_client.json"
 
 
 def wait_for_server(
@@ -40,18 +45,22 @@ def wait_for_server(
 
 
 def start_data_acquisition_server(log_path: str | Path) -> tuple[subprocess.Popen, dict]:
-    """Start the acquisition server and complete its startup handshake.
+    """Start the reference acquisition server and complete its startup handshake.
 
     The server is stopped later by stop_data_acquisition_server.
     """
 
-    config = json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
+    config = json.loads(CONFIG_CLIENT_FILE.read_text(encoding="utf-8"))
     creationflags = subprocess.CREATE_NEW_CONSOLE if os.name == "nt" else 0
     process = subprocess.Popen(
         [
             sys.executable,
             "-u",
             str(SERVER_SCRIPT),
+            "--host",
+            config["host"],
+            "--port",
+            str(config["port"]),
             "--parent-pid",
             str(os.getpid()),
             "--log-file",
@@ -74,7 +83,7 @@ def start_data_acquisition_server(log_path: str | Path) -> tuple[subprocess.Pope
 
 
 def stop_data_acquisition_server(process: subprocess.Popen | None) -> None:
-    """Stop the simulated acquisition server process.
+    """Stop the reference acquisition server process.
 
     This is safe to call with None and is intended for use in a finally block.
     """

@@ -7,6 +7,12 @@ from pathlib import Path
 from line_planner import POINT_TO_POINT, is_obstacle, line_geometry, line_positions, point_pose
 
 
+def display_tcp_pose(pose: list[float]) -> list[float]:
+    """Return a TCP pose with XYZ in millimetres and rotation unchanged."""
+
+    return [pose[index] * 1000.0 for index in range(3)] + list(pose[3:6])
+
+
 def create_measurement_plan(config: dict, routines_data: dict | None = None) -> dict:
     """Return a plan containing only positions where measurements will occur."""
 
@@ -24,12 +30,15 @@ def create_measurement_plan(config: dict, routines_data: dict | None = None) -> 
             },
         }
         if geometry["method"] == POINT_TO_POINT:
-            point["tcp_pose"] = [round(value, 12) for value in point_pose(geometry, line_position)]
+            point["tcp_pose"] = [
+                round(value, 12)
+                for value in display_tcp_pose(point_pose(geometry, line_position))
+            ]
         points.append(point)
 
-    units = {"line_position": "m"}
+    units = {"line_position": "mm"}
     if geometry["method"] == POINT_TO_POINT:
-        units["tcp_pose"] = ["m", "m", "m", "rad", "rad", "rad"]
+        units["tcp_pose"] = ["mm", "mm", "mm", "rad", "rad", "rad"]
 
     return {
         "schema_version": 3,

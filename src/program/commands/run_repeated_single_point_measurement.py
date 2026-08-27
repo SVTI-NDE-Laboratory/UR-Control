@@ -4,14 +4,14 @@ The robot may start either at Home or at p_start_h. If it starts at Home, the
 configured start routine is run to reach p_start_h. If it already starts at
 p_start_h, the start routine is skipped.
 
-No state, plan, or measurement files are written by this example.
+No state, plan, or measurement files are written by this command.
 """
 
 import sys
 from pathlib import Path
 
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
 MEASUREMENT_DIR = PROJECT_ROOT / "src" / "measurement"
 ROBOT_DIR = PROJECT_ROOT / "src" / "robot"
 ROUTINES_DIR = PROJECT_ROOT / "src" / "routines"
@@ -43,13 +43,13 @@ from run_routine import run_routine
 ROBOT_IP = "192.168.3.10"
 ROUTINES_FILE = ROUTINES_DIR / "routine_files" / "routines_pk-03-prism-a.json"
 
-# Distance from p_start_l along the p_start_l -> p_end_l measurement line.
-TARGET_LINE_POSITION = 0.31
+# Distance from p_start_l along the p_start_l -> p_end_l measurement line [mm].
+TARGET_LINE_POSITION = 310.0
 
 FORCE_PROGRAM_PATH = "Inspection/Programs/apply_force_mira.urp"
 CONTACT_THRESHOLD = 140.0
 HOLDING_FORCE = 160.0
-MAX_DISPLACEMENT = 0.05
+MAX_DISPLACEMENT = 50.0
 SIMULATION = False
 
 JOINT_TOLERANCE = 0.01
@@ -67,13 +67,13 @@ MEASUREMENT_CONFIG = {
             "end_point": "p_end_l",
             "spacing_source": "count",
             "number_of_measurements": 2,
-            "increment": 0.1,
+            "increment": 100.0,
         },
     },
     "motion": {
         "type": "l",
-        "acceleration": 0.1,
-        "speed": 0.1,
+        "acceleration": 100.0,
+        "speed": 100.0,
     },
     "measurement": {
         "program_path": FORCE_PROGRAM_PATH,
@@ -130,7 +130,7 @@ def run() -> None:
     if TARGET_LINE_POSITION < 0 or TARGET_LINE_POSITION > geometry["length"]:
         raise ValueError(
             "TARGET_LINE_POSITION must be between 0 and the measurement line "
-            f"length ({geometry['length']:.6f} m)."
+            f"length ({geometry['length']:.3f} mm)."
         )
     acceleration, speed = motion_parameters(MEASUREMENT_CONFIG)
 
@@ -177,7 +177,7 @@ def run() -> None:
                 "Unsafe start prevented: robot must start at Home or p_start_h."
             )
 
-        print(f"Moving to high position at line distance {TARGET_LINE_POSITION:.3f} m.")
+        print(f"Moving to high position at line distance {TARGET_LINE_POSITION:.3f} mm.")
         movel_pose(
             ROBOT_IP,
             rtde_receive,

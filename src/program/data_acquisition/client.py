@@ -2,7 +2,9 @@
 
 import json
 import socket
+import threading
 import uuid
+from datetime import datetime
 
 
 def send_json_line(connection, message: dict) -> None:
@@ -63,6 +65,56 @@ def handshake_data_acquisition_server(
     ):
         raise RuntimeError(f"Invalid data acquisition handshake: {response}")
     return response
+
+
+def send_heartbeat(host: str, port: int, timeout: float) -> dict:
+    """Notify the acquisition server that the main program is still running."""
+
+    heartbeat_id = uuid.uuid4().hex
+    response = exchange_message(
+        host,
+        port,
+        {
+            "message": "heartbeat",
+            "client": "robot_main_program",
+            "protocol_version": 1,
+            "heartbeat_id": heartbeat_id,
+            "sent_at": datetime.now().astimezone().isoformat(timespec="milliseconds"),
+        },
+        timeout,
+    )
+    if (
+        response.get("message") != "heartbeat_ack"
+        or response.get("heartbeat_id") != heartbeat_id
+    ):
+        raise RuntimeError(f"Invalid data acquisition heartbeat: {response}")
+    return response
+
+
+def start_heartbeat_thread(
+    host: str,
+    port: int,
+    interval: float,
+    timeout: float,
+) -> tuple[threading.Event, threading.Thread]:
+    """Send periodic heartbeat messages until the returned stop event is set."""
+
+    stop_event = threading.Event()
+
+    def heartbeat_loop() -> None:
+        while not stop_event.wait(interval):
+            try:
+                send_heartbeat(host, port, timeout)
+            except Exception as error:
+                print(f"Warning: data acquisition heartbeat failed: {error}")
+
+    thread = threading.Thread(
+        target=heartbeat_loop,
+        name="data-acquisition-heartbeat",
+        daemon=True,
+    )
+    thread.start()
+    return stop_event, thread
 
 
 def request_data_acquisition(host: str, port: int, payload: dict, timeout: float) -> dict:
