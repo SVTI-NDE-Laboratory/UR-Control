@@ -627,6 +627,7 @@ src/routines/                waypoint extraction and routine JSON files
 Additional focused documentation:
 
 - `src/program/webapp/README.md`
+- `src/program/data_acquisition/README.md`
 - `src/program/data_acquisition/protocol.md`
 - `src/program/config/read_me_config.md`
 - `src/robot/README.md`

@@ -6,15 +6,22 @@ tokens because the client program expects that lightweight protocol.
 """
 
 import json
-import socketserver
+import socket
 import threading
-import time
-from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable
 
+try:
+    from .state import AcquisitionControlState
+except ImportError:
+    from state import AcquisitionControlState
+
 
 CONFIG_SERVER_FILE = Path(__file__).resolve().parent / "config_server.json"
+SHORT_RESPONSES = {"ACK", "OK", "T", "F"}
+EXTENDED_RESPONSE_TERMINATOR = "\r\n"
+ACCEPT_TIMEOUT = 0.5
+CLIENT_READ_TIMEOUT = 5.0
 
 
 def read_server_config(path: str | Path = CONFIG_SERVER_FILE) -> dict[str, Any]:
@@ -23,156 +30,55 @@ def read_server_config(path: str | Path = CONFIG_SERVER_FILE) -> dict[str, Any]:
     return json.loads(Path(path).read_text(encoding="utf-8"))
 
 
-def json_timestamp() -> str:
-    """Return a local timestamp suitable for JSON protocol responses."""
+def format_address(address) -> str:
+    """Return a compact address label for TCP status messages."""
 
-    return datetime.now().astimezone().isoformat(timespec="milliseconds")
-
-
-class AcquisitionControlState:
-    """Thread-safe state shared by measurement code and TCP request handlers."""
-
-    def __init__(self, state_provider: Callable[[], dict[str, Any] | None] | None = None):
-        self._lock = threading.Lock()
-        self._go_event = threading.Event()
-        self._client_ready_event = threading.Event()
-        self._ready = False
-        self._context: dict[str, Any] = {}
-        self._state_provider = state_provider
-
-    def begin_force_hold(self, context: dict[str, Any]) -> None:
-        """Expose a force-hold window and clear any previous GO signal."""
-
-        with self._lock:
-            self._context = dict(context)
-            self._ready = True
-            self._go_event.clear()
-
-    def end_force_hold(self) -> None:
-        """Hide the force-hold window and unblock waiters during shutdown/errors."""
-
-        with self._lock:
-            self._ready = False
-            self._context = {}
-            self._go_event.set()
-
-    def mark_go(self) -> bool:
-        """Accept a GO message only while the force-hold window is ready."""
-
-        with self._lock:
-            accepted = self._ready
-            if accepted:
-                self._go_event.set()
-            return accepted
-
-    def mark_client_ready(self) -> None:
-        """Record that the external client has contacted the listener."""
-
-        self._client_ready_event.set()
-
-    def wait_for_client_ready(self, timeout: float) -> None:
-        """Block startup until the external client sends ALIVE."""
-
-        if not self._client_ready_event.wait(timeout):
-            raise TimeoutError(
-                "Timed out waiting for ALIVE from the data acquisition client."
-            )
-
-    def wait_for_go(self, context: dict[str, Any], timeout: float) -> dict[str, Any]:
-        """Block until the external client sends GO for the current force hold."""
-
-        self.begin_force_hold(context)
-        started_at = time.monotonic()
-        try:
-            if not self._go_event.wait(timeout):
-                raise TimeoutError(
-                    "Timed out waiting for GO from the data acquisition client."
-                )
-            return {
-                "message": "go_received",
-                "completed_at": json_timestamp(),
-                "acquisition_time": time.monotonic() - started_at,
-            }
-        finally:
-            self.end_force_hold()
-
-    def snapshot(self) -> dict[str, Any]:
-        """Return the current force-ready flag, context, and program state."""
-
-        with self._lock:
-            ready = self._ready
-            context = dict(self._context)
-
-        program_state = None
-        if self._state_provider is not None:
-            try:
-                program_state = self._state_provider()
-            except Exception as error:
-                program_state = {"error": str(error)}
-
-        return {
-            "ready": ready,
-            "context": context,
-            "state": program_state or {},
-            "timestamp": json_timestamp(),
-        }
+    if isinstance(address, tuple) and len(address) >= 2:
+        return f"{address[0]}:{address[1]}"
+    return str(address)
 
 
-class ThreadedTCPServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
-    """TCP server with one short-lived handler thread per connection."""
+def format_request(request: dict[str, Any]) -> str:
+    """Return a readable request string without losing JSON payload detail."""
 
-    allow_reuse_address = True
-    daemon_threads = True
+    if set(request) == {"message"}:
+        return str(request["message"])
+    return json.dumps(request, ensure_ascii=True, sort_keys=True)
 
 
-class AcquisitionRequestHandler(socketserver.BaseRequestHandler):
-    """Handle one newline-framed command from an acquisition client."""
+def parse_request(data: bytes) -> dict[str, Any]:
+    """Parse one plain-text or JSON command from the TCP client."""
 
-    def handle(self) -> None:
-        state: AcquisitionControlState = self.server.control_state
-        try:
-            request = self._read_request()
-            response = self._handle_request(state, request)
-        except Exception as error:
-            response = f"ERR {type(error).__name__}: {error}"
-        self.request.sendall((response + "\n").encode("utf-8"))
+    text = data.decode("utf-8").strip()
+    if not text:
+        raise ValueError("Empty request.")
+    try:
+        request = json.loads(text)
+    except json.JSONDecodeError:
+        request = {"message": text}
+    if not isinstance(request, dict):
+        raise ValueError("Request must be a JSON object or command text.")
+    return request
 
-    def _read_request(self) -> dict[str, Any]:
-        data = b""
-        self.request.settimeout(5.0)
-        while not data.endswith(b"\n"):
-            chunk = self.request.recv(4096)
-            if not chunk:
-                break
-            data += chunk
-        text = data.decode("utf-8").strip()
-        if not text:
-            raise ValueError("Empty request.")
-        try:
-            request = json.loads(text)
-        except json.JSONDecodeError:
-            request = {"message": text}
-        if not isinstance(request, dict):
-            raise ValueError("Request must be a JSON object or command text.")
-        return request
 
-    def _handle_request(
-        self, state: AcquisitionControlState, request: dict[str, Any]
-    ) -> str:
-        message = str(request.get("message", "")).upper()
-        if message == "ISREADY":
-            return "T" if state.snapshot()["ready"] else "F"
-        if message == "GO":
-            state.mark_go()
-            return "ACK"
-        if message == "ALIVE":
-            state.mark_client_ready()
-            return "OK"
-        return "ERR unsupported_message"
+def log_tcp_event(address, text: str) -> None:
+    """Print one operator-visible TCP status line."""
+
+    print(f"Data acquisition client {format_address(address)}: {text}")
 
 
 class AcquisitionControlServer:
-    """Background TCP listener for acquisition-client messages."""
+    """Own the TCP listener used by the measurement program.
+
+    The rest of the program only needs a few lifecycle methods:
+    start listening, stop listening, wait for the first ALIVE, and wait for GO
+    during a force-hold measurement. Keeping those operations in one class ties
+    the socket, listener thread, and shared state together.
+
+    Internally the server accepts a client connection, loops over incoming
+    commands, sends the short protocol response, and logs what happened for the
+    operator.
+    """
 
     def __init__(
         self,
@@ -185,10 +91,14 @@ class AcquisitionControlServer:
         self.port = port
         self.go_timeout = go_timeout
         self.state = AcquisitionControlState(state_provider)
-        self._server = ThreadedTCPServer((host, port), AcquisitionRequestHandler)
-        self._server.control_state = self.state
+        self._stop_event = threading.Event()
+        self._socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self._socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        self._socket.bind((host, port))
+        self._socket.listen()
+        self._socket.settimeout(ACCEPT_TIMEOUT)
         self._thread = threading.Thread(
-            target=self._server.serve_forever,
+            target=self._listen,
             name="data-acquisition-control-server",
             daemon=True,
         )
@@ -201,9 +111,12 @@ class AcquisitionControlServer:
     def stop(self) -> None:
         """Stop listening and unblock any force-hold wait."""
 
+        self._stop_event.set()
         self.state.end_force_hold()
-        self._server.shutdown()
-        self._server.server_close()
+        try:
+            self._socket.close()
+        except OSError:
+            pass
         self._thread.join(timeout=2.0)
 
     def wait_for_go(self, context: dict[str, Any]) -> dict[str, Any]:
@@ -215,6 +128,91 @@ class AcquisitionControlServer:
         """Wait until the external client sends ALIVE."""
 
         self.state.wait_for_client_ready(timeout)
+
+    def _listen(self) -> None:
+        """Accept clients until stop() closes the server socket."""
+
+        while not self._stop_event.is_set():
+            try:
+                connection, address = self._socket.accept()
+            except TimeoutError:
+                continue
+            except OSError:
+                break
+            threading.Thread(
+                target=self._serve_client,
+                args=(connection, address),
+                daemon=True,
+            ).start()
+
+    def _serve_client(self, connection: socket.socket, address) -> None:
+        """Read client commands, send replies, and log the connection lifecycle."""
+
+        log_tcp_event(address, "connected")
+        with connection:
+            connection.settimeout(CLIENT_READ_TIMEOUT)
+            try:
+                for request in self._read_requests(connection):
+                    log_tcp_event(address, f"received {format_request(request)}")
+                    response = self._handle_request(request)
+                    self._send_response(connection, response)
+                    log_tcp_event(address, f"sent {response}")
+            except Exception as error:
+                response = f"ERR {type(error).__name__}: {error}"
+                try:
+                    self._send_response(connection, response)
+                    log_tcp_event(address, f"sent {response}")
+                except OSError:
+                    pass
+        log_tcp_event(address, "disconnected")
+
+    def _read_requests(self, connection: socket.socket):
+        """Yield parsed requests from one connected client."""
+
+        data = b""
+        while not self._stop_event.is_set():
+            try:
+                chunk = connection.recv(4096)
+            except TimeoutError:
+                if data.strip():
+                    yield parse_request(data)
+                    data = b""
+                continue
+            if not chunk:
+                if data.strip():
+                    yield parse_request(data)
+                break
+            data += chunk
+            while b"\n" in data:
+                line, data = data.split(b"\n", 1)
+                if line.strip():
+                    yield parse_request(line)
+            command = data.decode("utf-8", errors="ignore").strip().upper()
+            if command in {"ALIVE", "ISREADY", "GO"}:
+                yield {"message": command}
+                data = b""
+
+    def _handle_request(self, request: dict[str, Any]) -> str:
+        """Return the short protocol response for one client request."""
+
+        message = str(request.get("message", "")).upper()
+        if message == "ISREADY":
+            return "T" if self.state.snapshot()["ready"] else "F"
+        if message == "GO":
+            self.state.mark_go()
+            return "ACK"
+        if message == "ALIVE":
+            self.state.mark_client_ready()
+            return "OK"
+        return "ERR unsupported_message"
+
+    def _send_response(self, connection: socket.socket, response: str) -> None:
+        """Send short fixed tokens bare; terminate extended responses with CRLF."""
+
+        payload = response if response in SHORT_RESPONSES else (
+            response + EXTENDED_RESPONSE_TERMINATOR
+        )
+        connection.sendall(payload.encode("utf-8"))
 
 
 def start_acquisition_control_server(

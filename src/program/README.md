@@ -79,10 +79,14 @@ records the acquisition timestamp and whether the requested force was reached.
 Points excluded by an obstacle remain in the plan with `measured=false` and
 `skip_reason="obstacle"` so their original point IDs are visible.
 
-When contact is reached, `ISREADY` returns true. The external client records the
+When contact is reached, `ISREADY` returns `T`. The external client records the
 data, then sends `GO`. Python acknowledges robot input register 42 only after
 `GO` is accepted. A failed force attempt is saved against its measurement index
 before traversal stops and recovery begins.
+
+The complete data-acquisition TCP guide is in
+[`data_acquisition/README.md`](data_acquisition/README.md). The exact byte-level
+wire contract is in [`data_acquisition/protocol.md`](data_acquisition/protocol.md).
 
 `Ctrl+C`, the web Stop button, robot safety faults, stalled motion, and protocol
 timeouts all request a controlled stop. See the root guide for the exact
