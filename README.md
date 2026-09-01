@@ -260,8 +260,8 @@ along the line from its start.
 - Start must not exceed end.
 - End must not exceed the line length.
 - Measurement points inside the interval are omitted.
-- Any movement segment crossing the interval rises to the safe plane, even if
-  no sampled point lies inside the obstacle.
+- Any movement segment crossing the interval uses the taught Home detour; the
+  robot does not translate along the high plane.
 
 **Safe Height [mm]** is editable in translation mode. In point-to-point mode it
 is derived from `p_start_h → p_start_l` and is locked.
@@ -367,7 +367,7 @@ later run can replace files with the same names.
 17. Python verifies/corrects that return pose before continuing.
 18. After the final point, the `end_to_home` routine returns the robot to Home, falling back to `end` for legacy routine files.
 
-The current protocol is documented in `src/program/data_acquisition/protocol.md`.
+The current protocol is documented in `src/program/data_acquisition/server_protocol.md`.
 
 ## 8. Live visualization and controls
 
@@ -519,9 +519,10 @@ Movement completion is based on actual feedback, not merely command dispatch:
 - The measurement pose is verified immediately before force application.
 - The pre-force pose is verified again after the force URP returns.
 
-If force is not reached before the distance/time limit, the failure is recorded,
-the robot recovers toward `p_start_h`, and the sequence stops without starting
-the normal end routine.
+If force is not reached before maximum displacement, the failure is recorded.
+The robot returns along the low measurement line to the safe high waypoint on
+the matching side of the obstacle, then the sequence stops without starting the
+normal end routine.
 
 ## 13. Troubleshooting
 
@@ -616,7 +617,6 @@ not all provide the same browser confirmation flow as the main application.
 ## 15. Project structure
 
 ```text
-data_acquisition_server/     legacy simulated acquisition server
 examples/                    focused experimental scripts and utilities
 src/measurement/             line planning, traversal, force integration, state
 src/program/                 supported command programs, defaults, and FastAPI web app
@@ -626,10 +626,10 @@ src/routines/                waypoint extraction and routine JSON files
 
 Additional focused documentation:
 
+- `MOVEMENT_CASES.md`
 - `src/program/webapp/README.md`
 - `src/program/data_acquisition/README.md`
-- `src/program/data_acquisition/protocol.md`
+- `src/program/data_acquisition/server_protocol.md`
 - `src/program/config/read_me_config.md`
 - `src/robot/README.md`
 - `src/routines/read_me_routines.md`
-- `data_acquisition_server/README.md`

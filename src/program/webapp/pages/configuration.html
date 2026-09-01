@@ -79,6 +79,7 @@
     const xEndInput = document.getElementById('line.parameters.x_end');
     const pointMethodNote = document.getElementById('point-method-note');
     const routineFileSelect = document.getElementById('routine-file');
+    const acquisitionServerEnabled = document.getElementById('acquisition-server-enabled');
     const runButton = document.getElementById('run-program');
     const outputDirectory = document.getElementById('output-directory');
     const browseOutputButton = document.getElementById('browse-output');
@@ -134,7 +135,7 @@
       safeHeightInput.readOnly = pointToPoint;
       safeHeightInput.disabled = pointToPoint;
       totalLengthInput.classList.toggle('optional-disabled', pointToPoint);
-      safeHeightRow.classList.toggle('optional-disabled', pointToPoint);
+      safeHeightRow?.classList.toggle('optional-disabled', pointToPoint);
       if (pointToPoint && pointGeometry) {
         if (xEndInput && Number.parseFloat(xEndInput.value) <= 0) {
           if (xStartInput) xStartInput.value = '0.000';
@@ -212,20 +213,19 @@
       const obstacleStart = numberValue('obstacle.start');
       const obstacleEnd = numberValue('obstacle.end');
       const hasObstacle = obstacleEnabled.checked && obstacleStart >= 0 && obstacleEnd >= obstacleStart;
-      const left = 55, right = 585, highY = 90, lowY = 220;
+      const left = 55, right = 585, lowY = 170;
+      const obstacleHeight = 62, obstacleBottomY = lowY - 3;
       const width = right - left;
       const scale = value => left + (length > 0 ? value / length : 0) * width;
 
       svg.replaceChildren();
-      addSvg('line', {x1:left, y1:highY, x2:right, y2:highY, stroke:'#8295a5', 'stroke-width':2, 'stroke-dasharray':'7 6'});
       addSvg('line', {x1:left, y1:lowY, x2:right, y2:lowY, stroke:'#17212b', 'stroke-width':5});
-      addSvg('text', {x:left, y:highY-15, fill:'#52606d', 'font-size':14}, 'Safe plane');
 
       if (hasObstacle && length > 0) {
         const start = Math.max(0, Math.min(length, obstacleStart));
         const end = Math.max(start, Math.min(length, obstacleEnd));
-        addSvg('rect', {x:scale(start), y:highY+15, width:Math.max(2, scale(end)-scale(start)), height:lowY-highY-15, rx:5, fill:'#e05252', opacity:.72});
-        addSvg('text', {x:(scale(start)+scale(end))/2, y:highY+40, 'text-anchor':'middle', fill:'white', 'font-size':14}, 'Obstacle');
+        addSvg('rect', {x:scale(start), y:obstacleBottomY-obstacleHeight, width:Math.max(2, scale(end)-scale(start)), height:obstacleHeight, rx:5, fill:'#e05252', opacity:.72});
+        addSvg('text', {x:(scale(start)+scale(end))/2, y:obstacleBottomY-32, 'text-anchor':'middle', fill:'white', 'font-size':14}, 'Obstacle');
       }
 
       for (let index = 0; index < count; index++) {
@@ -290,10 +290,15 @@
       if (input) input.value = shownValue(key, value);
     }
 
-    function applyModeDefaults(method) {
-      const config = defaultConfigs?.[method];
+    function selectedServerProfile() {
+      return acquisitionServerEnabled?.checked ? 'server' : 'mira';
+    }
+
+    function applyProfileDefaults(profile = selectedServerProfile()) {
+      const config = defaultConfigs?.[profile];
       if (!config) return;
       const parameters = config.line.parameters;
+      const method = lineMethod.value;
       if (method === 'translation') {
         setNamedValue('line.parameters.line_length', 'line_length', parameters.line_length);
         setNamedValue('line.parameters.high_low_distance', 'high_low_distance', parameters.high_low_distance);
@@ -318,6 +323,7 @@
       for (const [section, values] of Object.entries({motion:config.motion, measurement:config.measurement})) {
         for (const [key, value] of Object.entries(values)) setNamedValue(`${section}.${key}`, key, value);
       }
+      if (acquisitionServerEnabled) acquisitionServerEnabled.checked = profile === 'server';
       synchronizeFields();
       drawVisualization();
     }
@@ -328,6 +334,7 @@
         if (!fields[name]) fields[name] = [];
         fields[name].push(String(value));
       }
+      fields['acquisition.server_profile'] = [selectedServerProfile()];
       return fields;
     }
 
@@ -349,7 +356,7 @@
     }
 
     saveDefaultButton.addEventListener('click', async () => {
-      if (!window.confirm(`Replace the saved ${lineMethod.value.replaceAll('_', ' ')} default with the values currently shown?`)) return;
+      if (!window.confirm(`Replace the saved ${selectedServerProfile()} default with the values currently shown?`)) return;
       saveDefaultButton.disabled = true;
       try {
         await checkConfiguration('/api/configuration/default');
@@ -362,13 +369,20 @@
     });
     document.getElementById('reset-default').addEventListener('click', async () => {
       await fetch('/api/configuration/reset', {method:'POST'});
-      window.location.href = `/configuration?defaults=true&method=${encodeURIComponent(lineMethod.value)}`;
+      window.location.href = `/configuration?defaults=true&method=${encodeURIComponent(lineMethod.value)}&server_profile=${encodeURIComponent(selectedServerProfile())}`;
     });
 
     lineMethod.addEventListener('change', () => {
       formDirty = true;
       spacingSourceInput.value = 'increment';
-      applyModeDefaults(lineMethod.value);
+      applyProfileDefaults();
+      if (pointGeometry) synchronizeSpacingFromSource();
+      synchronizeFields();
+      drawVisualization();
+    });
+    acquisitionServerEnabled?.addEventListener('change', () => {
+      formDirty = true;
+      applyProfileDefaults();
       if (pointGeometry) synchronizeSpacingFromSource();
       synchronizeFields();
       drawVisualization();
@@ -452,16 +466,15 @@
       const length = configuredLength || lastPosition || 1;
       const currentPosition = typeof programState.line_position === 'number' ? programState.line_position : null;
       const obstacle = config?.obstacle;
-      const left = 55, right = 585, highY = 90, lowY = 220;
+      const left = 55, right = 585, lowY = 170;
+      const obstacleHeight = 62, obstacleBottomY = lowY - 3;
       const scale = value => left + Math.max(0, Math.min(1, value / length)) * (right - left);
 
       svg.replaceChildren();
-      addSvg('line', {x1:left, y1:highY, x2:right, y2:highY, stroke:'#8295a5', 'stroke-width':2, 'stroke-dasharray':'7 6'});
       addSvg('line', {x1:left, y1:lowY, x2:right, y2:lowY, stroke:'#17212b', 'stroke-width':5});
-      addSvg('text', {x:left, y:highY-15, fill:'#52606d', 'font-size':14}, 'Safe plane');
       if (obstacle && obstacle.end >= obstacle.start) {
-        addSvg('rect', {x:scale(obstacle.start), y:highY+15, width:Math.max(2, scale(obstacle.end)-scale(obstacle.start)), height:lowY-highY-15, rx:5, fill:'#e05252', opacity:.72});
-        addSvg('text', {x:(scale(obstacle.start)+scale(obstacle.end))/2, y:highY+40, 'text-anchor':'middle', fill:'white', 'font-size':14}, 'Obstacle');
+        addSvg('rect', {x:scale(obstacle.start), y:obstacleBottomY-obstacleHeight, width:Math.max(2, scale(obstacle.end)-scale(obstacle.start)), height:obstacleHeight, rx:5, fill:'#e05252', opacity:.72});
+        addSvg('text', {x:(scale(obstacle.start)+scale(obstacle.end))/2, y:obstacleBottomY-32, 'text-anchor':'middle', fill:'white', 'font-size':14}, 'Obstacle');
       }
 
       let complete = 0;

@@ -1,27 +1,28 @@
 """TCP listener used by the main robot program for acquisition control.
 
 The robot program owns this server. An external acquisition client connects and
-sends `ALIVE`, `ISREADY`, or `GO`. Replies are intentionally short plain-text
-tokens because the client program expects that lightweight protocol.
+sends `ALIVE`, `ISREADY`, or `GO`. Those fixed responses are sent as plain-text
+tokens with known byte lengths. Longer responses are length-prefixed.
 """
 
 import json
 import socket
+import struct
 import threading
 from pathlib import Path
 from typing import Any, Callable
 
 try:
-    from .state import AcquisitionControlState
+    from .server_state import AcquisitionControlState
 except ImportError:
-    from state import AcquisitionControlState
+    from server_state import AcquisitionControlState
 
 
 CONFIG_SERVER_FILE = Path(__file__).resolve().parent / "config_server.json"
 SHORT_RESPONSES = {"ACK", "OK", "T", "F"}
-EXTENDED_RESPONSE_TERMINATOR = "\r\n"
 ACCEPT_TIMEOUT = 0.5
 CLIENT_READ_TIMEOUT = 5.0
+RESPONSE_LENGTH_PREFIX_FORMAT = "!i"
 
 
 def read_server_config(path: str | Path = CONFIG_SERVER_FILE) -> dict[str, Any]:
@@ -188,7 +189,7 @@ class AcquisitionControlServer:
                 if line.strip():
                     yield parse_request(line)
             command = data.decode("utf-8", errors="ignore").strip().upper()
-            if command in {"ALIVE", "ISREADY", "GO"}:
+            if command and not command.startswith("{"):
                 yield {"message": command}
                 data = b""
 
@@ -207,12 +208,14 @@ class AcquisitionControlServer:
         return "ERR unsupported_message"
 
     def _send_response(self, connection: socket.socket, response: str) -> None:
-        """Send short fixed tokens bare; terminate extended responses with CRLF."""
+        """Send fixed short responses bare and longer responses length-prefixed."""
 
-        payload = response if response in SHORT_RESPONSES else (
-            response + EXTENDED_RESPONSE_TERMINATOR
-        )
-        connection.sendall(payload.encode("utf-8"))
+        payload = response.encode("utf-8")
+        if response in SHORT_RESPONSES:
+            connection.sendall(payload)
+            return
+        length_prefix = struct.pack(RESPONSE_LENGTH_PREFIX_FORMAT, len(payload))
+        connection.sendall(length_prefix + payload)
 
 
 def start_acquisition_control_server(

@@ -86,7 +86,7 @@ before traversal stops and recovery begins.
 
 The complete data-acquisition TCP guide is in
 [`data_acquisition/README.md`](data_acquisition/README.md). The exact byte-level
-wire contract is in [`data_acquisition/protocol.md`](data_acquisition/protocol.md).
+wire contract is in [`data_acquisition/server_protocol.md`](data_acquisition/server_protocol.md).
 
 `Ctrl+C`, the web Stop button, robot safety faults, stalled motion, and protocol
 timeouts all request a controlled stop. See the root guide for the exact

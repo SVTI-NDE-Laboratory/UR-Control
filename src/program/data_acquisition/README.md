@@ -3,7 +3,7 @@
 This folder contains the TCP control server used by the measurement program to
 coordinate with an external data-acquisition client.
 
-For the byte-level wire contract, see [`protocol.md`](protocol.md). This file
+For the byte-level wire contract, see [`server_protocol.md`](server_protocol.md). This file
 explains how the pieces fit together during testing and during a real run.
 
 ## Roles
@@ -22,15 +22,13 @@ server and written to `program.log` during web-launched runs.
 
 | File | Purpose |
 |---|---|
-| `control_server.py` | TCP server used by the robot measurement program |
-| `state.py` | Shared ALIVE, ISREADY, and GO state between robot code and TCP threads |
+| `server_control.py` | TCP server used by the robot measurement program |
+| `server_state.py` | Shared ALIVE, ISREADY, and GO state between robot code and TCP threads |
 | `config_server.json` | Host, port, and acquisition-control timeouts |
-| `protocol.md` | Exact TCP request/response contract |
-| `client.py` | Older JSON client helpers used by the previous acquisition-server design |
-| `process.py` | Starts the legacy simulated acquisition server |
-| `timestamped_logging.py` | Mirrors terminal output into timestamped log files |
+| `server_protocol.md` | Exact TCP request/response contract |
+| `server_logging.py` | Mirrors terminal output into timestamped log files |
 
-The current LabVIEW-style protocol is implemented in `control_server.py`.
+The current LabVIEW-style protocol is implemented in `server_control.py`.
 
 ## Normal Measurement Sequence
 
@@ -70,8 +68,8 @@ IP:   127.0.0.1
 Port: 5055
 ```
 
-For the fixed short commands, configure the tester to read the exact response
-length:
+For the simple control commands, configure the tester to read the exact
+response length:
 
 | Command | Expected response | Bytes Empfang |
 |---|---|---:|
@@ -79,15 +77,15 @@ length:
 | `ISREADY` | `T` or `F` | 1 |
 | `GO` | `ACK` | 3 |
 
-For extended/error messages, switch the tester receive mode to CRLF because
-those responses end with `\r\n`.
+Non-trivial/error responses use `[4 Byte I32][Data]`: first read the 4-byte
+length, then read exactly that many payload bytes.
 
 ## Testing Without Starting the Full Robot Program
 
 From the project root, start only the TCP control server:
 
 ```powershell
-python -c "import sys; sys.path.insert(0, r'src\program'); from data_acquisition.control_server import AcquisitionControlServer; server=AcquisitionControlServer('127.0.0.1', 5055, 8.0); server.start(); print('TCP test server listening on 127.0.0.1:5055'); input('Press Enter to stop server...'); server.stop()"
+python -c "import sys; sys.path.insert(0, r'src\program'); from data_acquisition.server_control import AcquisitionControlServer; server=AcquisitionControlServer('127.0.0.1', 5055, 8.0); server.start(); print('TCP test server listening on 127.0.0.1:5055'); input('Press Enter to stop server...'); server.stop()"
 ```
 
 Then connect with the LabVIEW tester and send commands.
@@ -131,17 +129,15 @@ Data acquisition client 127.0.0.1:59775: disconnected
 
 In a real web-launched run these lines appear in the session `program.log`.
 
-## Why Short Responses Have No Terminator
+## Response Framing
 
-The fixed control replies are intentionally only `OK`, `T`, `F`, and `ACK`.
-They do not include `\n` or `\r\n`.
+Simple replies are sent directly as `OK`, `T`, `F`, or `ACK`, so the client
+can read the known byte count for each command.
 
-This matches the recommendation to minimize overhead for fixed short messages.
-The LabVIEW tester should therefore read exactly 2, 1, or 3 bytes depending on
-the command.
-
-Longer or unexpected responses use CRLF so the tester can read until `\r\n`
-when it is in CRLF mode.
+Non-trivial replies are framed as `[4 Byte I32][Data]`. The I32 is a signed
+32-bit integer in network byte order and gives the length of the following
+UTF-8 payload bytes. The payload is only the response text, for example an
+`ERR ...` message. There is no trailing `\n` or `\r\n`.
 
 ## Important Timing
 
@@ -178,4 +174,5 @@ If the tester waits forever:
 - for `ALIVE`, read 2 bytes
 - for `ISREADY`, read 1 byte
 - for `GO`, read 3 bytes
-- for error/extended text, use CRLF mode
+- for non-trivial/error responses, read the first 4 bytes as the response
+  length, then read exactly that many payload bytes

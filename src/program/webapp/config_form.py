@@ -78,25 +78,16 @@ def edited_config(
     """Build a typed configuration from submitted form fields."""
 
     config = deepcopy(defaults)
-    method = fields.get("line.method", [""])[0]
-    if method == "translation":
-        parameter_templates = {
-            "line_length": 400.0,
-            "increment": 100.0,
-            "direction_start_end": [-1.0, 0.0, 0.0],
-            "high_low_distance": 150.0,
-            "direction_high_low": [0.0, 0.0, 1.0],
-        }
-    elif method == "point_to_point":
-        parameter_templates = {
-            "increment": 100.0,
-            "number_of_measurements": 5,
-            "x_start": 0.0,
-            "x_end": 0.0,
-            "offset_y": 0.0,
-        }
-    else:
-        raise ValueError("Measurement line method is invalid.")
+    method = fields.get("line.method", ["point_to_point"])[0]
+    if method != "point_to_point":
+        raise ValueError("Measurement line method must be point to point.")
+    parameter_templates = {
+        "increment": 100.0,
+        "number_of_measurements": 5,
+        "x_start": 0.0,
+        "x_end": 0.0,
+        "offset_y": 0.0,
+    }
 
     current_parameters = defaults.get("line", {}).get("parameters", {})
     parameters = {}
@@ -234,7 +225,7 @@ def form_html(
                 f'value="{value_text(section, key)}">'
             )
 
-    method = config["line"].get("method", "translation")
+    method = "point_to_point"
     parameters = config["line"].get("parameters", config["line"])
 
     def line_input(key: str, value: Any, attributes: str = "required") -> str:
@@ -246,20 +237,6 @@ def form_html(
             f'aria-label="{label}" {attributes}>'
         )
 
-    method_options = "".join(
-        f'<option value="{value}"{" selected" if method == value else ""}>{label}</option>'
-        for value, label in (
-            ("translation", "Translation"),
-            ("point_to_point", "Point to point"),
-        )
-    )
-    translation_values = {
-        "line_length": parameters.get("line_length", parameters.get("length", 400.0)),
-        "increment": parameters.get("increment", 100.0),
-        "direction_start_end": parameters.get("direction_start_end", [-1.0, 0.0, 0.0]),
-        "high_low_distance": parameters.get("high_low_distance", 150.0),
-        "direction_high_low": parameters.get("direction_high_low", [0.0, 0.0, 1.0]),
-    }
     point_values = {
         "increment": parameters.get("increment", 100.0),
         "number_of_measurements": parameters.get("number_of_measurements", 5),
@@ -268,56 +245,37 @@ def form_html(
         "x_end": parameters.get("x_end", 0.0),
         "offset_y": parameters.get("offset_y", 0.0),
     }
-    length = line_input("line_length", translation_values["line_length"])
-    increment_value = (
-        point_values["increment"]
-        if method == "point_to_point"
-        else translation_values["increment"]
+    hidden_controls.append(
+        '<input id="line.method" type="hidden" name="line.method" '
+        'value="point_to_point">'
     )
-    increment = line_input("increment", increment_value)
-    height = line_input("high_low_distance", translation_values["high_low_distance"])
-    for key in ("direction_start_end", "direction_high_low"):
-        hidden_controls.append(
-            f'<input type="hidden" name="line.parameters.{key}" '
-            f'value="{html.escape(display_value(translation_values[key]), quote=True)}" '
-            'data-line-method="translation">'
-        )
-    measurement_count = (
-        point_values["number_of_measurements"]
-        if method == "point_to_point"
-        else max(
-            2,
-            int(
-                translation_values["line_length"]
-                / translation_values["increment"]
-                + 1e-9
-            )
-            + 1,
-        )
+    hidden_controls.append(
+        '<input id="line.parameters.line_length" type="hidden" value="0.000">'
     )
+    hidden_controls.append(
+        '<input id="line.parameters.high_low_distance" type="hidden" value="0.000">'
+    )
+    increment = line_input("increment", point_values["increment"])
+    measurement_count = point_values["number_of_measurements"]
     hidden_controls.append(
         '<input id="spacing-source" type="hidden" '
         'name="line.parameters.spacing_source" '
         f'value="{html.escape(point_values["spacing_source"], quote=True)}">'
     )
-    point_offset_attributes = 'required data-line-method="point_to_point"'
+    point_offset_attributes = "required"
     sections = [
         '<fieldset><legend>Measurement Line</legend>'
         '<div class="parameter-row routine-file-row"><label for="routine-file">Routine File</label>'
         '<select id="routine-file" aria-label="Routine file used by the measurement"></select></div>'
-        '<div class="parameter-row single"><label for="line.method">Method</label>'
-        f'<select id="line.method" name="line.method">{method_options}</select>'
-        '<small id="point-method-note" class="muted">Fixed: p_start_l → p_end_l</small></div>'
-        '<div class="parameter-row single">'
-        f'<label for="line.parameters.line_length">Total Length [mm]</label>{length}</div>'
+        '<small id="point-method-note" class="muted">Fixed: p_start_l to p_end_l</small>'
         '<div class="parameter-row double line-spacing-row">'
         f'<span>Increment [mm] / # Measurements</span>{increment}'
         f'<input id="measurement-count" name="line.parameters.number_of_measurements" type="number" min="2" step="1" value="{measurement_count}" aria-label="Number of measurements" required>'
         '</div>'
-        '<div class="parameter-row double" data-line-method="point_to_point">'
+        '<div class="parameter-row double">'
         f'<span>X Start / X End [mm]</span>{line_input("x_start", point_values["x_start"], point_offset_attributes)}'
         f'{line_input("x_end", point_values["x_end"], point_offset_attributes)}</div>'
-        '<div class="parameter-row single" data-line-method="point_to_point">'
+        '<div class="parameter-row single">'
         f'<label for="line.parameters.offset_y">Y Offset [mm]</label>{line_input("offset_y", point_values["offset_y"], point_offset_attributes)}</div>'
         '</fieldset>'
     ]
@@ -333,25 +291,25 @@ def form_html(
         f'{obstacle_checked}>Obstacle Exists</label></div>'
         '<div class="parameter-row double obstacle-position-row" data-optional-group="obstacle-position">'
         f'<span>Positions Start / End [mm]</span>{start}{end}</div>'
-        '<div id="safe-height-row" class="parameter-row single">'
-        f'<label for="line.parameters.high_low_distance">Safe Height [mm]</label>{height}</div>'
         '</fieldset>'
     )
 
-    speed = input_html("motion", "speed")
-    acceleration = input_html("motion", "acceleration")
-    hidden_controls.append('<input type="hidden" name="motion.type" value="l">')
-    sections.append(
-        '<fieldset><legend>Measurement Motion <span class="legend-note">Linear (l)</span></legend>'
-        f'<div class="parameter-row single"><label for="motion.speed">Speed [mm/s]</label>{speed}</div>'
-        f'<div class="parameter-row single"><label for="motion.acceleration">Acceleration [mm/s^2]</label>{acceleration}</div>'
-        '</fieldset>'
-    )
+    for key in ("type", "speed", "acceleration"):
+        if key in defaults.get("motion", {}):
+            hidden_controls.append(
+                f'<input type="hidden" name="motion.{key}" '
+                f'value="{value_text("motion", key)}">'
+            )
 
     contact = input_html("measurement", "contact_threshold")
     holding = input_html("measurement", "holding_force")
     maximum = input_html("measurement", "max_displacement")
+    server_checked = " checked" if current_value("measurement", "data_server") else ""
     measurement_controls = (
+        '<div class="toggle-row">'
+        '<label class="option-toggle"><input id="acquisition-server-enabled" '
+        'name="acquisition.server_profile" type="checkbox" value="server"'
+        f'{server_checked}>Measurement with server</label></div>'
         f'<div class="parameter-row double force-row"><span>Force Contact / Holding [N]</span>{contact}{holding}</div>'
         '<div class="parameter-row single">'
         f'<label for="measurement.max_displacement">Maximum Displacement [mm]</label>{maximum}</div>'

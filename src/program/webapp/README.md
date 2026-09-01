@@ -14,18 +14,18 @@ the robot modules; the complete measurement sequence is the command in
 ## Single-page workflow
 
 The Configuration page contains the complete operator workflow. It selects the
-routine file, edits and visualizes measurement parameters, starts or stops the
-measurement program, and shows live progress in the same visualization used
-while editing. A fresh app starts in point-to-point mode with
-`routines_block_diagonal.json`; the routine selector is part of the Measurement
-Line box.
+routine file, selects server or MIRA force measurement, edits and visualizes
+measurement parameters, starts or stops the measurement program, and shows live
+progress in the same visualization used while editing. A fresh app starts with
+server measurement selected and `routines_block_diagonal.json`; the routine
+selector is part of the Measurement Line box.
 
 **Start program** first checks the displayed values, creates the measurement
 plan, and writes `../config/config_tmp.json`. An invalid value is reported and
-the robot program is not launched. **Save as default** performs the same checks
-and explicitly replaces the
-default for the selected mode: `config_translation.json` or
-`config_mira.json`. **Reset default** reloads that mode's saved
+the robot program is not launched. In **Force Measurement**, **Measurement with
+server** selects `config_server.json`; clearing it selects `config_mira.json`.
+**Save as default** performs the same checks and explicitly replaces the
+currently selected default file. **Reset default** reloads that selected saved
 default. Configuration values are locked while the program is running.
 
 Point-to-point geometry is fixed to `p_start_l → p_end_l`; safe clearance is
@@ -38,8 +38,9 @@ only complete increments are measured. A remaining partial interval at the end
 is not measured. The displayed measurement count is always an integer. When the
 operator edits that integer count directly, the exact internal increment divides
 the complete line evenly and includes the endpoint. Linear distances and
-measurement motion speeds in the form, saved config, live state, and plan are
-stored in millimetres, mm/s, and mm/s^2.
+measurement motion speeds in the saved config, live state, and plan are stored
+in millimetres, mm/s, and mm/s^2. Motion remains linear and is not edited in
+the control panel.
 
 Starting requires an explicit safety confirmation and a read-only Home-position
 preflight. `commands/run_measurement_sequence.py` then runs as a separate

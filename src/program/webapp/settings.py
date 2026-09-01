@@ -8,9 +8,8 @@ WEBAPP_DIR = Path(__file__).resolve().parent
 PROGRAM_DIR = WEBAPP_DIR.parent
 PROJECT_ROOT = PROGRAM_DIR.parent.parent
 CONFIG_DIR = PROGRAM_DIR / "config"
-DEFAULT_CONFIG_FILE = CONFIG_DIR / "config_mira.json"
-TRANSLATION_CONFIG_FILE = CONFIG_DIR / "config_translation.json"
-POINT_TO_POINT_CONFIG_FILE = CONFIG_DIR / "config_mira.json"
+MIRA_CONFIG_FILE = CONFIG_DIR / "config_mira.json"
+SERVER_CONFIG_FILE = CONFIG_DIR / "config_server.json"
 HTML_TEMPLATE_FILE = WEBAPP_DIR / "pages" / "configuration.html"
 STATIC_DIR = WEBAPP_DIR / "static"
 TEMP_CONFIG_FILE = CONFIG_DIR / "config_tmp.json"
@@ -37,7 +36,6 @@ FIELD_LABELS = {
     "direction_start_end": "Start-to-End Direction [x, y, z]",
     "start": "Start Position [mm]",
     "end": "End Position [mm]",
-    "high_low_distance": "Safe Height [mm]",
     "direction_high_low": "High-to-Low Direction [x, y, z]",
     "program_path": "Robot Program Path",
     "contact_threshold": "Contact Threshold [N]",

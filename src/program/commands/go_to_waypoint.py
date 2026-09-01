@@ -21,9 +21,9 @@ from robot_connection import assert_robot_running, get_rtde_receive
 
 MM_PER_METRE = 1000.0
 ROBOT_IP = "192.168.3.10"
-ROUTINES_FILE = ROUTINES_DIR / "routine_files" / "routines_wall_675_top_slow.json"
+ROUTINES_FILE = ROUTINES_DIR / "routine_files" / "routines_wall_275_top.json"
 
-WAYPOINT_NAME = "Home"
+WAYPOINT_NAME = "p_start_h"
 USE_LINEAR_MOVE = False  # Set to False to use movej instead of movel
 
 LINEAR_ACCELERATION = 100.0

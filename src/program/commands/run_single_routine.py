@@ -18,7 +18,7 @@ from run_routine import run_routine
 
 
 ROBOT_IP = "192.168.3.10"
-ROUTINES_FILE = ROUTINES_DIR / "routine_files" / "routines_wall_675_top_slow.json"
+ROUTINES_FILE = ROUTINES_DIR / "routine_files" / "routines_wall_275_top.json"
 
 ROUTINE_NAME = "start_to_home"
 JOINT_TOLERANCE = 0.01

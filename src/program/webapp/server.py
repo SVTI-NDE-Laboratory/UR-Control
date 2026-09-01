@@ -22,11 +22,11 @@ if __package__:
     from .settings import (
         DEFAULT_OUTPUT_DIR,
         DEFAULT_SELECTED_ROUTINES_FILE,
-        POINT_TO_POINT_CONFIG_FILE,
+        MIRA_CONFIG_FILE,
         ROUTINE_FILES_DIR,
+        SERVER_CONFIG_FILE,
         STATIC_DIR,
         TEMP_CONFIG_FILE,
-        TRANSLATION_CONFIG_FILE,
     )
     from .worker_manager import WorkerBusyError, WorkerManager
 else:
@@ -40,11 +40,11 @@ else:
     from settings import (
         DEFAULT_OUTPUT_DIR,
         DEFAULT_SELECTED_ROUTINES_FILE,
-        POINT_TO_POINT_CONFIG_FILE,
+        MIRA_CONFIG_FILE,
         ROUTINE_FILES_DIR,
+        SERVER_CONFIG_FILE,
         STATIC_DIR,
         TEMP_CONFIG_FILE,
-        TRANSLATION_CONFIG_FILE,
     )
     from worker_manager import WorkerBusyError, WorkerManager
 
@@ -108,20 +108,29 @@ def read_json_if_available(path: Path, fallback: dict[str, Any]) -> dict[str, An
         return fallback
 
 
-def default_config_path(method: str) -> Path:
-    if method == "translation":
-        return TRANSLATION_CONFIG_FILE
+def default_config_path(method: str, server_profile: str = "server") -> Path:
     if method == "point_to_point":
-        return POINT_TO_POINT_CONFIG_FILE
-    raise HTTPException(status_code=422, detail="Unknown measurement-line method.")
+        if server_profile == "mira":
+            return MIRA_CONFIG_FILE
+        if server_profile == "server":
+            return SERVER_CONFIG_FILE
+    raise HTTPException(status_code=422, detail="Measurement line method must be point to point.")
 
 
-def load_default_config(method: str) -> dict[str, Any]:
-    return json.loads(default_config_path(method).read_text(encoding="utf-8"))
+def load_default_config(method: str, server_profile: str = "server") -> dict[str, Any]:
+    return json.loads(default_config_path(method, server_profile).read_text(encoding="utf-8"))
 
 
 def submitted_method(submission: ConfigurationSubmission) -> str:
-    return submission.fields.get("line.method", [""])[0]
+    return submission.fields.get("line.method", ["point_to_point"])[0]
+
+
+def submitted_server_profile(submission: ConfigurationSubmission) -> str:
+    values = submission.fields.get("acquisition.server_profile", ["server"])
+    profile = values[-1]
+    if profile not in {"server", "mira"}:
+        raise HTTPException(status_code=422, detail="Invalid acquisition server profile.")
+    return profile
 
 
 def routine_file_names() -> list[str]:
@@ -156,12 +165,15 @@ def root() -> RedirectResponse:
 def configuration_page(
     show_defaults: bool = Query(False, alias="defaults"),
     method: str = "point_to_point",
+    server_profile: str = "server",
 ) -> str:
+    if server_profile not in {"server", "mira"}:
+        server_profile = "server"
     if show_defaults:
-        config = load_default_config(method)
+        config = load_default_config("point_to_point", server_profile)
     else:
-        config = state.get_config() or load_default_config("point_to_point")
-    defaults = load_default_config(config["line"]["method"])
+        config = state.get_config() or load_default_config("point_to_point", server_profile)
+    defaults = load_default_config("point_to_point", server_profile)
     return form_html(config, defaults)
 
 
@@ -178,8 +190,8 @@ def get_configuration() -> dict[str, Any]:
 @api.get("/api/configuration/defaults")
 def get_configuration_defaults() -> dict[str, Any]:
     return {
-        "translation": load_default_config("translation"),
-        "point_to_point": load_default_config("point_to_point"),
+        "server": load_default_config("point_to_point", "server"),
+        "mira": load_default_config("point_to_point", "mira"),
     }
 
 
@@ -189,7 +201,9 @@ def validate_configuration(
 ) -> dict[str, Any]:
     # A rejected edit must not leave an older configuration looking approved.
     state.clear_config()
-    defaults = load_default_config(submitted_method(submission))
+    defaults = load_default_config(
+        submitted_method(submission), submitted_server_profile(submission)
+    )
     routines_data = read_routines_file(state.get_routine_file())
     try:
         config = edited_config(defaults, submission.fields, routines_data)
@@ -215,7 +229,8 @@ def save_default_configuration(
 
     state.clear_config()
     method = submitted_method(submission)
-    defaults = load_default_config(method)
+    server_profile = submitted_server_profile(submission)
+    defaults = load_default_config(method, server_profile)
     routines_data = read_routines_file(state.get_routine_file())
     try:
         config = edited_config(defaults, submission.fields, routines_data)
@@ -223,7 +238,7 @@ def save_default_configuration(
     except (KeyError, TypeError, ValueError) as error:
         raise HTTPException(status_code=422, detail=str(error)) from error
 
-    write_json_atomic(default_config_path(method), config)
+    write_json_atomic(default_config_path(method, server_profile), config)
     write_json_atomic(TEMP_CONFIG_FILE, config)
     state.set_config(config)
     return {

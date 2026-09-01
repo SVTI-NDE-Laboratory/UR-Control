@@ -20,15 +20,12 @@ extract a binary `.urp` file directly.
 
 Open `create_routines_file.py` and set:
 
-- `script_path` to the raw `.script` filename.
-- `start_order` to the waypoint order used to approach the measurement line.
-- `end_order` to the waypoint order used to return from the line.
-- `intermediate_joint_motion` to the desired motion between the endpoints.
-- `conservative_joint_motion` for departure from Home and
-  `conservative_linear_motion` for the end routine's departure from
+- `script_path` to the raw wall `.script` filename.
+- `home_to_start_waypoints` to the waypoint order used to approach
   `p_start_h`.
-- `end_joint_motion` for the final moves to `p_start_h` and Home. Its blend
-  radius must remain zero.
+- `end_to_home_waypoints` to the waypoint order used to return from `p_end_h`.
+- `wall_joint_motion` to the desired joint speed, acceleration, and
+  intermediate blend radius.
 
 Each name in these lists must match a waypoint label in the PolyScope script.
 Point-to-point measurement waypoints do not need to appear as routine steps.
@@ -41,9 +38,9 @@ Each generated routine step contains:
   "waypoint": "Tmp1",
   "motion": {
     "type": "j",
-    "acceleration": 0.2,
-    "speed": 4.0,
-    "blend_radius": 0.0
+    "acceleration": 0.4,
+    "speed": 2.0,
+    "blend_radius": 5.0
   }
 }
 ```
@@ -54,7 +51,8 @@ they use `mm/s^2` and `mm/s`.
 `blend_radius` is stored in millimetres. Routine steps are sent
 to the controller as one program, so nonzero radii on intermediate steps blend
 into the following move. The final step must use `0.0` so completion can be
-verified at its exact target. `confirm_each_step` also requires zero radii.
+verified at its exact target. The generator also keeps the first step at
+`0.0`, so each route starts from an exact point.
 
 ## 3. Generate the JSON file
 
@@ -67,7 +65,7 @@ python src\routines\create_routines_file.py
 The generated file is written to:
 
 ```text
-src/routines/routine_files/routines_block.json
+src/routines/routine_files/routines_wall_275_top.json
 ```
 
 The script reports any requested waypoint it cannot find. Resolve all missing

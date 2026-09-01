@@ -44,11 +44,12 @@ from robot_connection import (
 )
 from run_measurements import MeasurementUnavailableError, run_measurements
 from run_routine import run_routine
-from data_acquisition.control_server import (
+from line_planner import is_obstacle, line_positions
+from data_acquisition.server_control import (
     AcquisitionControlServer,
     start_acquisition_control_server,
 )
-from data_acquisition.timestamped_logging import install_timestamped_tee
+from data_acquisition.server_logging import install_timestamped_tee
 
 
 # Connection and configuration locations.
@@ -227,6 +228,18 @@ def preferred_routine(
     return preferred_name if routine_exists(routines_data, preferred_name) else legacy_name
 
 
+def first_measurement_is_blocked(
+    measurement_config: dict[str, Any],
+    routines_data: dict[str, Any],
+) -> bool:
+    """Return whether the first planned measurement position is in an obstacle."""
+
+    positions = line_positions(measurement_config, routines_data)
+    if not positions:
+        return False
+    return is_obstacle(positions[0][1], measurement_config)
+
+
 def run_robot_sequence(
     rtde_receive,
     routines_data: dict[str, Any],
@@ -238,8 +251,14 @@ def run_robot_sequence(
     """Run the start routine, measurement traversal, and end routine."""
 
     write_state(state_file, {"mode": "start_routine"})
+    start_from_end = first_measurement_is_blocked(measurement_config, routines_data)
+    start_routine = (
+        HOME_TO_END_ROUTINE
+        if start_from_end
+        else preferred_routine(routines_data, HOME_TO_START_ROUTINE, LEGACY_START_ROUTINE)
+    )
     run_routine(
-        preferred_routine(routines_data, HOME_TO_START_ROUTINE, LEGACY_START_ROUTINE),
+        start_routine,
         routines_data,
         ROBOT_IP,
         rtde_receive,
@@ -248,10 +267,11 @@ def run_robot_sequence(
         False,
         True,
     )
-    move_to_start_high(ROBOT_IP, rtde_receive, measurement_config, routines_data)
+    if not start_from_end:
+        move_to_start_high(ROBOT_IP, rtde_receive, measurement_config, routines_data)
 
     write_state(state_file, {"mode": "measurements"})
-    run_measurements(
+    finish_side = run_measurements(
         ROBOT_IP,
         rtde_receive,
         measurement_config,
@@ -265,8 +285,13 @@ def run_robot_sequence(
     )
 
     write_state(state_file, {"mode": "end_routine"})
+    end_routine = (
+        START_TO_HOME_ROUTINE
+        if finish_side == "start"
+        else preferred_routine(routines_data, END_TO_HOME_ROUTINE, LEGACY_END_ROUTINE)
+    )
     run_routine(
-        preferred_routine(routines_data, END_TO_HOME_ROUTINE, LEGACY_END_ROUTINE),
+        end_routine,
         routines_data,
         ROBOT_IP,
         rtde_receive,

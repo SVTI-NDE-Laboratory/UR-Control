@@ -1,9 +1,9 @@
 # Measurement Configuration
 
-`config_mira.json` is the default for direct measurement-command runs. The web
-panel keeps mode-specific defaults in `config_translation.json` and
-`config_mira.json`, then writes the validated selection to
-`config_tmp.json` for a control-panel run.
+`config_mira.json` is the default for direct MIRA measurement-command runs. The
+web panel defaults to `config_server.json`; its **Measurement with server**
+checkbox selects between `config_server.json` and `config_mira.json`, then
+writes the validated selection to `config_tmp.json` for a control-panel run.
 
 `config_server.json` is the point-to-point preset for the external
 `ISREADY`/`GO` acquisition-control workflow.
@@ -84,13 +84,13 @@ Start of the obstacle zone measured along the line from the start point. Unit: `
 End of the obstacle zone measured along the line from the start point. Unit: `mm`.
 
 Obstacle avoidance considers the entire path between consecutive measurement
-points. An obstacle is therefore crossed at the high level even when it falls
-exactly between two points and contains no measurement position.
+points. An obstacle is therefore crossed through the taught Home detour even
+when it falls exactly between two points and contains no measurement position.
 
 ## motion
 
 One general motion dictionary is used for measurement traversal: high/low
-travel, line travel, obstacle jumps, and failure recovery. It does not alter
+travel, low-line travel, obstacle detour entry/exit, and failure recovery. It does not alter
 motion inside the controller-side force program.
 
 `type`

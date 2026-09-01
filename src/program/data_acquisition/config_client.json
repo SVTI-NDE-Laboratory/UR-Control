@@ -1,8 +1,0 @@
-{
-  "host": "127.0.0.1",
-  "port": 5055,
-  "startup_timeout": 5.0,
-  "request_timeout": 6.0,
-  "heartbeat_interval": 2.0,
-  "heartbeat_timeout": 1.0
-}

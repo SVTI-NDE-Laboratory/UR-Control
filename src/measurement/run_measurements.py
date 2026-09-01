@@ -25,6 +25,7 @@ from line_planner import (
     millimetres_to_metres,
     next_measurement_step,
     normalize,
+    obstacle_interval,
     point_pose,
     scale,
 )
@@ -34,7 +35,6 @@ from measurement_movement import (
     motion_parameters,
     move_to_zero_y_high,
     move_to_zero_y_low,
-    return_to_start_high,
     translate_along_line,
 )
 from measurement_state import write_state
@@ -75,7 +75,7 @@ def run_measurements(
     routine_joint_tolerance: float = DEFAULT_JOINT_TOLERANCE,
     routine_wait_timeout: float = DEFAULT_WAIT_TIMEOUT,
     routine_verbose: bool = True,
-) -> None:
+) -> str:
     """Measure every valid position along the configured line.
 
     ``height_mode`` tracks whether the robot is on the safe high plane or the
@@ -89,7 +89,7 @@ def run_measurements(
     high_low_movement(config, routines_data)
     assert_robot_running(robot_ip)
     try:
-        _run_measurements(
+        return _run_measurements(
             robot_ip,
             rtde_receive,
             config,
@@ -122,7 +122,7 @@ def _run_measurements(
     routine_joint_tolerance: float = DEFAULT_JOINT_TOLERANCE,
     routine_wait_timeout: float = DEFAULT_WAIT_TIMEOUT,
     routine_verbose: bool = True,
-) -> None:
+) -> str:
     """Implementation separated so the public entry point owns cleanup."""
 
     height_mode = "high"
@@ -133,6 +133,7 @@ def _run_measurements(
     step = 0
     measurement_index = None
     reached_line_position = None
+    finish_side = "end"
 
     while step < len(positions):
         # Describe the active step without claiming that its contact position
@@ -154,34 +155,51 @@ def _run_measurements(
             measurement_index = point_id
             print(f"\nMeasurement {measurement_index}, position {position:.3f} mm")
 
-        # Never measure inside an obstacle: rise if needed, then jump directly
-        # to the next valid measurement point while staying high.
+        # Never measure inside an obstacle. If the obstacle blocks the first
+        # points, startup has already routed to p_end_h; descend to p_end_l
+        # before translating back to the first valid measurement.
         if in_obstacle:
-            if height_mode == "low":
-                print("Obstacle: move low -> high")
-                low_to_high(robot_ip, rtde_receive, config, routines_data, position)
-                height_mode = "high"
-
             next_step = next_measurement_step(positions, step + 1, config)
             if next_step is None:
                 print("Obstacle until end of line")
+                if height_mode == "low":
+                    finish_side, reached_line_position = move_to_line_side_high(
+                        robot_ip,
+                        rtde_receive,
+                        config,
+                        routines_data,
+                        position,
+                        geometry,
+                    )
+                    height_mode = "high"
                 break
 
             next_position = positions[next_step][1]
-            print(f"Obstacle: jump to next measurement position {next_position:.3f} mm")
-            height_mode = avoid_obstacle(
-                robot_ip,
-                rtde_receive,
-                config,
-                routines_data,
-                current_position=position,
-                next_position=next_position,
-                current_height_mode=height_mode,
-                routine_joint_tolerance=routine_joint_tolerance,
-                routine_wait_timeout=routine_wait_timeout,
-                routine_verbose=routine_verbose,
-                fallback_distance=next_position - position,
-            )
+            if step == 0 and height_mode == "high":
+                height_mode = enter_line_from_end_high(
+                    robot_ip,
+                    rtde_receive,
+                    config,
+                    routines_data,
+                    next_position,
+                )
+            else:
+                print(
+                    f"Obstacle: route around obstacle to "
+                    f"{next_position:.3f} mm"
+                )
+                height_mode = safe_avoid_obstacle(
+                    robot_ip,
+                    rtde_receive,
+                    config,
+                    routines_data,
+                    current_position=position,
+                    next_position=next_position,
+                    current_height_mode=height_mode,
+                    routine_joint_tolerance=routine_joint_tolerance,
+                    routine_wait_timeout=routine_wait_timeout,
+                    routine_verbose=routine_verbose,
+                )
             step = next_step
             continue
 
@@ -241,30 +259,35 @@ def _run_measurements(
             message = (
                 f"Could not complete measurement {measurement_index} "
                 f"at {position:.3f} mm: "
-                "force threshold was not reached before the distance/time limit. "
-                "Returning to p_start_h."
+                "force threshold was not reached before maximum displacement. "
+                "Recovering to the safe high waypoint on this side of the obstacle."
             )
             print(f"\n{message}")
 
             # The force URP returns to its initial (low) measurement pose.
-            # Rise to the safe plane, then undo all line translation so the TCP
-            # finishes at p_start_h. Do not continue with the end routine.
-            low_to_high(robot_ip, rtde_receive, config, routines_data, position)
+            # Stay on the measurement line, move to the safe side of the
+            # obstacle, then rise to the corresponding high waypoint.
+            recovery_side, recovery_position = recover_after_force_limit(
+                robot_ip,
+                rtde_receive,
+                config,
+                routines_data,
+                position,
+                geometry,
+            )
             height_mode = "high"
-            if geometry["method"] == "point_to_point":
-                return_to_start_high(robot_ip, rtde_receive, config, routines_data)
-            elif abs(position) > 1e-12:
-                translate_along_line(robot_ip, rtde_receive, config, -position)
+            reached_line_position = recovery_position
 
             write_state(
                 state_path,
                 {
                     "mode": "measurement_failed",
                     "measurement_index": measurement_index,
-                    "line_position": position,
+                    "line_position": reached_line_position,
                     "height_mode": height_mode,
                     "in_obstacle": False,
                     "last_measurement_success": False,
+                    "recovery_side": recovery_side,
                     "message": message,
                 },
             )
@@ -283,18 +306,11 @@ def _run_measurements(
             crosses = crosses_obstacle(position, next_position, config)
 
             if crosses:
-                offset_home_detour = (
-                    geometry["method"] == "point_to_point"
-                    and abs(geometry["offset_y"]) > 1e-12
-                    and obstacle_detour_available(routines_data)
+                print(
+                    f"Pass obstacle through Home detour to "
+                    f"{next_position:.3f} mm"
                 )
-                if height_mode == "low" and not offset_home_detour:
-                    print("Path crosses obstacle: move low -> high before translating")
-                    low_to_high(robot_ip, rtde_receive, config, routines_data, position)
-                    height_mode = "high"
-
-                print(f"Pass obstacle at safe height: move to {next_position:.3f} mm")
-                height_mode = avoid_obstacle(
+                height_mode = safe_avoid_obstacle(
                     robot_ip,
                     rtde_receive,
                     config,
@@ -305,7 +321,6 @@ def _run_measurements(
                     routine_joint_tolerance=routine_joint_tolerance,
                     routine_wait_timeout=routine_wait_timeout,
                     routine_verbose=routine_verbose,
-                    fallback_distance=next_position - position,
                 )
                 step = next_step
                 continue
@@ -375,6 +390,7 @@ def _run_measurements(
             lateral_offset=not zero_y_final,
         )
         height_mode = "high"
+        finish_side = "end"
 
     if geometry["method"] == "point_to_point":
         if abs(geometry["offset_y"]) > 1e-12 and not final_zero_y_done:
@@ -397,7 +413,132 @@ def _run_measurements(
             "height_mode": height_mode,
             "in_obstacle": False,
             "last_measurement_success": None,
+            "finish_side": finish_side,
         },
+    )
+    return finish_side
+
+
+def force_failure_recovery_target(
+    config: dict,
+    geometry: dict,
+    line_position: float,
+) -> tuple[str, float]:
+    """Return the obstacle-side endpoint for force-limit recovery."""
+
+    line_start = 0.0
+    line_end = geometry["length"]
+    interval = obstacle_interval(config)
+    if interval is None:
+        distance_to_start = abs(line_position - line_start)
+        distance_to_end = abs(line_end - line_position)
+        if distance_to_start <= distance_to_end:
+            return "start", line_start
+        return "end", line_end
+
+    obstacle_start, obstacle_end = interval
+    obstacle_midpoint = (obstacle_start + obstacle_end) / 2.0
+    if line_position <= obstacle_midpoint:
+        return "start", line_start
+    return "end", line_end
+
+
+def taught_endpoint_position(geometry: dict, side: str) -> float:
+    """Return the taught endpoint coordinate in effective line-position units."""
+
+    if side == "start":
+        return -geometry.get("x_start", 0.0)
+    if side == "end":
+        return geometry.get("taught_length", geometry["length"]) - geometry.get("x_start", 0.0)
+    raise ValueError(f"Unknown line side: {side}")
+
+
+def move_to_line_side_high(
+    robot_ip: str,
+    rtde_receive,
+    config: dict,
+    routines_data: dict | None,
+    current_position: float,
+    geometry: dict,
+) -> tuple[str, float]:
+    """Move low along the measured line to a side endpoint, then move high."""
+
+    side, side_position = force_failure_recovery_target(
+        config,
+        geometry,
+        current_position,
+    )
+    taught_side_position = taught_endpoint_position(geometry, side)
+    high_waypoint = "p_start_h" if side == "start" else "p_end_h"
+    print(
+        "Obstacle-side return: translate on low measurement line to "
+        f"{side} taught endpoint ({taught_side_position:.3f} mm)."
+    )
+
+    if abs(taught_side_position - current_position) > 1e-9:
+        translate_along_line(
+            robot_ip,
+            rtde_receive,
+            config,
+            taught_side_position - current_position,
+            routines_data,
+            taught_side_position,
+            "low",
+        )
+
+    if geometry["method"] == "point_to_point" and abs(geometry["offset_y"]) > 1e-12:
+        print(
+            "Obstacle-side return: remove Y offset at "
+            f"{side} taught low endpoint before {high_waypoint}"
+        )
+        move_to_zero_y_low(
+            robot_ip,
+            rtde_receive,
+            config,
+            routines_data,
+            taught_side_position,
+        )
+
+    print(f"Obstacle-side return: move low -> high to {high_waypoint}")
+    low_to_high(
+        robot_ip,
+        rtde_receive,
+        config,
+        routines_data,
+        taught_side_position,
+        lateral_offset=False,
+    )
+    return side, taught_side_position
+
+
+def recover_after_force_limit(
+    robot_ip: str,
+    rtde_receive,
+    config: dict,
+    routines_data: dict | None,
+    current_position: float,
+    geometry: dict,
+) -> tuple[str, float]:
+    """Recover from a max-displacement force failure to p_start_h or p_end_h."""
+
+    recovery_side, recovery_position = force_failure_recovery_target(
+        config,
+        geometry,
+        current_position,
+    )
+    high_waypoint = "p_start_h" if recovery_side == "start" else "p_end_h"
+    print(
+        "Force-limit recovery: move on low line to "
+        f"{recovery_side} ({recovery_position:.3f} mm), then to {high_waypoint}."
+    )
+
+    return move_to_line_side_high(
+        robot_ip,
+        rtde_receive,
+        config,
+        routines_data,
+        current_position,
+        geometry,
     )
 
 
@@ -411,7 +552,60 @@ def obstacle_detour_available(routines_data: dict | None) -> bool:
     return {START_TO_HOME_ROUTINE, HOME_TO_END_ROUTINE}.issubset(routine_names)
 
 
-def avoid_obstacle(
+def enter_line_from_end_high(
+    robot_ip: str,
+    rtde_receive,
+    config: dict,
+    routines_data: dict | None,
+    next_position: float,
+) -> str:
+    """Move p_end_h -> p_end_l, apply any Y offset, then translate on low line."""
+
+    geometry = line_geometry(config, routines_data)
+    if geometry["method"] != "point_to_point":
+        raise ValueError("End-side obstacle entry requires point-to-point geometry.")
+    taught_end_position = taught_endpoint_position(geometry, "end")
+
+    print("Obstacle route: p_end_h -> p_end_l")
+    high_to_low(
+        robot_ip,
+        rtde_receive,
+        config,
+        routines_data,
+        taught_end_position,
+        lateral_offset=False,
+    )
+
+    if abs(geometry["offset_y"]) > 1e-12:
+        print(
+            "Obstacle route: apply Y offset at taught line end "
+            f"({taught_end_position:.3f} mm)"
+        )
+        acceleration, speed = motion_parameters(config)
+        movel_pose(
+            robot_ip,
+            rtde_receive,
+            point_pose(geometry, taught_end_position, "low"),
+            acceleration,
+            speed,
+            30.0,
+        )
+
+    if abs(next_position - taught_end_position) > 1e-9:
+        print(f"Obstacle route: translate on low line to {next_position:.3f} mm")
+        translate_along_line(
+            robot_ip,
+            rtde_receive,
+            config,
+            next_position - taught_end_position,
+            routines_data,
+            next_position,
+            "low",
+        )
+    return "low"
+
+
+def safe_avoid_obstacle(
     robot_ip: str,
     rtde_receive,
     config: dict,
@@ -422,136 +616,54 @@ def avoid_obstacle(
     routine_joint_tolerance: float,
     routine_wait_timeout: float,
     routine_verbose: bool,
-    fallback_distance: float,
 ) -> str:
-    """Move around an obstacle, using Home detours when routines define them."""
+    """Route around an obstacle without translating on the high plane."""
 
     geometry = line_geometry(config, routines_data)
     if geometry["method"] != "point_to_point" or not obstacle_detour_available(routines_data):
-        print("Obstacle detour routines not available: translating at safe height")
-        if current_height_mode == "low":
-            low_to_high(
-                robot_ip,
-                rtde_receive,
-                config,
-                routines_data,
-                current_position,
-            )
+        raise ValueError(
+            "Obstacle avoidance requires point-to-point geometry and "
+            "start_to_home/home_to_end routines."
+        )
+
+    if current_height_mode == "high":
+        print("Obstacle route: move down to current low line position")
+        high_to_low(robot_ip, rtde_receive, config, routines_data, current_position)
+
+    taught_start_position = taught_endpoint_position(geometry, "start")
+    if abs(taught_start_position - current_position) > 1e-9:
+        print("Obstacle route: measured low line -> p_start_l")
         translate_along_line(
             robot_ip,
             rtde_receive,
             config,
-            fallback_distance,
+            taught_start_position - current_position,
             routines_data,
-            next_position,
-            "high",
+            taught_start_position,
+            "low",
         )
-        return "high"
 
     if abs(geometry["offset_y"]) > 1e-12:
-        print("Offset obstacle route: return from Y offset to taught low line")
-        if current_height_mode == "high":
-            high_to_low(
-                robot_ip,
-                rtde_receive,
-                config,
-                routines_data,
-                current_position,
-            )
+        print("Obstacle route: return from Y offset to taught low line at p_start_l")
         move_to_zero_y_low(
             robot_ip,
             rtde_receive,
             config,
             routines_data,
-            current_position,
+            taught_start_position,
         )
 
-        if abs(current_position) > 1e-9:
-            print("Offset obstacle route: taught low line -> p_start_l")
-            translate_along_line(
-                robot_ip,
-                rtde_receive,
-                config,
-                -current_position,
-                routines_data,
-                0.0,
-                "low",
-                lateral_offset=False,
-            )
+    print("Obstacle route: p_start_l -> p_start_h")
+    low_to_high(
+        robot_ip,
+        rtde_receive,
+        config,
+        routines_data,
+        taught_start_position,
+        lateral_offset=False,
+    )
 
-        print("Offset obstacle route: p_start_l -> p_start_h")
-        low_to_high(
-            robot_ip,
-            rtde_receive,
-            config,
-            routines_data,
-            0.0,
-            lateral_offset=False,
-        )
-
-        print("Offset obstacle route: p_start_h -> Home")
-        run_routine(
-            START_TO_HOME_ROUTINE,
-            routines_data,
-            robot_ip,
-            rtde_receive,
-            routine_joint_tolerance,
-            routine_wait_timeout,
-            False,
-            routine_verbose,
-        )
-
-        print("Offset obstacle route: Home -> p_end_h")
-        run_routine(
-            HOME_TO_END_ROUTINE,
-            routines_data,
-            robot_ip,
-            rtde_receive,
-            routine_joint_tolerance,
-            routine_wait_timeout,
-            False,
-            routine_verbose,
-        )
-
-        print("Offset obstacle route: p_end_h -> p_end_l")
-        high_to_low(
-            robot_ip,
-            rtde_receive,
-            config,
-            routines_data,
-            geometry["length"],
-            lateral_offset=False,
-        )
-
-        if abs(next_position - geometry["length"]) > 1e-9:
-            print(f"Offset obstacle route: taught low line -> {next_position:.3f} mm")
-            translate_along_line(
-                robot_ip,
-                rtde_receive,
-                config,
-                next_position - geometry["length"],
-                routines_data,
-                next_position,
-                "low",
-                lateral_offset=False,
-            )
-
-        print(f"Offset obstacle route: apply Y offset at {next_position:.3f} mm")
-        acceleration, speed = motion_parameters(config)
-        movel_pose(
-            robot_ip,
-            rtde_receive,
-            point_pose(geometry, next_position, "low"),
-            acceleration,
-            speed,
-            30.0,
-        )
-        return "low"
-
-    print("Obstacle detour: return to p_start_h")
-    move_to_taught_safe_high(robot_ip, rtde_receive, config, routines_data)
-
-    print("Obstacle detour: p_start_h -> Home")
+    print("Obstacle route: p_start_h -> Home")
     run_routine(
         START_TO_HOME_ROUTINE,
         routines_data,
@@ -563,7 +675,7 @@ def avoid_obstacle(
         routine_verbose,
     )
 
-    print("Obstacle detour: Home -> p_end_h")
+    print("Obstacle route: Home -> p_end_h")
     run_routine(
         HOME_TO_END_ROUTINE,
         routines_data,
@@ -575,39 +687,13 @@ def avoid_obstacle(
         routine_verbose,
     )
 
-    print(f"Obstacle detour: p_end_h -> {next_position:.3f} mm")
-    acceleration, speed = motion_parameters(config)
-    movel_pose(
+    return enter_line_from_end_high(
         robot_ip,
         rtde_receive,
-        point_pose(geometry, next_position, "high"),
-        acceleration,
-        speed,
-        30.0,
+        config,
+        routines_data,
+        next_position,
     )
-    return "high"
-
-
-def move_to_taught_safe_high(
-    robot_ip: str,
-    rtde_receive,
-    config: dict,
-    routines_data: dict | None,
-) -> None:
-    """Move linearly from the current high line pose back to taught p_start_h."""
-
-    geometry = line_geometry(config, routines_data)
-    if geometry["method"] != "point_to_point":
-        return
-
-    taught_safe_pose = point_pose(geometry, 0.0, "high", lateral_offset=False)
-    if abs(geometry["x_start"]) > 1e-12:
-        start_offset = millimetres_to_metres(geometry["x_start"])
-        for index, axis_value in enumerate(geometry["x_axis"]):
-            taught_safe_pose[index] -= start_offset * axis_value
-
-    acceleration, speed = motion_parameters(config)
-    movel_pose(robot_ip, rtde_receive, taught_safe_pose, acceleration, speed, 30.0)
 
 
 def measurement_target_pose(

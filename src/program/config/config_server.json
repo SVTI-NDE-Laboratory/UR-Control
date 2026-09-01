@@ -14,13 +14,13 @@
   },
   "motion": {
     "type": "l",
-    "acceleration": 100.0,
-    "speed": 100.0
+    "acceleration": 150.0,
+    "speed": 150.0
   },
   "measurement": {
-    "program_path": "Benoit/apply_force.urp",
-    "contact_threshold": 140.0,
-    "holding_force": 160.0,
+    "program_path": "Inspection/Programs/apply_force_with_server.urp",
+    "contact_threshold": 200.0,
+    "holding_force": 220.0,
     "max_displacement": 50.0,
     "simulation": false,
     "data_server": true

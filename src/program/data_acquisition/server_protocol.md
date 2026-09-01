@@ -36,7 +36,8 @@ session `program.log`.
 
 ## Request Format
 
-Commands are ASCII text. The client should terminate each command with LF:
+Commands are ASCII text. The client may send plain-text commands directly. LF
+termination is also accepted:
 
 ```text
 \n
@@ -58,10 +59,10 @@ JSON requests are also accepted for compatibility:
 
 The command name is handled case-insensitively.
 
-## Fixed Short Responses
+## Simple Fixed Responses
 
-The normal control responses are sent as bare ASCII tokens with no terminator.
-This is intentional to keep the LabVIEW tester path small.
+The simple control responses are sent as bare ASCII payloads with known byte
+lengths. They do not include `\n`, `\r\n`, or a length prefix.
 
 | Request | Response | Bytes to read | Meaning |
 |---|---|---:|---|
@@ -78,23 +79,23 @@ ISREADY -> b'T' or b'F'
 GO      -> b'ACK'
 ```
 
-There is no trailing `\n` or `\r\n` on these fixed short responses.
-
 ## Extended Responses
 
-Extended responses, currently error messages, are terminated with CRLF:
+Non-trivial responses, currently error messages, are sent as:
 
 ```text
-\r\n
+[4 Byte I32][Data]
 ```
+
+The first 4 bytes are a signed 32-bit integer in network byte order
+(big-endian). This value is the byte length of the following UTF-8 response
+payload. The payload does not include `\n` or `\r\n`.
 
 Example:
 
 ```text
-BOGUS -> ERR unsupported_message\r\n
+BOGUS -> b'\x00\x00\x00\x17ERR unsupported_message'
 ```
-
-For these messages, use CRLF receive mode in the TCP tester.
 
 ## Command Behavior
 
