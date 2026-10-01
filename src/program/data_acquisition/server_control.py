@@ -1,8 +1,8 @@
 """TCP listener used by the main robot program for acquisition control.
 
 The robot program owns this server. An external acquisition client connects and
-sends `ALIVE`, `ISREADY`, or `GO`. Those fixed responses are sent as plain-text
-tokens with known byte lengths. Longer responses are length-prefixed.
+sends `ALIVE`, `ISREADY`, `GO`, or `STATE`. Fixed responses are sent as
+plain-text tokens with known byte lengths. Longer responses are length-prefixed.
 """
 
 import json
@@ -13,13 +13,13 @@ from pathlib import Path
 from typing import Any, Callable
 
 try:
-    from .server_state import AcquisitionControlState
+    from .server_state import AcquisitionControlState, protocol_state_response
 except ImportError:
-    from server_state import AcquisitionControlState
+    from server_state import AcquisitionControlState, protocol_state_response
 
 
 CONFIG_SERVER_FILE = Path(__file__).resolve().parent / "config_server.json"
-SHORT_RESPONSES = {"ACK", "OK", "T", "F"}
+SHORT_RESPONSES = {"ACK", "OK", "true", "false"}
 ACCEPT_TIMEOUT = 0.5
 CLIENT_READ_TIMEOUT = 5.0
 RESPONSE_LENGTH_PREFIX_FORMAT = "!i"
@@ -118,7 +118,8 @@ class AcquisitionControlServer:
             self._socket.close()
         except OSError:
             pass
-        self._thread.join(timeout=2.0)
+        if self._thread.is_alive():
+            self._thread.join(timeout=2.0)
 
     def wait_for_go(self, context: dict[str, Any]) -> dict[str, Any]:
         """Callback used by apply_force after force has been reached."""
@@ -198,13 +199,18 @@ class AcquisitionControlServer:
 
         message = str(request.get("message", "")).upper()
         if message == "ISREADY":
-            return "T" if self.state.snapshot()["ready"] else "F"
+            return "true" if self.state.snapshot()["ready"] else "false"
         if message == "GO":
             self.state.mark_go()
             return "ACK"
         if message == "ALIVE":
             self.state.mark_client_ready()
             return "OK"
+        if message == "STATE":
+            return json.dumps(
+                protocol_state_response(self.state.snapshot()),
+                separators=(",", ":"),
+            )
         return "ERR unsupported_message"
 
     def _send_response(self, connection: socket.socket, response: str) -> None:

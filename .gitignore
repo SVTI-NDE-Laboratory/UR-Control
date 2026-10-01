@@ -9,3 +9,5 @@ src/program/config/maintenance_state.json
 src/program/config/maintenance.log
 old/
 temporary_data/
+documentation/company_run/output/*
+!documentation/company_run/output/.gitkeep

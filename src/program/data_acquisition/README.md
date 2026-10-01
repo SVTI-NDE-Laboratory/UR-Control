@@ -23,7 +23,7 @@ server and written to `program.log` during web-launched runs.
 | File | Purpose |
 |---|---|
 | `server_control.py` | TCP server used by the robot measurement program |
-| `server_state.py` | Shared ALIVE, ISREADY, and GO state between robot code and TCP threads |
+| `server_state.py` | Shared ALIVE, ISREADY, GO, and STATE data between robot code and TCP threads |
 | `config_server.json` | Host, port, and acquisition-control timeouts |
 | `server_protocol.md` | Exact TCP request/response contract |
 | `server_logging.py` | Mirrors terminal output into timestamped log files |
@@ -48,7 +48,7 @@ robot moves to a measurement point
 robot runs the force program
 robot reaches force threshold and holds force
 external client sends ISREADY
-Python replies T
+Python replies true
 external client records data
 external client sends GO
 Python replies ACK
@@ -57,7 +57,7 @@ robot returns from force mode
 program continues to the next point
 ```
 
-If the robot is not currently holding force, `ISREADY` returns `F`.
+If the robot is not currently holding force, `ISREADY` returns `false`.
 
 ## LabVIEW Tester Settings
 
@@ -74,15 +74,55 @@ response length:
 | Command | Expected response | Bytes Empfang |
 |---|---|---:|
 | `ALIVE` | `OK` | 2 |
-| `ISREADY` | `T` or `F` | 1 |
+| `ISREADY` | `true` or `false` | 4 or 5 |
 | `GO` | `ACK` | 3 |
+| `STATE` | JSON state payload | first read 4-byte length, then payload |
 
-Non-trivial/error responses use `[4 Byte I32][Data]`: first read the 4-byte
-length, then read exactly that many payload bytes.
+`STATE` and non-trivial/error responses use `[4 Byte I32][Data]`: first read
+the 4-byte length, then read exactly that many payload bytes.
 
 ## Testing Without Starting the Full Robot Program
 
-From the project root, start only the TCP control server:
+From the project root, start the standalone acquisition server tester:
+
+```powershell
+python src\program\data_acquisition\server_tester.py
+```
+
+This starts the same TCP server implementation used by the real measurement
+program, but it does not connect to RTDE, load a URP, or move the robot.
+
+Optional startup values:
+
+```powershell
+python src\program\data_acquisition\server_tester.py `
+  --host 127.0.0.1 `
+  --port 5055 `
+  --point 1 `
+  --x 123.0 `
+  --y 333.0 `
+  --ready
+```
+
+The tester opens a small console:
+
+```text
+hold                 make ISREADY return true until the client sends GO
+point <n>            set STATE Point
+pos <x> <y>          set STATE X/Y in mm
+moving <on|off>      set STATE Moving
+error <text>         set STATE Error text
+clear-error          set STATE Error back to ok
+state                print the current fake state
+quit                 stop the tester
+```
+
+Use `hold` before testing the normal acquisition sequence if you want
+`ISREADY` to return `true`. When the client sends `GO`, the fake hold ends and
+`ISREADY` returns `false` again.
+
+For a minimal non-interactive server-only test, this older one-liner still
+works:
 
 ```powershell
 python -c "import sys; sys.path.insert(0, r'src\program'); from data_acquisition.server_control import AcquisitionControlServer; server=AcquisitionControlServer('127.0.0.1', 5055, 8.0); server.start(); print('TCP test server listening on 127.0.0.1:5055'); input('Press Enter to stop server...'); server.stop()"
@@ -94,8 +134,9 @@ Expected behavior while no robot measurement is running:
 
 ```text
 ALIVE   -> OK
-ISREADY -> F
+ISREADY -> false
 GO      -> ACK
+STATE   -> [4 Byte I32][JSON data]
 ```
 
 This test does not connect to the robot, does not load a URP, and does not move
@@ -131,13 +172,23 @@ In a real web-launched run these lines appear in the session `program.log`.
 
 ## Response Framing
 
-Simple replies are sent directly as `OK`, `T`, `F`, or `ACK`, so the client
+Simple replies are sent directly as `OK`, `true`, `false`, or `ACK`, so the client
 can read the known byte count for each command.
 
 Non-trivial replies are framed as `[4 Byte I32][Data]`. The I32 is a signed
 32-bit integer in network byte order and gives the length of the following
 UTF-8 payload bytes. The payload is only the response text, for example an
 `ERR ...` message. There is no trailing `\n` or `\r\n`.
+
+`STATE` uses that same framing and returns JSON:
+
+```json
+{"X":123.0,"Y":333.0,"Point":1,"Moving":false,"Error":"ok"}
+```
+
+`X` and `Y` are live TCP position in millimetres when the robot RTDE connection
+is available. `Moving` is a JSON boolean, and `Error` is `"ok"` unless the
+program or live RTDE read reports an error.
 
 ## Important Timing
 
@@ -163,16 +214,16 @@ If the tester cannot connect:
 - confirm no other process is already using port `5055`
 - check Windows firewall only if testing from another machine
 
-If `ISREADY` always returns `F`:
+If `ISREADY` always returns `false`:
 
 - this is expected during the standalone TCP test
-- during a real run, it returns `T` only while the robot is actively holding
+- during a real run, it returns `true` only while the robot is actively holding
   force at a measurement point
 
 If the tester waits forever:
 
 - for `ALIVE`, read 2 bytes
-- for `ISREADY`, read 1 byte
+- for `ISREADY`, read 4 bytes for `true` or 5 bytes for `false`
 - for `GO`, read 3 bytes
-- for non-trivial/error responses, read the first 4 bytes as the response
+- for `STATE` and non-trivial/error responses, read the first 4 bytes as the response
   length, then read exactly that many payload bytes

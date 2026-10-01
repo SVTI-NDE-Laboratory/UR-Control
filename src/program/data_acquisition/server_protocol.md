@@ -49,6 +49,7 @@ Accepted plain-text commands:
 ALIVE
 ISREADY
 GO
+STATE
 ```
 
 JSON requests are also accepted for compatibility:
@@ -67,21 +68,21 @@ lengths. They do not include `\n`, `\r\n`, or a length prefix.
 | Request | Response | Bytes to read | Meaning |
 |---|---|---:|---|
 | `ALIVE` | `OK` | 2 | Client is present and startup may continue |
-| `ISREADY` | `T` | 1 | Robot is holding force and data can be acquired |
-| `ISREADY` | `F` | 1 | Robot is not ready for acquisition |
+| `ISREADY` | `true` | 4 | Robot is holding force and data can be acquired |
+| `ISREADY` | `false` | 5 | Robot is not ready for acquisition |
 | `GO` | `ACK` | 3 | Server received the release/acquisition-complete command |
 
 Raw response examples:
 
 ```text
 ALIVE   -> b'OK'
-ISREADY -> b'T' or b'F'
+ISREADY -> b'true' or b'false'
 GO      -> b'ACK'
 ```
 
 ## Extended Responses
 
-Non-trivial responses, currently error messages, are sent as:
+Non-trivial responses, including `STATE` and error messages, are sent as:
 
 ```text
 [4 Byte I32][Data]
@@ -119,14 +120,14 @@ holding force for the current measurement point.
 
 Response while force is held:
 
-```text
-T
+```json
+true
 ```
 
 Response otherwise:
 
-```text
-F
+```json
+false
 ```
 
 ### `GO`
@@ -143,6 +144,22 @@ ACK
 If the robot is currently waiting in a force-hold window, `GO` releases that
 wait so Python can acknowledge robot input register 42 and continue. If no
 measurement is waiting, `ACK` is still returned but no motion state changes.
+
+### `STATE`
+
+Use this to read the latest robot/program state.
+
+Response:
+
+```json
+{"X":123.0,"Y":333.0,"Point":1,"Moving":false,"Error":"ok"}
+```
+
+The response is sent as `[4 Byte I32][Data]`. `X` and `Y` are the live TCP
+position in millimetres when an RTDE connection is available. Before the robot
+connection is established they are `null`. `Point` is the current measurement
+index, `Moving` is a JSON boolean based on TCP speed, and `Error` is `"ok"` or
+the current error text.
 
 ## Timeouts
 

@@ -278,19 +278,17 @@ def _run_measurements(
             height_mode = "high"
             reached_line_position = recovery_position
 
-            write_state(
-                state_path,
-                {
-                    "mode": "measurement_failed",
-                    "measurement_index": measurement_index,
-                    "line_position": reached_line_position,
-                    "height_mode": height_mode,
-                    "in_obstacle": False,
-                    "last_measurement_success": False,
-                    "recovery_side": recovery_side,
-                    "message": message,
-                },
-            )
+            failed_state = {
+                "mode": "measurement_failed",
+                "measurement_index": measurement_index,
+                "line_position": reached_line_position,
+                "height_mode": height_mode,
+                "in_obstacle": False,
+                "last_measurement_success": False,
+                "recovery_side": recovery_side,
+                "message": message,
+            }
+            write_state(state_path, failed_state)
             raise MeasurementUnavailableError(measurement_index, position)
 
         # Move to the following valid point. Check the complete movement
@@ -404,18 +402,16 @@ def _run_measurements(
             )
 
     # Publish a final state so the caller knows traversal has finished.
-    write_state(
-        state_path,
-        {
-            "mode": "measurements_done",
-            "measurement_index": measurement_index,
-            "line_position": reached_line_position,
-            "height_mode": height_mode,
-            "in_obstacle": False,
-            "last_measurement_success": None,
-            "finish_side": finish_side,
-        },
-    )
+    final_state = {
+        "mode": "measurements_done",
+        "measurement_index": measurement_index,
+        "line_position": reached_line_position,
+        "height_mode": height_mode,
+        "in_obstacle": False,
+        "last_measurement_success": None,
+        "finish_side": finish_side,
+    }
+    write_state(state_path, final_state)
     return finish_side
 
 

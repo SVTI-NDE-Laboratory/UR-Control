@@ -6,10 +6,60 @@ from datetime import datetime
 from typing import Any, Callable
 
 
+TRUE_VALUES = {"1", "true", "t", "yes", "y", "on"}
+FALSE_VALUES = {"0", "false", "f", "no", "n", "off", ""}
+
+
 def json_timestamp() -> str:
     """Return a local timestamp suitable for JSON status records."""
 
     return datetime.now().astimezone().isoformat(timespec="milliseconds")
+
+
+def json_boolean(value: Any) -> bool:
+    """Normalize common protocol flags to a JSON boolean value."""
+
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in TRUE_VALUES:
+            return True
+        if normalized in FALSE_VALUES:
+            return False
+    return bool(value)
+
+
+def protocol_state_response(snapshot: dict[str, Any]) -> dict[str, Any]:
+    """Return the compact JSON payload for the TCP STATE command."""
+
+    program_state = snapshot.get("state") or {}
+    context = snapshot.get("context") or {}
+    tcp_position = program_state.get("tcp_position") or {}
+    mode = program_state.get("mode")
+    error = "ok"
+
+    if "rtde_error" in program_state:
+        error = str(program_state["rtde_error"])
+    elif "error" in program_state:
+        error = str(program_state["error"])
+    elif mode in {"error", "measurement_failed", "unsafe_start"}:
+        error = str(
+            program_state.get("message")
+            or program_state.get("error_type")
+            or mode
+        )
+
+    return {
+        "X": tcp_position.get("X"),
+        "Y": tcp_position.get("Y"),
+        "Point": context.get(
+            "measurement_index",
+            program_state.get("measurement_index"),
+        ),
+        "Moving": json_boolean(program_state.get("moving", False)),
+        "Error": error,
+    }
 
 
 class AcquisitionControlState:

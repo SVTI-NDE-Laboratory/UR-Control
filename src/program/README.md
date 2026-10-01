@@ -54,6 +54,88 @@ Direct use asks for terminal confirmation before connecting to the robot. The
 web launcher supplies `--operator-confirmed` only after its browser safety
 confirmation and read-only Home preflight.
 
+## How `run_measurement_sequence.py` works
+
+`run_measurement_sequence.py` is the main orchestration layer. It does not
+define the geometry, the force routine, or the low-level robot commands itself;
+instead it loads configuration and routine files, prepares the run outputs,
+starts optional acquisition communication, checks the robot, then delegates
+movement and measurement work to the measurement and robot modules.
+
+Startup:
+
+1. `parse_args()` reads the selected config file, routine file, output folder,
+   and `--operator-confirmed` flag.
+2. `prepare_output_directory()` creates the output directory and mirrors stdout
+   and stderr to `program.log`.
+3. `load_run_inputs()` reads the routine JSON and measurement config, validates
+   them through `read_measurement_config()`, writes `config_used.json`, creates
+   `measurement_plan.json`, and chooses the live `state.json` path.
+4. `start_acquisition_if_enabled()` starts the TCP acquisition server when
+   `measurement.data_server=true`. That server handles `ALIVE`, `ISREADY`,
+   `GO`, and `STATE`. Its state provider reads `state.json` and, after RTDE is
+   connected, adds live TCP `X/Y` position and movement status.
+5. If the run was started directly from a terminal, `confirm_operator_if_needed()`
+   waits for Enter. The web panel skips this only after its own confirmation.
+
+Robot preflight:
+
+1. `verify_robot_startup()` checks that the robot program is running.
+2. It opens RTDE receive feedback.
+3. It loads the `Home` waypoint from the selected routine file.
+4. It writes `{"mode": "checking_home"}` to `state.json`.
+5. It requires the robot joints to be within `HOME_JOINT_TOLERANCE` of `Home`.
+   If this fails, no movement command is sent.
+
+Robot sequence:
+
+1. `run_robot_sequence()` writes `{"mode": "start_routine"}`.
+2. It checks whether the first measurement point is inside an obstacle.
+3. If the first point is blocked, it starts from the end side with
+   `home_to_end`; otherwise it uses `home_to_start` when available, falling
+   back to the legacy `start` routine for older files.
+4. After the start routine, it moves to the high start measurement position
+   unless the obstacle logic already started from the end side.
+5. It writes `{"mode": "measurements"}` and calls `run_measurements()`.
+6. When measurements finish, it writes `{"mode": "end_routine"}` and chooses
+   the correct return routine based on the side where the traversal ended:
+   `start_to_home`, `end_to_home`, or the legacy `end` fallback.
+7. After the return routine completes, it writes `{"mode": "idle"}`.
+
+Measurement phase:
+
+`run_measurements()` owns the point-to-point or translation traversal. For each
+planned point it updates `state.json` with the current mode, measurement index,
+line position, height mode, obstacle status, and last force result. It routes
+around obstacles, moves between high and low positions, verifies the exact TCP
+target, runs the force URP, and records the result in `measurement_plan.json`.
+
+When server acquisition is enabled, the force routine reaches the force hold
+and Python exposes that hold through the TCP server:
+
+1. Client sends `ISREADY`.
+2. Server returns `true` only while the robot is holding force.
+3. Client records data.
+4. Client sends `GO`.
+5. Python acknowledges the robot input register and the robot leaves the hold.
+
+If the client sends `STATE`, the server returns a length-prefixed JSON payload
+with live `X`, `Y`, `Point`, `Moving`, and `Error` fields.
+
+Failure and cleanup:
+
+`main()` catches the important failure modes and writes a final state:
+
+- unsafe start position: `mode="unsafe_start"` and exit code `3`
+- force not reached at a measurement point: `mode="measurement_failed"` and
+  exit code `2`
+- operator cancellation: `mode="stopped"` and exit code `130`
+- unexpected exception: `mode="error"` with the exception type and message
+
+The `finally` block always disconnects RTDE when it was opened and stops the
+acquisition server. This cleanup does not command the robot back to Home; stop
+and recovery behavior is handled earlier by the measurement and robot modules.
+
 ## Runtime and outputs
 
 At startup, main validates the configuration, writes the plan, starts the data
@@ -79,7 +161,7 @@ records the acquisition timestamp and whether the requested force was reached.
 Points excluded by an obstacle remain in the plan with `measured=false` and
 `skip_reason="obstacle"` so their original point IDs are visible.
 
-When contact is reached, `ISREADY` returns `T`. The external client records the
+When contact is reached, `ISREADY` returns `true`. The external client records the
 data, then sends `GO`. Python acknowledges robot input register 42 only after
 `GO` is accepted. A failed force attempt is saved against its measurement index
 before traversal stops and recovery begins.

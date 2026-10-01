@@ -145,7 +145,7 @@ def load_run_inputs(
 
 
 def read_state_snapshot(state_file: Path) -> dict[str, Any]:
-    """Return the latest program state for ALIVE responses."""
+    """Return the latest program state for TCP protocol responses."""
 
     try:
         return json.loads(state_file.read_text(encoding="utf-8"))
@@ -153,8 +153,32 @@ def read_state_snapshot(state_file: Path) -> dict[str, Any]:
         return {"mode": "starting"}
 
 
+def read_live_state_snapshot(state_file: Path, rtde_receive) -> dict[str, Any]:
+    """Return file state enriched with live robot TCP position when available."""
+
+    state = read_state_snapshot(state_file)
+    if rtde_receive is None:
+        return state
+
+    try:
+        pose = rtde_receive.getActualTCPPose()
+        speed = rtde_receive.getActualTCPSpeed()
+    except Exception as error:
+        state["rtde_error"] = str(error)
+        return state
+
+    state["tcp_position"] = {
+        "X": pose[0] * 1000.0,
+        "Y": pose[1] * 1000.0,
+    }
+    state["moving"] = any(abs(value) > 1e-4 for value in speed[:3])
+    return state
+
+
 def start_acquisition_if_enabled(
-    measurement_config: dict[str, Any], state_file: Path
+    measurement_config: dict[str, Any],
+    state_file: Path,
+    rtde_receive_provider: Callable[[], Any] | None = None,
 ) -> AcquisitionResources:
     """Start data acquisition communication when the run configuration needs it."""
 
@@ -162,8 +186,12 @@ def start_acquisition_if_enabled(
         print("Data acquisition control server disabled by measurement.data_server=false.")
         return None, None
 
+    def state_provider() -> dict[str, Any]:
+        rtde_receive = rtde_receive_provider() if rtde_receive_provider else None
+        return read_live_state_snapshot(state_file, rtde_receive)
+
     control_server, acquisition_config = start_acquisition_control_server(
-        state_provider=lambda: read_state_snapshot(state_file)
+        state_provider=state_provider
     )
     print(
         "Data acquisition control server listening on "
@@ -251,12 +279,12 @@ def run_robot_sequence(
     """Run the start routine, measurement traversal, and end routine."""
 
     write_state(state_file, {"mode": "start_routine"})
+
+    # Define what is the start routine (depending on whether the first measurement is blocked)
     start_from_end = first_measurement_is_blocked(measurement_config, routines_data)
-    start_routine = (
-        HOME_TO_END_ROUTINE
-        if start_from_end
-        else preferred_routine(routines_data, HOME_TO_START_ROUTINE, LEGACY_START_ROUTINE)
-    )
+    start_routine = (HOME_TO_END_ROUTINE if start_from_end else preferred_routine(routines_data, HOME_TO_START_ROUTINE, LEGACY_START_ROUTINE))
+
+    # Run "start" routine -> to bring it to first possible point
     run_routine(
         start_routine,
         routines_data,
@@ -270,6 +298,7 @@ def run_robot_sequence(
     if not start_from_end:
         move_to_start_high(ROBOT_IP, rtde_receive, measurement_config, routines_data)
 
+    # Run measurements
     write_state(state_file, {"mode": "measurements"})
     finish_side = run_measurements(
         ROBOT_IP,
@@ -284,6 +313,7 @@ def run_robot_sequence(
         True,
     )
 
+    # Run "end" routine
     write_state(state_file, {"mode": "end_routine"})
     end_routine = (
         START_TO_HOME_ROUTINE
@@ -307,6 +337,7 @@ def run_robot_sequence(
 def main() -> None:
     """Run the complete measurement sequence command."""
 
+    # ================ Program startup and input loading =================
     args = parse_args()
     output_dir = prepare_output_directory(args)
     routines_data, measurement_config, state_file, measurement_plan_file = (
@@ -319,10 +350,17 @@ def main() -> None:
 
     try:
         control_server, acquire_measurement = start_acquisition_if_enabled(
-            measurement_config, state_file
+            measurement_config,
+            state_file,
+            lambda: rtde_receive,
         )
         confirm_operator_if_needed(args.operator_confirmed)
+
+    # =================== Robot preflight ===================
         rtde_receive = verify_robot_startup(routines_data, state_file)
+
+
+    # =================== Robot sequence ===================
         run_robot_sequence(
             rtde_receive,
             routines_data,
@@ -332,44 +370,39 @@ def main() -> None:
             acquire_measurement,
         )
 
+    # Error (unsafe start position)
     except UnsafeStartPositionError as error:
-        write_state(
-            state_file,
-            {
-                "mode": "unsafe_start",
-                "message": str(error),
-            },
-        )
+        write_state(state_file, {"mode": "unsafe_start", "message": str(error)})
         print(f"\n{error}", file=sys.stderr)
         raise SystemExit(3)
+
+    # Error (could not perform a measurement)
     except MeasurementUnavailableError as error:
-        write_state(
-            state_file,
-            {
-                "mode": "measurement_failed",
-                "measurement_index": error.measurement_index,
-                "line_position": error.line_position,
-                "height_mode": "high",
-                "last_measurement_success": False,
-                "message": str(error),
-            },
-        )
+        state = {
+            "mode": "measurement_failed",
+            "measurement_index": error.measurement_index,
+            "line_position": error.line_position,
+            "height_mode": "high",
+            "last_measurement_success": False,
+            "message": str(error),
+        }
+        write_state(state_file, state)
         print(f"\n{error}")
         raise SystemExit(2)
+    
+    # Error (stopped manually by operator)
     except KeyboardInterrupt:
         write_state(state_file, {"mode": "stopped", "reason": "operator cancellation"})
         print("\nProgram cancelled; any active routine or measurement was stopped.")
         raise SystemExit(130)
+
+    # Error (generic)
     except BaseException as error:
-        write_state(
-            state_file,
-            {
-                "mode": "error",
-                "error_type": type(error).__name__,
-                "message": str(error),
-            },
-        )
+        state = {"mode": "error", "error_type": type(error).__name__, "message": str(error)}
+        write_state(state_file, state)
         raise
+
+    # =================== Close all sequence ===================
     finally:
         # Always release communication resources, including after Ctrl+C or an
         # exception. This cleanup does not command the robot back to Home.
