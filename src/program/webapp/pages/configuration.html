@@ -93,6 +93,8 @@
     let formDirty = false;
     let operationPending = false;
     let lastImportantMessage = '';
+    let pendingStartConfirmation = false;
+    let handledStartConfirmationSession = null;
 
     function numberValue(id, fallback = 0) {
       const element = document.getElementById(id);
@@ -517,6 +519,40 @@
       }
       if (running || (data.validated && !formDirty)) drawProgress(data);
       else drawVisualization();
+      maybeConfirmMovementStart(data);
+    }
+
+    async function maybeConfirmMovementStart(data) {
+      const programState = data.program_state || {};
+      const sessionKey = data.session_id || data.worker?.state_file || 'active';
+      if (
+        data.worker?.running !== true ||
+        programState.mode !== 'waiting_for_operator_start' ||
+        pendingStartConfirmation ||
+        handledStartConfirmationSession === sessionKey
+      ) {
+        return;
+      }
+
+      pendingStartConfirmation = true;
+      handledStartConfirmationSession = sessionKey;
+      try {
+        const confirmed = window.confirm('Start robot motion? Confirm that the workspace is clear, tooling is secure, the robot is in Remote Control, and the emergency stop is accessible.');
+        if (!confirmed) {
+          const stopResponse = await fetch('/api/worker/stop', {method:'POST'});
+          const stopResult = await stopResponse.json();
+          if (!stopResponse.ok) throw new Error(stopResult.detail || `HTTP ${stopResponse.status}`);
+          return;
+        }
+        const response = await fetch('/api/measurement/start-movement', {method:'POST'});
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.detail || `HTTP ${response.status}`);
+      } catch (error) {
+        showImportant(error.message);
+      } finally {
+        pendingStartConfirmation = false;
+        await refreshMeasurement();
+      }
     }
 
     async function refreshMeasurement() {
@@ -540,7 +576,6 @@
           if (!response.ok) throw new Error(result.detail || `HTTP ${response.status}`);
         } else {
           await checkConfiguration('/api/configuration/validate');
-          if (!window.confirm('Start robot motion? Confirm that the workspace is clear, tooling is secure, the robot is in Remote Control, and the emergency stop is accessible.')) return;
           const response = await fetch('/api/measurement/start', {
             method:'POST',
             headers:{'Content-Type':'application/json'},
@@ -548,7 +583,7 @@
               output_directory:outputDirectory.value,
               show_terminal:showTerminal.checked,
               create_session_folder:createSessionFolder.checked,
-              operator_confirmed:true,
+              operator_confirmed:false,
             }),
           });
           const result = await response.json();

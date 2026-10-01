@@ -141,9 +141,18 @@ def _run_measurements(
         index, position = positions[step]
         point_id = index + 1
         in_obstacle = is_obstacle(position, config)
+        if in_obstacle:
+            next_step = next_measurement_step(positions, step + 1, config)
+            next_point_id = (
+                positions[next_step][0] + 1
+                if next_step is not None
+                else None
+            )
+        else:
+            next_point_id = point_id
         state = {
             "mode": "measurements",
-            "measurement_index": point_id if not in_obstacle else None,
+            "measurement_index": next_point_id,
             "line_position": reached_line_position,
             "height_mode": height_mode,
             "in_obstacle": in_obstacle,
@@ -159,7 +168,6 @@ def _run_measurements(
         # points, startup has already routed to p_end_h; descend to p_end_l
         # before translating back to the first valid measurement.
         if in_obstacle:
-            next_step = next_measurement_step(positions, step + 1, config)
             if next_step is None:
                 print("Obstacle until end of line")
                 if height_mode == "low":
@@ -242,6 +250,7 @@ def _run_measurements(
             {
                 "measurement_index": measurement_index,
                 "line_position": position,
+                "x_coordinate": geometry.get("x_start", 0.0) + position,
             },
             acknowledge_force_hold=measurement.get("data_server", True),
         )

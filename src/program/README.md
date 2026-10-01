@@ -51,8 +51,9 @@ python src\program\commands\run_measurement_sequence.py `
 ```
 
 Direct use asks for terminal confirmation before connecting to the robot. The
-web launcher supplies `--operator-confirmed` only after its browser safety
-confirmation and read-only Home preflight.
+web launcher starts the worker first, waits for the acquisition client when
+server mode is enabled, then asks for browser safety confirmation before robot
+motion starts.
 
 ## How `run_measurement_sequence.py` works
 
@@ -65,7 +66,7 @@ movement and measurement work to the measurement and robot modules.
 Startup:
 
 1. `parse_args()` reads the selected config file, routine file, output folder,
-   and `--operator-confirmed` flag.
+   `--operator-confirmed` flag, and optional web start-signal file.
 2. `prepare_output_directory()` creates the output directory and mirrors stdout
    and stderr to `program.log`.
 3. `load_run_inputs()` reads the routine JSON and measurement config, validates
@@ -75,8 +76,11 @@ Startup:
    `measurement.data_server=true`. That server handles `ALIVE`, `ISREADY`,
    `GO`, and `STATE`. Its state provider reads `state.json` and, after RTDE is
    connected, adds live TCP `X/Y` position and movement status.
-5. If the run was started directly from a terminal, `confirm_operator_if_needed()`
-   waits for Enter. The web panel skips this only after its own confirmation.
+5. `confirm_operator_if_needed()` waits before robot motion starts. Direct
+   terminal runs wait for Enter. Web runs write
+   `mode="waiting_for_operator_start"` and continue only after the browser
+   confirmation creates the start-signal file. In server mode this happens
+   after the acquisition client has sent `ALIVE`.
 
 Robot preflight:
 

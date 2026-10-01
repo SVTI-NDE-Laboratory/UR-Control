@@ -264,8 +264,8 @@ The external client sends simple ASCII commands:
 
 | Command | Response | Bytes |
 |---|---|---:|
-| `ALIVE` | `OK` | 2 |
-| `ISREADY` | `true` or `false` | 4 or 5 |
+| `ALIVE` | `ACK` | 3 |
+| `ISREADY` | `T` or `F` | 1 |
 | `GO` | `ACK` | 3 |
 
 Non-trivial responses, such as unsupported-command errors, use:

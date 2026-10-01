@@ -6,28 +6,13 @@ from datetime import datetime
 from typing import Any, Callable
 
 
-TRUE_VALUES = {"1", "true", "t", "yes", "y", "on"}
-FALSE_VALUES = {"0", "false", "f", "no", "n", "off", ""}
+MISSING_X_SENTINEL = -9999
 
 
 def json_timestamp() -> str:
     """Return a local timestamp suitable for JSON status records."""
 
     return datetime.now().astimezone().isoformat(timespec="milliseconds")
-
-
-def json_boolean(value: Any) -> bool:
-    """Normalize common protocol flags to a JSON boolean value."""
-
-    if isinstance(value, bool):
-        return value
-    if isinstance(value, str):
-        normalized = value.strip().lower()
-        if normalized in TRUE_VALUES:
-            return True
-        if normalized in FALSE_VALUES:
-            return False
-    return bool(value)
 
 
 def protocol_state_response(snapshot: dict[str, Any]) -> dict[str, Any]:
@@ -37,6 +22,7 @@ def protocol_state_response(snapshot: dict[str, Any]) -> dict[str, Any]:
     context = snapshot.get("context") or {}
     tcp_position = program_state.get("tcp_position") or {}
     mode = program_state.get("mode")
+    ready = bool(snapshot.get("ready", False))
     error = "ok"
 
     if "rtde_error" in program_state:
@@ -50,14 +36,16 @@ def protocol_state_response(snapshot: dict[str, Any]) -> dict[str, Any]:
             or mode
         )
 
+    x_position = tcp_position.get("X")
+
     return {
-        "X": tcp_position.get("X"),
+        "X": MISSING_X_SENTINEL if x_position is None else x_position,
         "Y": tcp_position.get("Y"),
         "Point": context.get(
             "measurement_index",
             program_state.get("measurement_index"),
         ),
-        "Moving": json_boolean(program_state.get("moving", False)),
+        "Moving": not ready,
         "Error": error,
     }
 

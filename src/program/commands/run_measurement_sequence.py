@@ -11,6 +11,7 @@ The robot does not move until the operator confirms in the control panel or term
 import argparse
 import json
 import sys
+import time
 from pathlib import Path
 from typing import Any, Callable
 
@@ -32,7 +33,7 @@ for folder in [PROGRAM_DIR, MEASUREMENT_DIR, ROBOT_DIR, ROUTINES_DIR]:
         sys.path.insert(0, str(folder))
 
 from measurement_config import read_measurement_config
-from measurement_plan import write_measurement_plan
+from measurement_plan import first_measurable_index, write_measurement_plan
 from measurement_movement import move_to_start_high
 from measurement_state import write_state
 from read_routines import get_waypoint, read_routines_file
@@ -47,7 +48,7 @@ from run_routine import run_routine
 from line_planner import is_obstacle, line_positions
 from data_acquisition.server_control import (
     AcquisitionControlServer,
-    start_acquisition_control_server,
+    read_server_config,
 )
 from data_acquisition.server_logging import install_timestamped_tee
 
@@ -95,6 +96,11 @@ def parse_args() -> argparse.Namespace:
         "--operator-confirmed",
         action="store_true",
         help="Skip terminal confirmation after confirmation in the control panel.",
+    )
+    parser.add_argument(
+        "--start-signal-file",
+        type=Path,
+        help="File created by the web control panel after movement confirmation.",
     )
     parser.add_argument(
         "--routines-file",
@@ -153,10 +159,23 @@ def read_state_snapshot(state_file: Path) -> dict[str, Any]:
         return {"mode": "starting"}
 
 
-def read_live_state_snapshot(state_file: Path, rtde_receive) -> dict[str, Any]:
+def configured_y_offset(measurement_config: dict[str, Any]) -> float:
+    """Return the configured STATE Y offset in millimetres."""
+
+    parameters = measurement_config.get("line", {}).get("parameters", {})
+    return float(parameters.get("offset_y", 0.0))
+
+
+def read_live_state_snapshot(
+    state_file: Path,
+    rtde_receive,
+    y_offset: float | None = None,
+) -> dict[str, Any]:
     """Return file state enriched with live robot TCP position when available."""
 
     state = read_state_snapshot(state_file)
+    if y_offset is not None:
+        state.setdefault("tcp_position", {})["Y"] = y_offset
     if rtde_receive is None:
         return state
 
@@ -169,7 +188,7 @@ def read_live_state_snapshot(state_file: Path, rtde_receive) -> dict[str, Any]:
 
     state["tcp_position"] = {
         "X": pose[0] * 1000.0,
-        "Y": pose[1] * 1000.0,
+        "Y": y_offset if y_offset is not None else pose[1] * 1000.0,
     }
     state["moving"] = any(abs(value) > 1e-4 for value in speed[:3])
     return state
@@ -178,6 +197,7 @@ def read_live_state_snapshot(state_file: Path, rtde_receive) -> dict[str, Any]:
 def start_acquisition_if_enabled(
     measurement_config: dict[str, Any],
     state_file: Path,
+    initial_measurement_index: int | None = None,
     rtde_receive_provider: Callable[[], Any] | None = None,
 ) -> AcquisitionResources:
     """Start data acquisition communication when the run configuration needs it."""
@@ -188,10 +208,66 @@ def start_acquisition_if_enabled(
 
     def state_provider() -> dict[str, Any]:
         rtde_receive = rtde_receive_provider() if rtde_receive_provider else None
-        return read_live_state_snapshot(state_file, rtde_receive)
+        state = read_live_state_snapshot(
+            state_file,
+            rtde_receive,
+            configured_y_offset(measurement_config),
+        )
+        if (
+            initial_measurement_index is not None
+            and state.get("measurement_index") is None
+            and state.get("mode")
+            in {
+                "starting",
+                "waiting_for_acquisition_client",
+                "acquisition_client_ready",
+                "checking_home",
+                "start_routine",
+            }
+        ):
+            state["measurement_index"] = initial_measurement_index
+        return state
 
-    control_server, acquisition_config = start_acquisition_control_server(
-        state_provider=state_provider
+    acquisition_config = read_server_config()
+    control_server = AcquisitionControlServer(
+        acquisition_config["host"],
+        int(acquisition_config["port"]),
+        float(
+            acquisition_config.get(
+                "go_timeout",
+                acquisition_config.get("request_timeout", 8.0),
+            )
+        ),
+        state_provider=state_provider,
+    )
+    try:
+        write_state(
+            state_file,
+            {
+                "mode": "waiting_for_acquisition_client",
+                "measurement_index": initial_measurement_index,
+                "message": "Waiting for ALIVE from the data acquisition client.",
+            },
+        )
+        control_server.start()
+        print(
+            "Waiting for data acquisition client ALIVE on "
+            f"{acquisition_config['host']}:{acquisition_config['port']}."
+        )
+        control_server.wait_for_client_ready(
+            float(acquisition_config.get("client_ready_timeout", 5.0))
+        )
+    except BaseException:
+        control_server.stop()
+        raise
+
+    write_state(
+        state_file,
+        {
+            "mode": "acquisition_client_ready",
+            "measurement_index": initial_measurement_index,
+            "message": "Data acquisition client sent ALIVE.",
+        },
     )
     print(
         "Data acquisition control server listening on "
@@ -211,14 +287,38 @@ def stop_acquisition_resources(control_server: AcquisitionControlServer | None) 
         control_server.stop()
 
 
-def confirm_operator_if_needed(operator_confirmed: bool) -> None:
+def confirm_operator_if_needed(
+    operator_confirmed: bool,
+    state_file: Path,
+    initial_measurement_index: int | None = None,
+    start_signal_file: Path | None = None,
+) -> None:
     """Keep direct terminal runs interactive while web launches skip the prompt."""
+
+    if start_signal_file is not None:
+        write_state(
+            state_file,
+            {
+                "mode": "waiting_for_operator_start",
+                "measurement_index": initial_measurement_index,
+                "message": "Waiting for operator confirmation to start robot motion.",
+            },
+        )
+        print("Waiting for operator confirmation to start robot motion.")
+        while not start_signal_file.exists():
+            time.sleep(0.2)
+        print("Operator confirmed robot motion start.")
+        return
 
     if not operator_confirmed:
         input("Press Enter to connect and start the full program, or Ctrl+C to cancel.")
 
 
-def verify_robot_startup(routines_data: dict[str, Any], state_file: Path) -> Any:
+def verify_robot_startup(
+    routines_data: dict[str, Any],
+    state_file: Path,
+    initial_measurement_index: int | None = None,
+) -> Any:
     """Connect to robot feedback and verify the robot is ready at Home."""
 
     assert_robot_running(ROBOT_IP)
@@ -229,7 +329,13 @@ def verify_robot_startup(routines_data: dict[str, Any], state_file: Path) -> Any
             raise ValueError(
                 "The Home waypoint has no joint target for startup verification."
             )
-        write_state(state_file, {"mode": "checking_home"})
+        write_state(
+            state_file,
+            {
+                "mode": "checking_home",
+                "measurement_index": initial_measurement_index,
+            },
+        )
         assert_at_home(rtde_receive, home["q"], HOME_JOINT_TOLERANCE)
     except BaseException:
         rtde_receive.disconnect()
@@ -275,10 +381,26 @@ def run_robot_sequence(
     state_file: Path,
     measurement_plan_file: Path,
     acquire_measurement: AcquireMeasurement | None,
+    initial_measurement_index: int | None = None,
 ) -> None:
     """Run the start routine, measurement traversal, and end routine."""
 
-    write_state(state_file, {"mode": "start_routine"})
+    if (
+        measurement_config["measurement"].get("data_server", True)
+        and acquire_measurement is None
+    ):
+        raise RuntimeError(
+            "Measurement with server is enabled, but the acquisition client "
+            "handshake was not completed. The first routine will not start."
+        )
+
+    write_state(
+        state_file,
+        {
+            "mode": "start_routine",
+            "measurement_index": initial_measurement_index,
+        },
+    )
 
     # Define what is the start routine (depending on whether the first measurement is blocked)
     start_from_end = first_measurement_is_blocked(measurement_config, routines_data)
@@ -299,7 +421,13 @@ def run_robot_sequence(
         move_to_start_high(ROBOT_IP, rtde_receive, measurement_config, routines_data)
 
     # Run measurements
-    write_state(state_file, {"mode": "measurements"})
+    write_state(
+        state_file,
+        {
+            "mode": "measurements",
+            "measurement_index": initial_measurement_index,
+        },
+    )
     finish_side = run_measurements(
         ROBOT_IP,
         rtde_receive,
@@ -343,6 +471,10 @@ def main() -> None:
     routines_data, measurement_config, state_file, measurement_plan_file = (
         load_run_inputs(args, output_dir)
     )
+    initial_measurement_index = first_measurable_index(
+        measurement_config,
+        routines_data,
+    )
 
     # Keep the connection reference for cleanup if startup fails partway through.
     rtde_receive = None
@@ -352,12 +484,22 @@ def main() -> None:
         control_server, acquire_measurement = start_acquisition_if_enabled(
             measurement_config,
             state_file,
+            initial_measurement_index,
             lambda: rtde_receive,
         )
-        confirm_operator_if_needed(args.operator_confirmed)
+        confirm_operator_if_needed(
+            args.operator_confirmed,
+            state_file,
+            initial_measurement_index,
+            args.start_signal_file,
+        )
 
     # =================== Robot preflight ===================
-        rtde_receive = verify_robot_startup(routines_data, state_file)
+        rtde_receive = verify_robot_startup(
+            routines_data,
+            state_file,
+            initial_measurement_index,
+        )
 
 
     # =================== Robot sequence ===================
@@ -368,6 +510,7 @@ def main() -> None:
             state_file,
             measurement_plan_file,
             acquire_measurement,
+            initial_measurement_index,
         )
 
     # Error (unsafe start position)

@@ -41,14 +41,15 @@ Sequence:
 Python starts TCP server on 127.0.0.1:5055
 external client connects
 external client sends ALIVE
-Python replies OK
-measurement program continues startup
+Python replies ACK
+measurement program asks the operator to confirm robot motion
+operator confirms movement in the web panel or terminal
 robot moves through the start routine
 robot moves to a measurement point
 robot runs the force program
 robot reaches force threshold and holds force
 external client sends ISREADY
-Python replies true
+Python replies T
 external client records data
 external client sends GO
 Python replies ACK
@@ -57,7 +58,11 @@ robot returns from force mode
 program continues to the next point
 ```
 
-If the robot is not currently holding force, `ISREADY` returns `false`.
+If the robot is not currently holding force, `ISREADY` returns `F`.
+
+In server mode, robot motion is blocked until the external client has sent
+`ALIVE` and the operator has confirmed movement. The first routine must not
+start before both gates succeed.
 
 ## LabVIEW Tester Settings
 
@@ -73,8 +78,8 @@ response length:
 
 | Command | Expected response | Bytes Empfang |
 |---|---|---:|
-| `ALIVE` | `OK` | 2 |
-| `ISREADY` | `true` or `false` | 4 or 5 |
+| `ALIVE` | `ACK` | 3 |
+| `ISREADY` | `T` or `F` | 1 |
 | `GO` | `ACK` | 3 |
 | `STATE` | JSON state payload | first read 4-byte length, then payload |
 
@@ -104,13 +109,43 @@ python src\program\data_acquisition\server_tester.py `
   --ready
 ```
 
+To simulate a full 20-point measurement run without the robot:
+
+```powershell
+python src\program\data_acquisition\server_tester.py `
+  --auto `
+  --wait-for-alive
+```
+
+In auto mode, the tester exposes points `1` through `20`, moves along the X
+axis, and spends about 3 seconds moving between points. At each point,
+`ISREADY` returns `T` until the acquisition client sends `GO`. While moving,
+`STATE` reports the next point index, interpolated `X`, unchanged `Y`, and
+`Moving:true`.
+
+With `--wait-for-alive`, the tester waits until the acquisition client sends
+`ALIVE`, then waits for you to press Enter before point 1 starts. Add
+`--no-start-prompt` when you want scripts to start immediately after `ALIVE`.
+
+Useful auto-mode options:
+
+```powershell
+python src\program\data_acquisition\server_tester.py `
+  --auto `
+  --points 20 `
+  --move-seconds 3 `
+  --x 0 `
+  --y 0 `
+  --x-step 10 `
+  --no-start-prompt
+```
+
 The tester opens a small console:
 
 ```text
-hold                 make ISREADY return true until the client sends GO
+hold                 make ISREADY return T until the client sends GO
 point <n>            set STATE Point
 pos <x> <y>          set STATE X/Y in mm
-moving <on|off>      set STATE Moving
 error <text>         set STATE Error text
 clear-error          set STATE Error back to ok
 state                print the current fake state
@@ -118,8 +153,8 @@ quit                 stop the tester
 ```
 
 Use `hold` before testing the normal acquisition sequence if you want
-`ISREADY` to return `true`. When the client sends `GO`, the fake hold ends and
-`ISREADY` returns `false` again.
+`ISREADY` to return `T`. When the client sends `GO`, the fake hold ends and
+`ISREADY` returns `F` again.
 
 For a minimal non-interactive server-only test, this older one-liner still
 works:
@@ -133,8 +168,8 @@ Then connect with the LabVIEW tester and send commands.
 Expected behavior while no robot measurement is running:
 
 ```text
-ALIVE   -> OK
-ISREADY -> false
+ALIVE   -> ACK
+ISREADY -> F
 GO      -> ACK
 STATE   -> [4 Byte I32][JSON data]
 ```
@@ -150,17 +185,9 @@ The server prints a line when the client connects:
 Data acquisition client 127.0.0.1:59775: connected
 ```
 
-It prints each received command:
-
-```text
-Data acquisition client 127.0.0.1:59775: received ALIVE
-```
-
-It prints each response:
-
-```text
-Data acquisition client 127.0.0.1:59775: sent OK
-```
+Heartbeat noise is filtered from the operator log: `ALIVE` exchanges and bare
+`ACK` responses are not printed. `STATE` is printed only when its JSON payload
+has `"Moving":false`.
 
 It prints when the client disconnects:
 
@@ -172,7 +199,7 @@ In a real web-launched run these lines appear in the session `program.log`.
 
 ## Response Framing
 
-Simple replies are sent directly as `OK`, `true`, `false`, or `ACK`, so the client
+Simple replies are sent directly as `ACK`, `T`, or `F`, so the client
 can read the known byte count for each command.
 
 Non-trivial replies are framed as `[4 Byte I32][Data]`. The I32 is a signed
@@ -186,9 +213,13 @@ UTF-8 payload bytes. The payload is only the response text, for example an
 {"X":123.0,"Y":333.0,"Point":1,"Moving":false,"Error":"ok"}
 ```
 
-`X` and `Y` are live TCP position in millimetres when the robot RTDE connection
-is available. `Moving` is a JSON boolean, and `Error` is `"ok"` unless the
-program or live RTDE read reports an error.
+`X` is the live TCP X position in millimetres when available. Until an X value
+exists, `STATE` returns `-9999`. `Y` is the configured
+`line.parameters.offset_y` value in millimetres. `Point` is the current or next
+measurement index, including before the first force measurement starts.
+`Moving` is the opposite of the force-hold ready flag: it is `false` while
+`ISREADY` returns `T`, and `true` while `ISREADY` returns `F`. `Error` is
+`"ok"` unless the program or live RTDE read reports an error.
 
 ## Important Timing
 
@@ -214,16 +245,16 @@ If the tester cannot connect:
 - confirm no other process is already using port `5055`
 - check Windows firewall only if testing from another machine
 
-If `ISREADY` always returns `false`:
+If `ISREADY` always returns `F`:
 
 - this is expected during the standalone TCP test
-- during a real run, it returns `true` only while the robot is actively holding
+- during a real run, it returns `T` only while the robot is actively holding
   force at a measurement point
 
 If the tester waits forever:
 
-- for `ALIVE`, read 2 bytes
-- for `ISREADY`, read 4 bytes for `true` or 5 bytes for `false`
+- for `ALIVE`, read 3 bytes
+- for `ISREADY`, read 1 byte for `T` or `F`
 - for `GO`, read 3 bytes
 - for `STATE` and non-trivial/error responses, read the first 4 bytes as the response
   length, then read exactly that many payload bytes

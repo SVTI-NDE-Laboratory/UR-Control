@@ -56,6 +56,15 @@ def create_measurement_plan(config: dict, routines_data: dict | None = None) -> 
     }
 
 
+def first_measurable_index(config: dict, routines_data: dict | None = None) -> int | None:
+    """Return the first actual one-based measurement index that is not skipped."""
+
+    for sample_index, line_position in line_positions(config, routines_data):
+        if not is_obstacle(line_position, config):
+            return sample_index + 1
+    return None
+
+
 def write_measurement_plan(
     path: str | Path, config: dict, routines_data: dict | None = None
 ) -> dict:

@@ -19,7 +19,7 @@ except ImportError:
 
 
 CONFIG_SERVER_FILE = Path(__file__).resolve().parent / "config_server.json"
-SHORT_RESPONSES = {"ACK", "OK", "true", "false"}
+SHORT_RESPONSES = {"ACK", "T", "F"}
 ACCEPT_TIMEOUT = 0.5
 CLIENT_READ_TIMEOUT = 5.0
 RESPONSE_LENGTH_PREFIX_FORMAT = "!i"
@@ -66,6 +66,39 @@ def log_tcp_event(address, text: str) -> None:
     """Print one operator-visible TCP status line."""
 
     print(f"Data acquisition client {format_address(address)}: {text}")
+
+
+def request_message(request: dict[str, Any]) -> str:
+    """Return the normalized protocol command name for one request."""
+
+    return str(request.get("message", "")).upper()
+
+
+def state_response_is_stationary(response: str) -> bool:
+    """Return whether a STATE response should be operator-visible."""
+
+    try:
+        state = json.loads(response)
+    except json.JSONDecodeError:
+        return True
+    return state.get("Moving") is False
+
+
+def should_log_tcp_exchange(request: dict[str, Any], response: str) -> bool:
+    """Return whether this request/response exchange belongs in the operator log."""
+
+    message = request_message(request)
+    if message == "ALIVE":
+        return False
+    if message == "STATE":
+        return state_response_is_stationary(response)
+    return True
+
+
+def should_log_tcp_response(response: str) -> bool:
+    """Return whether the response text itself should be printed."""
+
+    return response != "ACK"
 
 
 class AcquisitionControlServer:
@@ -155,10 +188,12 @@ class AcquisitionControlServer:
             connection.settimeout(CLIENT_READ_TIMEOUT)
             try:
                 for request in self._read_requests(connection):
-                    log_tcp_event(address, f"received {format_request(request)}")
                     response = self._handle_request(request)
                     self._send_response(connection, response)
-                    log_tcp_event(address, f"sent {response}")
+                    if should_log_tcp_exchange(request, response):
+                        log_tcp_event(address, f"received {format_request(request)}")
+                        if should_log_tcp_response(response):
+                            log_tcp_event(address, f"sent {response}")
             except Exception as error:
                 response = f"ERR {type(error).__name__}: {error}"
                 try:
@@ -197,15 +232,15 @@ class AcquisitionControlServer:
     def _handle_request(self, request: dict[str, Any]) -> str:
         """Return the short protocol response for one client request."""
 
-        message = str(request.get("message", "")).upper()
+        message = request_message(request)
         if message == "ISREADY":
-            return "true" if self.state.snapshot()["ready"] else "false"
+            return "T" if self.state.snapshot()["ready"] else "F"
         if message == "GO":
             self.state.mark_go()
             return "ACK"
         if message == "ALIVE":
             self.state.mark_client_ready()
-            return "OK"
+            return "ACK"
         if message == "STATE":
             return json.dumps(
                 protocol_state_response(self.state.snapshot()),

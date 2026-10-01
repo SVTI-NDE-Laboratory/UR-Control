@@ -333,8 +333,6 @@ def measurement_status() -> dict[str, Any]:
 
 @api.post("/api/measurement/start")
 def start_measurement(request: MeasurementStartRequest) -> dict[str, Any]:
-    if not request.operator_confirmed:
-        raise HTTPException(status_code=400, detail="Safety confirmation is required.")
     if not request.output_directory.is_absolute():
         raise HTTPException(status_code=422, detail="The data folder must be absolute.")
     config = state.get_config()
@@ -377,6 +375,33 @@ def start_measurement(request: MeasurementStartRequest) -> dict[str, Any]:
         "session_id": session_id,
         "output_directory": str(output_directory),
     }
+
+
+@api.post("/api/measurement/start-movement")
+def start_measurement_movement() -> dict[str, Any]:
+    worker = state.workers.snapshot()
+    if not worker["running"] or worker["kind"] != "measurement":
+        raise HTTPException(status_code=409, detail="No measurement worker is waiting.")
+    state_file = Path(worker["state_file"]) if worker["state_file"] else None
+    if state_file is None:
+        raise HTTPException(status_code=409, detail="Measurement state file is unavailable.")
+
+    program_state = read_json_if_available(state_file, {})
+    if program_state.get("mode") != "waiting_for_operator_start":
+        raise HTTPException(
+            status_code=409,
+            detail="The measurement worker is not waiting for movement confirmation.",
+        )
+
+    signal_file = state_file.with_name("start_movement.signal")
+    try:
+        signal_file.write_text(
+            datetime.now().astimezone().isoformat(timespec="milliseconds") + "\n",
+            encoding="utf-8",
+        )
+    except OSError as error:
+        raise HTTPException(status_code=500, detail=str(error)) from error
+    return {"confirmed": True}
 
 
 @api.post("/api/worker/stop")

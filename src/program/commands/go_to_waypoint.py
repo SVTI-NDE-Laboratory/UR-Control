@@ -23,8 +23,8 @@ MM_PER_METRE = 1000.0
 ROBOT_IP = "192.168.3.10"
 ROUTINES_FILE = ROUTINES_DIR / "routine_files" / "routines_wall_275_top.json"
 
-WAYPOINT_NAME = "p_start_h"
-USE_LINEAR_MOVE = False  # Set to False to use movej instead of movel
+WAYPOINT_NAME = "p_end_h"
+USE_LINEAR_MOVE = True  # Set to False to use movej instead of movel
 
 LINEAR_ACCELERATION = 100.0
 LINEAR_SPEED = 50.0
