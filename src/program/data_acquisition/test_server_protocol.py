@@ -41,6 +41,18 @@ class ProtocolStateResponseTests(unittest.TestCase):
         snapshot["state"]["tcp_position"]["X"] = 12.5
         self.assertEqual(protocol_state_response(snapshot)["X"], 12.5)
 
+    def test_state_point_prefers_program_state_over_force_hold_context(self):
+        snapshot = {
+            "context": {"measurement_index": 1},
+            "state": {
+                "measurement_index": 2,
+                "tcp_position": {"X": 10, "Y": 11},
+            },
+            "ready": True,
+        }
+
+        self.assertEqual(protocol_state_response(snapshot)["Point"], 2)
+
 
 class AcquisitionControlServerTests(unittest.TestCase):
     def test_state_response_is_compact_json_with_boolean_moving(self):

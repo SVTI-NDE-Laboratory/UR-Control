@@ -37,14 +37,14 @@ def protocol_state_response(snapshot: dict[str, Any]) -> dict[str, Any]:
         )
 
     x_position = tcp_position.get("X")
+    point = program_state.get("measurement_index")
+    if point is None:
+        point = context.get("measurement_index")
 
     return {
         "X": MISSING_X_SENTINEL if x_position is None else x_position,
         "Y": tcp_position.get("Y"),
-        "Point": context.get(
-            "measurement_index",
-            program_state.get("measurement_index"),
-        ),
+        "Point": point,
         "Moving": not ready,
         "Error": error,
     }

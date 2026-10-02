@@ -49,7 +49,17 @@ def high_to_low(
     geometry = line_geometry(config, routines_data)
     if geometry["method"] == POINT_TO_POINT:
         acceleration, speed = motion_parameters(config)
-        if lateral_offset and abs(geometry["offset_y"]) > 1e-12:
+        taught_start_position = -geometry.get("x_start", 0.0)
+        taught_start_pose = routines_data["waypoints"][geometry["start_name"]]["p"]
+        movel_pose(
+            robot_ip,
+            rtde_receive,
+            taught_start_pose,
+            acceleration,
+            speed,
+            30.0,
+        )
+        if abs(line_position - taught_start_position) > 1e-9:
             movel_pose(
                 robot_ip,
                 rtde_receive,
@@ -58,19 +68,15 @@ def high_to_low(
                 speed,
                 30.0,
             )
-        movel_pose(
-            robot_ip,
-            rtde_receive,
-            point_pose(
-                geometry,
-                line_position,
-                "low",
-                lateral_offset=lateral_offset,
-            ),
-            acceleration,
-            speed,
-            30.0,
-        )
+        if lateral_offset and abs(geometry["offset_y"]) > 1e-12:
+            movel_pose(
+                robot_ip,
+                rtde_receive,
+                point_pose(geometry, line_position, "low", lateral_offset=True),
+                acceleration,
+                speed,
+                30.0,
+            )
         return
 
     movement = high_low_movement(config, routines_data)
@@ -95,15 +101,31 @@ def low_to_high(
     geometry = line_geometry(config, routines_data)
     if geometry["method"] == POINT_TO_POINT:
         acceleration, speed = motion_parameters(config)
+        taught_start_position = -geometry.get("x_start", 0.0)
+        taught_start_pose = routines_data["waypoints"][geometry["start_name"]]["p"]
+        taught_safe_pose = routines_data["waypoints"][geometry["safe_name"]]["p"]
+        if lateral_offset and abs(geometry["offset_y"]) > 1e-12:
+            movel_pose(
+                robot_ip,
+                rtde_receive,
+                point_pose(geometry, line_position, "low", lateral_offset=False),
+                acceleration,
+                speed,
+                30.0,
+            )
+        if abs(line_position - taught_start_position) > 1e-9:
+            movel_pose(
+                robot_ip,
+                rtde_receive,
+                taught_start_pose,
+                acceleration,
+                speed,
+                30.0,
+            )
         movel_pose(
             robot_ip,
             rtde_receive,
-            point_pose(
-                geometry,
-                line_position,
-                "high",
-                lateral_offset=lateral_offset,
-            ),
+            taught_safe_pose,
             acceleration,
             speed,
             30.0,

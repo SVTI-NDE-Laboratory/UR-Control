@@ -154,6 +154,7 @@ def apply_force(
     acquire_data: Callable[[dict], dict] | None = None,
     acquisition_context: dict | None = None,
     acknowledge_force_hold: bool = True,
+    on_force_success: Callable[[str], None] | None = None,
 ) -> tuple[bool, str]:
     """Run a force cycle and return its result plus measurement timestamp.
 
@@ -258,6 +259,8 @@ def apply_force(
 
         if status == 1:
             force_reached = True
+            if on_force_success is not None:
+                on_force_success(measurement_timestamp)
             if acknowledge_force_hold:
                 print_force_contact_log(
                     "The cobot is in contact with the wall (force reached).",

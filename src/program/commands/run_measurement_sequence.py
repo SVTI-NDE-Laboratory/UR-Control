@@ -34,7 +34,6 @@ for folder in [PROGRAM_DIR, MEASUREMENT_DIR, ROBOT_DIR, ROUTINES_DIR]:
 
 from measurement_config import read_measurement_config
 from measurement_plan import first_measurable_index, write_measurement_plan
-from measurement_movement import move_to_start_high
 from measurement_state import write_state
 from read_routines import get_waypoint, read_routines_file
 from robot_connection import (
@@ -417,9 +416,6 @@ def run_robot_sequence(
         False,
         True,
     )
-    if not start_from_end:
-        move_to_start_high(ROBOT_IP, rtde_receive, measurement_config, routines_data)
-
     # Run measurements
     write_state(
         state_file,
@@ -428,6 +424,8 @@ def run_robot_sequence(
             "measurement_index": initial_measurement_index,
         },
     )
+
+    # Run the measurements and get the side from which the robot finished
     finish_side = run_measurements(
         ROBOT_IP,
         rtde_receive,
@@ -443,11 +441,8 @@ def run_robot_sequence(
 
     # Run "end" routine
     write_state(state_file, {"mode": "end_routine"})
-    end_routine = (
-        START_TO_HOME_ROUTINE
-        if finish_side == "start"
-        else preferred_routine(routines_data, END_TO_HOME_ROUTINE, LEGACY_END_ROUTINE)
-    )
+    end_routine = (START_TO_HOME_ROUTINE if finish_side == "start" else
+                    preferred_routine(routines_data, END_TO_HOME_ROUTINE, LEGACY_END_ROUTINE))
     run_routine(
         end_routine,
         routines_data,
