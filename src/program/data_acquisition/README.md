@@ -44,6 +44,8 @@ external client sends ALIVE
 Python replies ACK
 measurement program asks the operator to confirm robot motion
 operator confirms movement in the web panel or terminal
+external client sends WAIT COBOT READY
+Python replies T
 robot moves through the start routine
 robot moves to a measurement point
 robot runs the force program
@@ -80,6 +82,7 @@ response length:
 |---|---|---:|
 | `ALIVE` | `ACK` | 3 |
 | `ISREADY` | `T` or `F` | 1 |
+| `WAIT COBOT READY` | `T` or `F` | 1 |
 | `GO` | `ACK` | 3 |
 | `STATE` | JSON state payload | first read 4-byte length, then payload |
 
@@ -119,7 +122,9 @@ python src\program\data_acquisition\server_tester.py `
 
 In auto mode, the tester exposes points `1` through `20`, moves along the X
 axis, and spends about 3 seconds moving between points. At each point,
-`ISREADY` returns `T` until the acquisition client sends `GO`. While moving,
+`ISREADY` returns `T` until the acquisition client sends `GO`.
+`WAIT COBOT READY` returns `F` before the fake sequence starts, `T` while the
+fake sequence is active, and `F` again after it returns to `idle`. While moving,
 `STATE` reports the next point index, interpolated `X`, unchanged `Y`, and
 `Moving:true`.
 
@@ -144,6 +149,9 @@ The tester opens a small console:
 
 ```text
 hold                 make ISREADY return T until the client sends GO
+cobot-ready          make WAIT COBOT READY return T
+cobot-idle           make WAIT COBOT READY return F
+mode <name>          set raw STATE mode
 point <n>            set STATE Point
 pos <x> <y>          set STATE X/Y in mm
 error <text>         set STATE Error text
@@ -155,6 +163,9 @@ quit                 stop the tester
 Use `hold` before testing the normal acquisition sequence if you want
 `ISREADY` to return `T`. When the client sends `GO`, the fake hold ends and
 `ISREADY` returns `F` again.
+
+Use `cobot-ready` before testing `WAIT COBOT READY` manually. Use
+`cobot-idle` to return it to `F`.
 
 For a minimal non-interactive server-only test, this older one-liner still
 works:
@@ -170,6 +181,7 @@ Expected behavior while no robot measurement is running:
 ```text
 ALIVE   -> ACK
 ISREADY -> F
+WAIT COBOT READY -> F
 GO      -> ACK
 STATE   -> [4 Byte I32][JSON data]
 ```
@@ -251,10 +263,18 @@ If `ISREADY` always returns `F`:
 - during a real run, it returns `T` only while the robot is actively holding
   force at a measurement point
 
+If `WAIT COBOT READY` returns `F`:
+
+- before startup, this is expected
+- during a real run, it switches to `T` when the robot sequence enters
+  `start_routine`
+- after `idle`, `stopped`, or error states, it switches back to `F`
+
 If the tester waits forever:
 
 - for `ALIVE`, read 3 bytes
 - for `ISREADY`, read 1 byte for `T` or `F`
+- for `WAIT COBOT READY`, read 1 byte for `T` or `F`
 - for `GO`, read 3 bytes
 - for `STATE` and non-trivial/error responses, read the first 4 bytes as the response
   length, then read exactly that many payload bytes

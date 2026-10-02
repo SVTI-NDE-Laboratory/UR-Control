@@ -1,8 +1,9 @@
 """TCP listener used by the main robot program for acquisition control.
 
 The robot program owns this server. An external acquisition client connects and
-sends `ALIVE`, `ISREADY`, `GO`, or `STATE`. Fixed responses are sent as
-plain-text tokens with known byte lengths. Longer responses are length-prefixed.
+sends `ALIVE`, `ISREADY`, `WAIT COBOT READY`, `GO`, or `STATE`. Fixed responses
+are sent as plain-text tokens with known byte lengths. Longer responses are
+length-prefixed.
 """
 
 import json
@@ -13,9 +14,17 @@ from pathlib import Path
 from typing import Any, Callable
 
 try:
-    from .server_state import AcquisitionControlState, protocol_state_response
+    from .server_state import (
+        AcquisitionControlState,
+        protocol_cobot_ready,
+        protocol_state_response,
+    )
 except ImportError:
-    from server_state import AcquisitionControlState, protocol_state_response
+    from server_state import (
+        AcquisitionControlState,
+        protocol_cobot_ready,
+        protocol_state_response,
+    )
 
 
 CONFIG_SERVER_FILE = Path(__file__).resolve().parent / "config_server.json"
@@ -72,6 +81,16 @@ def request_message(request: dict[str, Any]) -> str:
     """Return the normalized protocol command name for one request."""
 
     return str(request.get("message", "")).upper()
+
+
+def is_wait_cobot_ready_message(message: str) -> bool:
+    """Return whether a command asks if the robot sequence is running."""
+
+    return message in {
+        "WAIT COBOT READY",
+        "WAIT_COBOT_READY",
+        "WAIT-COBOT-READY",
+    }
 
 
 def state_response_is_stationary(response: str) -> bool:
@@ -235,6 +254,8 @@ class AcquisitionControlServer:
         message = request_message(request)
         if message == "ISREADY":
             return "T" if self.state.snapshot()["ready"] else "F"
+        if is_wait_cobot_ready_message(message):
+            return "T" if protocol_cobot_ready(self.state.snapshot()) else "F"
         if message == "GO":
             self.state.mark_go()
             return "ACK"

@@ -7,6 +7,12 @@ from typing import Any, Callable
 
 
 MISSING_X_SENTINEL = -9999
+COBOT_READY_MODES = {
+    "start_routine",
+    "measurements",
+    "measurements_done",
+    "end_routine",
+}
 
 
 def json_timestamp() -> str:
@@ -37,7 +43,11 @@ def protocol_state_response(snapshot: dict[str, Any]) -> dict[str, Any]:
         )
 
     x_position = tcp_position.get("X")
-    point = program_state.get("measurement_index")
+    point = None
+    if ready:
+        point = context.get("measurement_index")
+    if point is None:
+        point = program_state.get("measurement_index")
     if point is None:
         point = context.get("measurement_index")
 
@@ -48,6 +58,13 @@ def protocol_state_response(snapshot: dict[str, Any]) -> dict[str, Any]:
         "Moving": not ready,
         "Error": error,
     }
+
+
+def protocol_cobot_ready(snapshot: dict[str, Any]) -> bool:
+    """Return whether the robot sequence is actively running."""
+
+    program_state = snapshot.get("state") or {}
+    return program_state.get("mode") in COBOT_READY_MODES
 
 
 class AcquisitionControlState:

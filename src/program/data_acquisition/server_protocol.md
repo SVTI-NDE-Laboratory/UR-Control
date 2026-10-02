@@ -48,6 +48,7 @@ Accepted plain-text commands:
 ```text
 ALIVE
 ISREADY
+WAIT COBOT READY
 GO
 STATE
 ```
@@ -70,6 +71,8 @@ lengths. They do not include `\n`, `\r\n`, or a length prefix.
 | `ALIVE` | `ACK` | 3 | Client is present and startup may continue |
 | `ISREADY` | `T` | 1 | Robot is holding force and data can be acquired |
 | `ISREADY` | `F` | 1 | Robot is not ready for acquisition |
+| `WAIT COBOT READY` | `T` | 1 | Main robot sequence is running |
+| `WAIT COBOT READY` | `F` | 1 | Main robot sequence has not started or is over |
 | `GO` | `ACK` | 3 | Server received the release/acquisition-complete command |
 
 Raw response examples:
@@ -77,6 +80,7 @@ Raw response examples:
 ```text
 ALIVE   -> b'ACK'
 ISREADY -> b'T' or b'F'
+WAIT COBOT READY -> b'T' or b'F'
 GO      -> b'ACK'
 ```
 
@@ -125,6 +129,30 @@ T
 ```
 
 Response otherwise:
+
+```json
+F
+```
+
+### `WAIT COBOT READY`
+
+Use this to ask whether the main robot sequence has started. It is separate
+from `ISREADY`: `ISREADY` only reports the force-hold acquisition window.
+
+Response before robot sequence startup:
+
+```json
+F
+```
+
+Response from `start_routine` through `end_routine`, including the brief
+`measurements_done` handoff:
+
+```json
+T
+```
+
+Response after the program is over, or after a stop/error state:
 
 ```json
 F

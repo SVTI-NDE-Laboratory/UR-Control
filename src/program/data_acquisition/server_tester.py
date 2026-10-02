@@ -1,8 +1,8 @@
 """Run the acquisition TCP server without connecting to the robot.
 
-This is a client-integration tester for ALIVE, ISREADY, GO, and STATE. It uses
-the same AcquisitionControlServer as the real measurement sequence, but feeds
-it synthetic robot state instead of RTDE data.
+This is a client-integration tester for ALIVE, ISREADY, WAIT COBOT READY, GO,
+and STATE. It uses the same AcquisitionControlServer as the real measurement
+sequence, but feeds it synthetic robot state instead of RTDE data.
 """
 
 import argparse
@@ -49,6 +49,12 @@ class FakeRobotState:
     def set_position(self, x: float, y: float) -> None:
         with self._lock:
             self._state["tcp_position"] = {"X": x, "Y": y}
+
+    def set_mode(self, mode: str) -> None:
+        with self._lock:
+            self._state["mode"] = mode
+            if mode != "error":
+                self._state.pop("message", None)
 
     def set_measurement_state(self, point: int, x: float, y: float, mode: str) -> None:
         with self._lock:
@@ -182,7 +188,7 @@ def move_to_next_point(
         elapsed = time.monotonic() - started_at
         fraction = min(elapsed / move_seconds, 1.0) if move_seconds > 0 else 1.0
         current_x = start_x + (end_x - start_x) * fraction
-        fake_state.set_measurement_state(point, current_x, y, "moving")
+        fake_state.set_measurement_state(point, current_x, y, "measurements")
         if fraction >= 1.0:
             return
         time.sleep(min(0.1, move_seconds - elapsed))
@@ -216,11 +222,12 @@ def run_auto_measurement(
         input("Press Enter to start fake measurements, or Ctrl+C to cancel.")
 
     current_x = x_start
-    fake_state.set_measurement_state(1, current_x, y, "measurements")
+    fake_state.set_measurement_state(1, current_x, y, "start_routine")
     print(
         f"Starting fake measurement sequence: points 1..{points}, "
         f"X start {x_start:.3f} mm, X step {x_step:.3f} mm."
     )
+    fake_state.set_measurement_state(1, current_x, y, "measurements")
 
     for point in range(1, points + 1):
         point_x = x_start + (point - 1) * x_step
@@ -245,6 +252,8 @@ def run_auto_measurement(
         current_x = next_x
 
     fake_state.set_measurement_state(points, current_x, y, "measurements_done")
+    fake_state.set_measurement_state(points, current_x, y, "end_routine")
+    fake_state.set_measurement_state(points, current_x, y, "idle")
     print("Fake measurement sequence complete.")
 
 
@@ -252,6 +261,9 @@ def print_help() -> None:
     print(
         "\nCommands:\n"
         "  hold                 make ISREADY return T until the client sends GO\n"
+        "  cobot-ready          make WAIT COBOT READY return T\n"
+        "  cobot-idle           make WAIT COBOT READY return F\n"
+        "  mode <name>          set raw STATE mode\n"
         "  point <n>            set STATE Point\n"
         "  pos <x> <y>          set STATE X/Y in mm\n"
         "  error <text>         set STATE Error text\n"
@@ -283,6 +295,12 @@ def run_console(server: AcquisitionControlServer, fake_state: FakeRobotState) ->
                 print_help()
             elif name == "hold":
                 start_fake_hold(server, fake_state)
+            elif name == "cobot-ready":
+                fake_state.set_mode("measurements")
+            elif name == "cobot-idle":
+                fake_state.set_mode("idle")
+            elif name == "mode" and len(args) == 1:
+                fake_state.set_mode(args[0])
             elif name == "point" and len(args) == 1:
                 fake_state.set_point(int(args[0]))
             elif name == "pos" and len(args) == 2:

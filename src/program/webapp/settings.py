@@ -21,8 +21,8 @@ ROUTINES_DIR = PROJECT_ROOT / "src" / "routines"
 ROUTINE_FILES_DIR = ROUTINES_DIR / "routine_files"
 MEASUREMENT_DIR = PROJECT_ROOT / "src" / "measurement"
 ROBOT_IP = "192.168.3.10"
-ROUTINES_FILE = ROUTINE_FILES_DIR / "routines_block_diagonal.json"
-DEFAULT_SELECTED_ROUTINES_FILE = ROUTINE_FILES_DIR / "routines_block_diagonal.json"
+ROUTINES_FILE = ROUTINE_FILES_DIR / "routines_wall_275_top.json"
+DEFAULT_SELECTED_ROUTINES_FILE = ROUTINE_FILES_DIR / "routines_wall_275_top.json"
 HOME_JOINT_TOLERANCE = 0.005
 
 for folder in [MEASUREMENT_DIR, ROBOT_DIR, ROUTINES_DIR]:

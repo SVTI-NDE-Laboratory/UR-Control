@@ -41,7 +41,7 @@ class ProtocolStateResponseTests(unittest.TestCase):
         snapshot["state"]["tcp_position"]["X"] = 12.5
         self.assertEqual(protocol_state_response(snapshot)["X"], 12.5)
 
-    def test_state_point_prefers_program_state_over_force_hold_context(self):
+    def test_state_point_prefers_force_hold_context_while_ready(self):
         snapshot = {
             "context": {"measurement_index": 1},
             "state": {
@@ -49,6 +49,18 @@ class ProtocolStateResponseTests(unittest.TestCase):
                 "tcp_position": {"X": 10, "Y": 11},
             },
             "ready": True,
+        }
+
+        self.assertEqual(protocol_state_response(snapshot)["Point"], 1)
+
+    def test_state_point_prefers_program_state_when_not_ready(self):
+        snapshot = {
+            "context": {"measurement_index": 1},
+            "state": {
+                "measurement_index": 2,
+                "tcp_position": {"X": 10, "Y": 11},
+            },
+            "ready": False,
         }
 
         self.assertEqual(protocol_state_response(snapshot)["Point"], 2)
@@ -91,6 +103,64 @@ class AcquisitionControlServerTests(unittest.TestCase):
             self.assertEqual(server._handle_request({"message": "ISREADY"}), "F")
             server.state.begin_force_hold({})
             self.assertEqual(server._handle_request({"message": "ISREADY"}), "T")
+        finally:
+            server.stop()
+
+    def test_wait_cobot_ready_follows_robot_sequence_modes(self):
+        state = {"mode": "waiting_for_operator_start"}
+        server = AcquisitionControlServer(
+            "127.0.0.1",
+            0,
+            1.0,
+            state_provider=lambda: dict(state),
+        )
+        try:
+            self.assertEqual(
+                server._handle_request({"message": "Wait Cobot Ready"}),
+                "F",
+            )
+            for mode in [
+                "start_routine",
+                "measurements",
+                "measurements_done",
+                "end_routine",
+            ]:
+                state["mode"] = mode
+                self.assertEqual(
+                    server._handle_request({"message": "WAIT_COBOT_READY"}),
+                    "T",
+                )
+            state["mode"] = "idle"
+            self.assertEqual(
+                server._handle_request({"message": "WAIT-COBOT-READY"}),
+                "F",
+            )
+        finally:
+            server.stop()
+
+    def test_wait_cobot_ready_uses_fake_tester_modes(self):
+        fake_state = FakeRobotState(point=1, x=0.0, y=7.0)
+        server = AcquisitionControlServer(
+            "127.0.0.1",
+            0,
+            1.0,
+            state_provider=fake_state.snapshot,
+        )
+        try:
+            self.assertEqual(
+                server._handle_request({"message": "WAIT COBOT READY"}),
+                "F",
+            )
+            fake_state.set_mode("measurements")
+            self.assertEqual(
+                server._handle_request({"message": "WAIT COBOT READY"}),
+                "T",
+            )
+            fake_state.set_mode("idle")
+            self.assertEqual(
+                server._handle_request({"message": "WAIT COBOT READY"}),
+                "F",
+            )
         finally:
             server.stop()
 
@@ -170,7 +240,7 @@ class AutoMeasurementTesterTests(unittest.TestCase):
         self.assertEqual(
             fake_state.snapshot(),
             {
-                "mode": "measurements_done",
+                "mode": "idle",
                 "measurement_index": 3,
                 "tcp_position": {"X": 10.0, "Y": 7.0},
             },

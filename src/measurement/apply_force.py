@@ -346,7 +346,7 @@ def apply_force(
         print(
             "Force program: return verified "
             f"(position error {position_error * 1000:.3f} mm, "
-            f"rotation-vector error {rotation_error:.6f} rad)."
+            f"rotation error {rotation_error:.6f} rad)."
         )
 
         return force_reached, measurement_timestamp

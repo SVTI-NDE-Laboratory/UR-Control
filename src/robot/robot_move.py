@@ -118,16 +118,67 @@ def vector_norm(values: list[float]) -> float:
     return sum(value * value for value in values) ** 0.5
 
 
+def rotation_vector_to_quaternion(rotation_vector: list[float]) -> list[float]:
+    """Return a unit quaternion [w, x, y, z] for a UR rotation vector."""
+
+    angle = vector_norm(rotation_vector)
+    if angle <= 1e-12:
+        return [1.0, 0.0, 0.0, 0.0]
+
+    half_angle = angle / 2.0
+    scale = math.sin(half_angle) / angle
+    quaternion = [
+        math.cos(half_angle),
+        rotation_vector[0] * scale,
+        rotation_vector[1] * scale,
+        rotation_vector[2] * scale,
+    ]
+    length = vector_norm(quaternion)
+    return [value / length for value in quaternion]
+
+
+def multiply_quaternions(left: list[float], right: list[float]) -> list[float]:
+    """Return the Hamilton product of two quaternions [w, x, y, z]."""
+
+    lw, lx, ly, lz = left
+    rw, rx, ry, rz = right
+    return [
+        lw * rw - lx * rx - ly * ry - lz * rz,
+        lw * rx + lx * rw + ly * rz - lz * ry,
+        lw * ry - lx * rz + ly * rw + lz * rx,
+        lw * rz + lx * ry - ly * rx + lz * rw,
+    ]
+
+
+def relative_rotation_angle(
+    actual_rotation_vector: list[float], target_rotation_vector: list[float]
+) -> float:
+    """Return the shortest angle between two UR rotation-vector orientations."""
+
+    actual_quaternion = rotation_vector_to_quaternion(actual_rotation_vector)
+    target_quaternion = rotation_vector_to_quaternion(target_rotation_vector)
+    target_inverse = [
+        target_quaternion[0],
+        -target_quaternion[1],
+        -target_quaternion[2],
+        -target_quaternion[3],
+    ]
+    relative_quaternion = multiply_quaternions(actual_quaternion, target_inverse)
+    vector_part_norm = vector_norm(relative_quaternion[1:4])
+    return 2.0 * math.atan2(vector_part_norm, abs(relative_quaternion[0]))
+
+
 def tcp_target_errors(
     actual_pose: list[float], target_pose: list[float]
 ) -> tuple[float, float]:
-    """Return Cartesian position and rotation-vector target errors."""
+    """Return Cartesian position and shortest relative rotation target errors."""
 
     position_error = vector_norm(
         [actual_pose[index] - target_pose[index] for index in range(3)]
     )
-    rotation_error = vector_norm(
-        [actual_pose[index] - target_pose[index] for index in range(3, 6)]
+    rotation_error = relative_rotation_angle(
+        actual_pose[3:6],
+        target_pose[3:6],
     )
     return position_error, rotation_error
 
@@ -257,7 +308,7 @@ def wait_until_at_tcp_target(
         if watchdog and not at_target and not motion_started and elapsed >= motion_start_timeout:
             raise TimeoutError(
                 f"Cartesian motion did not start within {motion_start_timeout:.1f} s "
-                f"(position error {position_error:.6f} m, rotation-vector error "
+                f"(position error {position_error:.6f} m, rotation error "
                 f"{rotation_error:.6f} rad, TCP speed {tcp_speed:.6f})."
             )
         if (
@@ -269,7 +320,7 @@ def wait_until_at_tcp_target(
             raise TimeoutError(
                 f"Cartesian motion stopped making progress for {stall_timeout:.1f} s "
                 f"before reaching its target (position error {position_error:.6f} m, "
-                f"rotation-vector error {rotation_error:.6f} rad, TCP speed "
+                f"rotation error {rotation_error:.6f} rad, TCP speed "
                 f"{tcp_speed:.6f})."
             )
         time.sleep(0.05)
@@ -279,7 +330,7 @@ def wait_until_at_tcp_target(
     position_error, rotation_error = tcp_target_errors(actual_pose, target_pose)
     raise TimeoutError(
         f"TCP target not reached and settled within {timeout} s "
-        f"(position error {position_error:.6f} m, rotation-vector error "
+        f"(position error {position_error:.6f} m, rotation error "
         f"{rotation_error:.6f} rad)."
     )
 
@@ -314,7 +365,7 @@ def ensure_at_tcp_target(
     print(
         "Measurement target verification failed; correcting pose before force "
         f"application (position error {position_error:.6f} m, "
-        f"rotation-vector error {rotation_error:.6f} rad)."
+        f"rotation error {rotation_error:.6f} rad)."
     )
     movel_pose(
         robot_ip,
