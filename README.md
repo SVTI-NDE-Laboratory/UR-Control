@@ -265,6 +265,7 @@ The external client sends simple ASCII commands:
 | Command | Response | Bytes |
 |---|---|---:|
 | `ALIVE` | `ACK` | 3 |
+| `START_FIRST` | `ACK` | 3 |
 | `ISREADY` | `T` or `F` | 1 |
 | `GO` | `ACK` | 3 |
 
@@ -360,8 +361,8 @@ For MIRA:
   --output-dir C:\path\to\output
 ```
 
-Without `--operator-confirmed`, the command asks for Enter before connecting.
-The web app uses `--operator-confirmed` only after its own safety confirmation.
+Without `--operator-confirmed`, MIRA mode asks for Enter before robot motion.
+Server mode waits for the acquisition client to send `START_FIRST` instead.
 
 ## 8. What Happens During A Run
 
@@ -372,19 +373,21 @@ The web app uses `--operator-confirmed` only after its own safety confirmation.
    the first `ALIVE`.
 4. It checks that the robot is running and exactly at the taught `Home` joint
    position.
-5. If the first measurement point is blocked by an obstacle, it runs
+5. If `data_server=true`, it waits for `START_FIRST`; otherwise it keeps the
+   operator safety prompt.
+6. If the first measurement point is blocked by an obstacle, it runs
    `home_to_end`; otherwise it runs `home_to_start`.
-6. It enters the low measurement line from `p_start_l` or `p_end_l`.
-7. It measures each valid point and skips points inside the obstacle interval.
-8. If a move to the next point would cross an obstacle, it stays low, returns
+7. It enters the low measurement line from `p_start_l` or `p_end_l`.
+8. It measures each valid point and skips points inside the obstacle interval.
+9. If a move to the next point would cross an obstacle, it stays low, returns
    along the offset line to `p_start_l`, removes the Y offset, moves to
    `p_start_h`, goes through Home, then enters again from `p_end_h` and
    `p_end_l`.
-9. At each point, Python loads the configured force URP.
-10. If force succeeds, acquisition runs through either the TCP server or MIRA.
-11. The force URP returns to the pre-force measurement pose.
-12. Python verifies that return before moving to the next point.
-13. At the end, the robot returns to Home from the side where it finished.
+10. At each point, Python loads the configured force URP.
+11. If force succeeds, acquisition runs through either the TCP server or MIRA.
+12. The force URP returns to the pre-force measurement pose.
+13. Python verifies that return before moving to the next point.
+14. At the end, the robot returns to Home from the side where it finished.
 
 If force is not reached before maximum displacement, the force URP first
 returns to the initial low measurement pose. Python then recovers along the low
@@ -432,8 +435,9 @@ Inspection/Programs/apply_force_mira.urp
 ### Acquisition Timeout
 
 For server mode, confirm that the external client can reach the configured host
-and port, sends `ALIVE` before startup timeout, polls `ISREADY`, and sends `GO`
-while the robot is waiting in force hold.
+and port, sends `ALIVE` before startup timeout, sends `START_FIRST` when robot
+motion may begin, polls `ISREADY`, and sends `GO` while the robot is waiting in
+force hold.
 
 For MIRA mode, `measurement.data_server` should be `false`; otherwise Python
 will wait for the external TCP client.

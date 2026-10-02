@@ -23,7 +23,7 @@ server and written to `program.log` during web-launched runs.
 | File | Purpose |
 |---|---|
 | `server_control.py` | TCP server used by the robot measurement program |
-| `server_state.py` | Shared ALIVE, ISREADY, GO, and STATE data between robot code and TCP threads |
+| `server_state.py` | Shared ALIVE, START_FIRST, ISREADY, GO, and STATE data between robot code and TCP threads |
 | `config_server.json` | Host, port, and acquisition-control timeouts |
 | `server_protocol.md` | Exact TCP request/response contract |
 | `server_logging.py` | Mirrors terminal output into timestamped log files |
@@ -42,8 +42,9 @@ Python starts TCP server on 127.0.0.1:5055
 external client connects
 external client sends ALIVE
 Python replies ACK
-measurement program asks the operator to confirm robot motion
-operator confirms movement in the web panel or terminal
+robot startup position is verified at Home
+external client sends START_FIRST
+Python replies ACK
 external client sends WAIT COBOT READY
 Python replies T
 robot moves through the start routine
@@ -63,8 +64,8 @@ program continues to the next point
 If the robot is not currently holding force, `ISREADY` returns `F`.
 
 In server mode, robot motion is blocked until the external client has sent
-`ALIVE` and the operator has confirmed movement. The first routine must not
-start before both gates succeed.
+`ALIVE` and then `START_FIRST`. MIRA mode keeps the local operator prompt
+instead.
 
 ## LabVIEW Tester Settings
 
@@ -81,6 +82,7 @@ response length:
 | Command | Expected response | Bytes Empfang |
 |---|---|---:|
 | `ALIVE` | `ACK` | 3 |
+| `START_FIRST` | `ACK` | 3 |
 | `ISREADY` | `T` or `F` | 1 |
 | `WAIT COBOT READY` | `T` or `F` | 1 |
 | `GO` | `ACK` | 3 |
@@ -180,6 +182,7 @@ Expected behavior while no robot measurement is running:
 
 ```text
 ALIVE   -> ACK
+START_FIRST -> ACK
 ISREADY -> F
 WAIT COBOT READY -> F
 GO      -> ACK
@@ -237,6 +240,9 @@ measurement index, including before the first force measurement starts.
 
 `ALIVE` must arrive before `client_ready_timeout`, otherwise startup fails.
 
+In server mode, robot motion waits indefinitely for `START_FIRST` after the
+Home startup check passes.
+
 `GO` must arrive before `go_timeout` after the robot has reached force and is
 holding. If `GO` arrives too late, the measurement point is treated as failed
 and the robot program enters normal stop/error handling.
@@ -273,6 +279,7 @@ If `WAIT COBOT READY` returns `F`:
 If the tester waits forever:
 
 - for `ALIVE`, read 3 bytes
+- for `START_FIRST`, read 3 bytes
 - for `ISREADY`, read 1 byte for `T` or `F`
 - for `WAIT COBOT READY`, read 1 byte for `T` or `F`
 - for `GO`, read 3 bytes

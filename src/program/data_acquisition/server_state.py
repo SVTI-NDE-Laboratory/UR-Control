@@ -72,7 +72,8 @@ class AcquisitionControlState:
 
     The robot measurement thread changes this state when force is reached and
     it is waiting for data acquisition. The TCP server thread reads or updates
-    the same state when the external client sends ALIVE, ISREADY, or GO.
+    the same state when the external client sends ALIVE, START_FIRST, ISREADY,
+    or GO.
 
     This is a class because the lock, events, and flags belong together. Keeping
     them grouped avoids loose globals and makes the thread handoff explicit.
@@ -82,6 +83,7 @@ class AcquisitionControlState:
         self._lock = threading.Lock()
         self._go_event = threading.Event()
         self._client_ready_event = threading.Event()
+        self._start_first_event = threading.Event()
         self._ready = False
         self._context: dict[str, Any] = {}
         self._state_provider = state_provider
@@ -116,12 +118,25 @@ class AcquisitionControlState:
 
         self._client_ready_event.set()
 
+    def mark_start_first(self) -> None:
+        """Record that the external client allowed the first robot routine."""
+
+        self._start_first_event.set()
+
     def wait_for_client_ready(self, timeout: float) -> None:
         """Block startup until the external client sends ALIVE."""
 
         if not self._client_ready_event.wait(timeout):
             raise TimeoutError(
                 "Timed out waiting for ALIVE from the data acquisition client."
+            )
+
+    def wait_for_start_first(self, timeout: float | None = None) -> None:
+        """Block robot motion startup until the client sends START_FIRST."""
+
+        if not self._start_first_event.wait(timeout):
+            raise TimeoutError(
+                "Timed out waiting for START_FIRST from the data acquisition client."
             )
 
     def wait_for_go(self, context: dict[str, Any], timeout: float) -> dict[str, Any]:

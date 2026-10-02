@@ -313,6 +313,42 @@ def confirm_operator_if_needed(
         input("Press Enter to connect and start the full program, or Ctrl+C to cancel.")
 
 
+def wait_for_start_permission(
+    measurement_config: dict[str, Any],
+    control_server: AcquisitionControlServer | None,
+    operator_confirmed: bool,
+    state_file: Path,
+    initial_measurement_index: int | None = None,
+    start_signal_file: Path | None = None,
+) -> None:
+    """Gate the first robot routine according to the acquisition mode."""
+
+    if measurement_config["measurement"].get("data_server", True):
+        if control_server is None:
+            raise RuntimeError(
+                "Measurement with server is enabled, but no acquisition server is running."
+            )
+        write_state(
+            state_file,
+            {
+                "mode": "waiting_for_start_first",
+                "measurement_index": initial_measurement_index,
+                "message": "Waiting for START_FIRST from the data acquisition client.",
+            },
+        )
+        print("Waiting for data acquisition client START_FIRST before robot motion.")
+        control_server.wait_for_start_first()
+        print("Data acquisition client sent START_FIRST; starting robot sequence.")
+        return
+
+    confirm_operator_if_needed(
+        operator_confirmed,
+        state_file,
+        initial_measurement_index,
+        start_signal_file,
+    )
+
+
 def verify_robot_startup(
     routines_data: dict[str, Any],
     state_file: Path,
@@ -482,12 +518,6 @@ def main() -> None:
             initial_measurement_index,
             lambda: rtde_receive,
         )
-        confirm_operator_if_needed(
-            args.operator_confirmed,
-            state_file,
-            initial_measurement_index,
-            args.start_signal_file,
-        )
 
     # =================== Robot preflight ===================
         rtde_receive = verify_robot_startup(
@@ -496,6 +526,14 @@ def main() -> None:
             initial_measurement_index,
         )
 
+        wait_for_start_permission(
+            measurement_config,
+            control_server,
+            args.operator_confirmed,
+            state_file,
+            initial_measurement_index,
+            args.start_signal_file,
+        )
 
     # =================== Robot sequence ===================
         run_robot_sequence(

@@ -44,9 +44,10 @@ the control panel.
 
 Starting creates the run and launches `commands/run_measurement_sequence.py` as
 a separate worker process. In server mode, the worker first waits for the
-acquisition client to send `ALIVE`; after that, the browser shows the explicit
-safety confirmation before robot motion starts. A read-only Home-position
-preflight still runs before movement. The selected output folder receives `config_used.json`,
+acquisition client to send `ALIVE`, verifies Home, then waits for client
+`START_FIRST` before robot motion starts. MIRA mode keeps the explicit browser
+safety confirmation. A read-only Home-position preflight still runs before
+movement. The selected output folder receives `config_used.json`,
 `state.json`, `measurement_plan.json`, and `program.log`. The log is updated in
 real time and prefixes terminal lines with local ISO timestamps. Each program
 start generates a fresh local date-and-time session ID. The

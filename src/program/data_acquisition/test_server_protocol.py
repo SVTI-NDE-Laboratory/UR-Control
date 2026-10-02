@@ -107,7 +107,7 @@ class AcquisitionControlServerTests(unittest.TestCase):
             server.stop()
 
     def test_wait_cobot_ready_follows_robot_sequence_modes(self):
-        state = {"mode": "waiting_for_operator_start"}
+        state = {"mode": "waiting_for_start_first"}
         server = AcquisitionControlServer(
             "127.0.0.1",
             0,
@@ -135,6 +135,14 @@ class AcquisitionControlServerTests(unittest.TestCase):
                 server._handle_request({"message": "WAIT-COBOT-READY"}),
                 "F",
             )
+        finally:
+            server.stop()
+
+    def test_start_first_ack_unblocks_start_wait(self):
+        server = AcquisitionControlServer("127.0.0.1", 0, 1.0)
+        try:
+            self.assertEqual(server._handle_request({"message": "START_FIRST"}), "ACK")
+            server.wait_for_start_first(0.0)
         finally:
             server.stop()
 

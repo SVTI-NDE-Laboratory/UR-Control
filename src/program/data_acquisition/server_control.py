@@ -1,9 +1,9 @@
 """TCP listener used by the main robot program for acquisition control.
 
 The robot program owns this server. An external acquisition client connects and
-sends `ALIVE`, `ISREADY`, `WAIT COBOT READY`, `GO`, or `STATE`. Fixed responses
-are sent as plain-text tokens with known byte lengths. Longer responses are
-length-prefixed.
+sends `ALIVE`, `START_FIRST`, `ISREADY`, `WAIT COBOT READY`, `GO`, or `STATE`.
+Fixed responses are sent as plain-text tokens with known byte lengths. Longer
+responses are length-prefixed.
 """
 
 import json
@@ -124,9 +124,10 @@ class AcquisitionControlServer:
     """Own the TCP listener used by the measurement program.
 
     The rest of the program only needs a few lifecycle methods:
-    start listening, stop listening, wait for the first ALIVE, and wait for GO
-    during a force-hold measurement. Keeping those operations in one class ties
-    the socket, listener thread, and shared state together.
+    start listening, stop listening, wait for the first ALIVE, wait for
+    START_FIRST, and wait for GO during a force-hold measurement. Keeping those
+    operations in one class ties the socket, listener thread, and shared state
+    together.
 
     Internally the server accepts a client connection, loops over incoming
     commands, sends the short protocol response, and logs what happened for the
@@ -182,6 +183,11 @@ class AcquisitionControlServer:
         """Wait until the external client sends ALIVE."""
 
         self.state.wait_for_client_ready(timeout)
+
+    def wait_for_start_first(self, timeout: float | None = None) -> None:
+        """Wait until the external client sends START_FIRST."""
+
+        self.state.wait_for_start_first(timeout)
 
     def _listen(self) -> None:
         """Accept clients until stop() closes the server socket."""
@@ -261,6 +267,9 @@ class AcquisitionControlServer:
             return "ACK"
         if message == "ALIVE":
             self.state.mark_client_ready()
+            return "ACK"
+        if message == "START_FIRST":
+            self.state.mark_start_first()
             return "ACK"
         if message == "STATE":
             return json.dumps(

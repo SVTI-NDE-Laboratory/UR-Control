@@ -47,6 +47,7 @@ Accepted plain-text commands:
 
 ```text
 ALIVE
+START_FIRST
 ISREADY
 WAIT COBOT READY
 GO
@@ -69,6 +70,7 @@ lengths. They do not include `\n`, `\r\n`, or a length prefix.
 | Request | Response | Bytes to read | Meaning |
 |---|---|---:|---|
 | `ALIVE` | `ACK` | 3 | Client is present and startup may continue |
+| `START_FIRST` | `ACK` | 3 | Client permits the first robot routine to start |
 | `ISREADY` | `T` | 1 | Robot is holding force and data can be acquired |
 | `ISREADY` | `F` | 1 | Robot is not ready for acquisition |
 | `WAIT COBOT READY` | `T` | 1 | Main robot sequence is running |
@@ -79,6 +81,7 @@ Raw response examples:
 
 ```text
 ALIVE   -> b'ACK'
+START_FIRST -> b'ACK'
 ISREADY -> b'T' or b'F'
 WAIT COBOT READY -> b'T' or b'F'
 GO      -> b'ACK'
@@ -116,6 +119,21 @@ ACK
 
 The first successful `ALIVE` marks the external client as available. The main
 measurement sequence waits for this before it moves on from acquisition startup.
+
+### `START_FIRST`
+
+Use this after the acquisition system and operator-side safety checks are ready
+for robot motion to begin in server acquisition mode.
+
+Response:
+
+```text
+ACK
+```
+
+For server acquisition runs, the robot program waits for this command just
+before launching the first routine. MIRA acquisition runs keep the local
+operator prompt instead.
 
 ### `ISREADY`
 

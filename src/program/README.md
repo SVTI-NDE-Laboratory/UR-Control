@@ -50,10 +50,9 @@ python src\program\commands\run_measurement_sequence.py `
   --output-dir C:\path\to\output
 ```
 
-Direct use asks for terminal confirmation before connecting to the robot. The
-web launcher starts the worker first, waits for the acquisition client when
-server mode is enabled, then asks for browser safety confirmation before robot
-motion starts.
+Direct MIRA use asks for terminal confirmation before robot motion. In server
+mode, the worker waits for the acquisition client and starts motion only after
+the client sends `START_FIRST`.
 
 ## How `run_measurement_sequence.py` works
 
@@ -73,14 +72,13 @@ Startup:
    them through `read_measurement_config()`, writes `config_used.json`, creates
    `measurement_plan.json`, and chooses the live `state.json` path.
 4. `start_acquisition_if_enabled()` starts the TCP acquisition server when
-   `measurement.data_server=true`. That server handles `ALIVE`, `ISREADY`,
-   `GO`, and `STATE`. Its state provider reads `state.json` and, after RTDE is
-   connected, adds live TCP `X/Y` position and movement status.
-5. `confirm_operator_if_needed()` waits before robot motion starts. Direct
-   terminal runs wait for Enter. Web runs write
-   `mode="waiting_for_operator_start"` and continue only after the browser
-   confirmation creates the start-signal file. In server mode this happens
-   after the acquisition client has sent `ALIVE`.
+   `measurement.data_server=true`. That server handles `ALIVE`, `START_FIRST`,
+   `ISREADY`, `GO`, and `STATE`. Its state provider reads `state.json` and,
+   after RTDE is connected, adds live TCP `X/Y` position and movement status.
+5. `wait_for_start_permission()` gates the first robot routine. Server mode
+   writes `mode="waiting_for_start_first"` and continues only after the
+   acquisition client sends `START_FIRST`. MIRA mode keeps the operator prompt
+   or web start-signal safety confirmation.
 
 Robot preflight:
 
