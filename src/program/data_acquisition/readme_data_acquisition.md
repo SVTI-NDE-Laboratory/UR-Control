@@ -29,6 +29,7 @@ server and written to `program.log` during web-launched runs.
 | `server_logging.py` | Mirrors terminal output into timestamped log files |
 
 The current LabVIEW-style protocol is implemented in `server_control.py`.
+Tester programs live outside the runtime package under `tools/data_acquisition`.
 
 ## Normal Measurement Sequence
 
@@ -45,8 +46,6 @@ Python replies ACK
 robot startup position is verified at Home
 external client sends START_FIRST
 Python replies ACK
-external client sends WAIT COBOT READY
-Python replies T
 robot moves through the start routine
 robot moves to a measurement point
 robot runs the force program
@@ -69,6 +68,12 @@ instead.
 
 ## LabVIEW Tester Settings
 
+The LabVIEW tester bundle is stored at:
+
+```text
+tools/data_acquisition/bam-cobot-tcp-tester-release-lv2024
+```
+
 Use these endpoint settings:
 
 ```text
@@ -84,7 +89,6 @@ response length:
 | `ALIVE` | `ACK` | 3 |
 | `START_FIRST` | `ACK` | 3 |
 | `ISREADY` | `T` or `F` | 1 |
-| `WAIT COBOT READY` | `T` or `F` | 1 |
 | `GO` | `ACK` | 3 |
 | `STATE` | JSON state payload | first read 4-byte length, then payload |
 
@@ -96,7 +100,7 @@ the 4-byte length, then read exactly that many payload bytes.
 From the project root, start the standalone acquisition server tester:
 
 ```powershell
-python src\program\data_acquisition\server_tester.py
+python tools\data_acquisition\server_tester.py
 ```
 
 This starts the same TCP server implementation used by the real measurement
@@ -105,54 +109,52 @@ program, but it does not connect to RTDE, load a URP, or move the robot.
 Optional startup values:
 
 ```powershell
-python src\program\data_acquisition\server_tester.py `
+python tools\data_acquisition\server_tester.py `
   --host 127.0.0.1 `
   --port 5055 `
   --point 1 `
   --x 123.0 `
-  --y 333.0 `
-  --ready
+  --y 333.0
 ```
+
+The interactive tester follows the same startup gate as the real server-mode
+measurement command. It waits for `ALIVE`, then waits for `START_FIRST`. After
+`START_FIRST`, it publishes `STATE` with `Point:1`, `Moving:true`, and
+`ISREADY:F`, then opens the console.
 
 To simulate a full 20-point measurement run without the robot:
 
 ```powershell
-python src\program\data_acquisition\server_tester.py `
-  --auto `
-  --wait-for-alive
+python tools\data_acquisition\server_tester.py --auto
 ```
 
 In auto mode, the tester exposes points `1` through `20`, moves along the X
 axis, and spends about 3 seconds moving between points. At each point,
 `ISREADY` returns `T` until the acquisition client sends `GO`.
-`WAIT COBOT READY` returns `F` before the fake sequence starts, `T` while the
-fake sequence is active, and `F` again after it returns to `idle`. While moving,
-`STATE` reports the next point index, interpolated `X`, unchanged `Y`, and
-`Moving:true`.
+While moving, `STATE` reports the next point index, interpolated `X`,
+unchanged `Y`, and `Moving:true`.
 
-With `--wait-for-alive`, the tester waits until the acquisition client sends
-`ALIVE`, then waits for you to press Enter before point 1 starts. Add
-`--no-start-prompt` when you want scripts to start immediately after `ALIVE`.
+In auto mode, the tester follows the same startup gate as the real measurement
+command: it waits for `ALIVE`, then waits for `START_FIRST`, then starts point
+1.
 
 Useful auto-mode options:
 
 ```powershell
-python src\program\data_acquisition\server_tester.py `
+python tools\data_acquisition\server_tester.py `
   --auto `
   --points 20 `
   --move-seconds 3 `
   --x 0 `
   --y 0 `
-  --x-step 10 `
-  --no-start-prompt
+  --x-step 10
 ```
 
 The tester opens a small console:
 
 ```text
-hold                 make ISREADY return T until the client sends GO
-cobot-ready          make WAIT COBOT READY return T
-cobot-idle           make WAIT COBOT READY return F
+ready                make ISREADY return T until the client sends GO
+next [n]             advance STATE Point by n, default 1
 mode <name>          set raw STATE mode
 point <n>            set STATE Point
 pos <x> <y>          set STATE X/Y in mm
@@ -162,12 +164,12 @@ state                print the current fake state
 quit                 stop the tester
 ```
 
-Use `hold` before testing the normal acquisition sequence if you want
-`ISREADY` to return `T`. When the client sends `GO`, the fake hold ends and
-`ISREADY` returns `F` again.
+Use `ready` before testing the normal acquisition sequence if you want
+`ISREADY` to return `T`. Manual mode has no timer: the fake ready window stays
+open until the client sends `GO`, then `ISREADY` returns `F` again.
 
-Use `cobot-ready` before testing `WAIT COBOT READY` manually. Use
-`cobot-idle` to return it to `F`.
+Use `next` to advance the fake point quickly. It also advances the fake X
+position by `--x-step`, so `STATE` changes in the same direction as auto mode.
 
 For a minimal non-interactive server-only test, this older one-liner still
 works:
@@ -184,7 +186,6 @@ Expected behavior while no robot measurement is running:
 ALIVE   -> ACK
 START_FIRST -> ACK
 ISREADY -> F
-WAIT COBOT READY -> F
 GO      -> ACK
 STATE   -> [4 Byte I32][JSON data]
 ```
@@ -269,19 +270,11 @@ If `ISREADY` always returns `F`:
 - during a real run, it returns `T` only while the robot is actively holding
   force at a measurement point
 
-If `WAIT COBOT READY` returns `F`:
-
-- before startup, this is expected
-- during a real run, it switches to `T` when the robot sequence enters
-  `start_routine`
-- after `idle`, `stopped`, or error states, it switches back to `F`
-
 If the tester waits forever:
 
 - for `ALIVE`, read 3 bytes
 - for `START_FIRST`, read 3 bytes
 - for `ISREADY`, read 1 byte for `T` or `F`
-- for `WAIT COBOT READY`, read 1 byte for `T` or `F`
 - for `GO`, read 3 bytes
 - for `STATE` and non-trivial/error responses, read the first 4 bytes as the response
   length, then read exactly that many payload bytes

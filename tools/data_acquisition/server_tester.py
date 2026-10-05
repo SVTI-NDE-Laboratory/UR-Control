@@ -1,19 +1,23 @@
 """Run the acquisition TCP server without connecting to the robot.
 
-This is a client-integration tester for ALIVE, ISREADY, WAIT COBOT READY, GO,
-and STATE. It uses the same AcquisitionControlServer as the real measurement
-sequence, but feeds it synthetic robot state instead of RTDE data.
+This is a client-integration tester for ALIVE, START_FIRST, ISREADY,
+GO, and STATE. It uses the same AcquisitionControlServer as the real
+measurement sequence, but feeds it synthetic robot state instead of RTDE data.
 """
 
 import argparse
+import sys
 import threading
 import time
+from pathlib import Path
 from typing import Any
 
-try:
-    from .server_control import AcquisitionControlServer, read_server_config
-except ImportError:
-    from server_control import AcquisitionControlServer, read_server_config
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+PROGRAM_DIR = PROJECT_ROOT / "src" / "program"
+if str(PROGRAM_DIR) not in sys.path:
+    sys.path.insert(0, str(PROGRAM_DIR))
+
+from data_acquisition.server_control import AcquisitionControlServer, read_server_config
 
 
 DEFAULT_POINT = 1
@@ -84,12 +88,7 @@ def parse_args() -> argparse.Namespace:
         "--go-timeout",
         type=float,
         default=DEFAULT_GO_TIMEOUT,
-        help="How long a fake hold waits for GO before clearing ISREADY.",
-    )
-    parser.add_argument(
-        "--ready",
-        action="store_true",
-        help="Start with ISREADY=true until the client sends GO or the hold times out.",
+        help="In --auto mode, how long each fake point waits for GO.",
     )
     parser.add_argument(
         "--auto",
@@ -114,41 +113,61 @@ def parse_args() -> argparse.Namespace:
         default=DEFAULT_AUTO_X_STEP,
         help="X-axis distance in mm between fake measurement points for --auto.",
     )
-    parser.add_argument(
-        "--wait-for-alive",
-        action="store_true",
-        help="In --auto mode, wait for ALIVE before starting point 1.",
-    )
-    parser.add_argument(
-        "--no-start-prompt",
-        action="store_true",
-        help="In --auto mode, start measurements immediately after ALIVE.",
-    )
-    args = parser.parse_args()
-    if args.auto and args.ready:
-        parser.error("--ready cannot be combined with --auto.")
-    return args
+    return parser.parse_args()
 
 
-def start_fake_hold(
+def set_fake_ready(
     server: AcquisitionControlServer,
     fake_state: FakeRobotState,
-) -> threading.Thread:
-    """Start one fake force hold so ISREADY returns true until GO is received."""
+) -> None:
+    """Expose one manual ready window until the client sends GO."""
 
     context = {"measurement_index": fake_state.snapshot()["measurement_index"]}
+    server.state.begin_force_hold(context)
+    print(f"ISREADY=True for point {context['measurement_index']}.")
+    print("It will return to False when the client sends GO.")
 
-    def wait_for_go() -> None:
-        try:
-            print(f"Fake hold started for point {context['measurement_index']}.")
-            result = server.wait_for_go(context)
-            print(f"GO received: {result}")
-        except TimeoutError as error:
-            print(f"Fake hold timed out: {error}")
 
-    thread = threading.Thread(target=wait_for_go, daemon=True)
-    thread.start()
-    return thread
+def wait_for_tester_start(
+    server: AcquisitionControlServer,
+    fake_state: FakeRobotState,
+    *,
+    point: int,
+    x: float,
+    y: float,
+) -> None:
+    """Mirror server-mode startup before exposing fake measurement controls."""
+
+    print("Waiting for ALIVE before starting fake measurement sequence.")
+    server.wait_for_client_ready(None)
+    print("Acquisition client connected.")
+    print("Waiting for START_FIRST before fake robot motion.")
+    server.wait_for_start_first()
+    fake_state.set_measurement_state(point, x, y, "measurements")
+    print(
+        "Acquisition client sent START_FIRST. "
+        f"STATE Point={point}, Moving=True, ISREADY=False."
+    )
+
+
+def advance_fake_point(
+    fake_state: FakeRobotState,
+    *,
+    count: int = 1,
+    x_step: float = DEFAULT_AUTO_X_STEP,
+) -> dict[str, Any]:
+    """Advance the fake point and X position for interactive testing."""
+
+    if count < 1:
+        raise ValueError("next count must be at least 1.")
+
+    state = fake_state.snapshot()
+    point = int(state["measurement_index"]) + count
+    position = state["tcp_position"]
+    x = float(position["X"]) + x_step * count
+    y = float(position["Y"])
+    fake_state.set_measurement_state(point, x, y, state["mode"])
+    return fake_state.snapshot()
 
 
 def wait_for_fake_hold(
@@ -203,8 +222,6 @@ def run_auto_measurement(
     x_step: float,
     y: float,
     move_seconds: float,
-    wait_for_alive: bool,
-    start_prompt: bool,
 ) -> None:
     """Run a fake 1..N measurement sequence without robot hardware."""
 
@@ -213,16 +230,14 @@ def run_auto_measurement(
     if move_seconds < 0:
         raise ValueError("--move-seconds must not be negative.")
 
-    if wait_for_alive:
-        print("Waiting for ALIVE before starting fake measurement sequence.")
-        server.wait_for_client_ready(None)
-        print("Acquisition client connected.")
-
-    if start_prompt:
-        input("Press Enter to start fake measurements, or Ctrl+C to cancel.")
-
     current_x = x_start
-    fake_state.set_measurement_state(1, current_x, y, "start_routine")
+    wait_for_tester_start(
+        server,
+        fake_state,
+        point=1,
+        x=current_x,
+        y=y,
+    )
     print(
         f"Starting fake measurement sequence: points 1..{points}, "
         f"X start {x_start:.3f} mm, X step {x_step:.3f} mm."
@@ -260,9 +275,8 @@ def run_auto_measurement(
 def print_help() -> None:
     print(
         "\nCommands:\n"
-        "  hold                 make ISREADY return T until the client sends GO\n"
-        "  cobot-ready          make WAIT COBOT READY return T\n"
-        "  cobot-idle           make WAIT COBOT READY return F\n"
+        "  ready                make ISREADY return T until the client sends GO\n"
+        "  next [n]             advance STATE Point by n, default 1\n"
         "  mode <name>          set raw STATE mode\n"
         "  point <n>            set STATE Point\n"
         "  pos <x> <y>          set STATE X/Y in mm\n"
@@ -274,7 +288,12 @@ def print_help() -> None:
     )
 
 
-def run_console(server: AcquisitionControlServer, fake_state: FakeRobotState) -> None:
+def run_console(
+    server: AcquisitionControlServer,
+    fake_state: FakeRobotState,
+    *,
+    x_step: float,
+) -> None:
     print_help()
     while True:
         try:
@@ -293,12 +312,16 @@ def run_console(server: AcquisitionControlServer, fake_state: FakeRobotState) ->
                 return
             if name == "help":
                 print_help()
-            elif name == "hold":
-                start_fake_hold(server, fake_state)
-            elif name == "cobot-ready":
-                fake_state.set_mode("measurements")
-            elif name == "cobot-idle":
-                fake_state.set_mode("idle")
+            elif name == "ready":
+                set_fake_ready(server, fake_state)
+            elif name == "next" and len(args) <= 1:
+                count = int(args[0]) if args else 1
+                state = advance_fake_point(fake_state, count=count, x_step=x_step)
+                print(
+                    "Advanced to point "
+                    f"{state['measurement_index']} at "
+                    f"X={state['tcp_position']['X']:.3f} mm."
+                )
             elif name == "mode" and len(args) == 1:
                 fake_state.set_mode(args[0])
             elif name == "point" and len(args) == 1:
@@ -335,8 +358,6 @@ def main() -> None:
         server.start()
         print(f"Acquisition server tester listening on {host}:{port}.")
         print("This tester does not connect to the robot or move anything.")
-        if args.ready:
-            start_fake_hold(server, fake_state)
         if args.auto:
             run_auto_measurement(
                 server,
@@ -346,11 +367,16 @@ def main() -> None:
                 x_step=args.x_step,
                 y=args.y,
                 move_seconds=args.move_seconds,
-                wait_for_alive=args.wait_for_alive,
-                start_prompt=not args.no_start_prompt,
             )
         else:
-            run_console(server, fake_state)
+            wait_for_tester_start(
+                server,
+                fake_state,
+                point=args.point,
+                x=args.x,
+                y=args.y,
+            )
+            run_console(server, fake_state, x_step=args.x_step)
     finally:
         server.stop()
 

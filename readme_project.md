@@ -143,7 +143,7 @@ Point-to-point geometry:
 Obstacle movement cases are documented in:
 
 ```text
-MOVEMENT_CASES.md
+movement_cases.md
 ```
 
 ## 4. Creating A Routine File
@@ -185,7 +185,7 @@ routine file can still contain stale or physically wrong waypoint data.
 More details:
 
 ```text
-src/routines/read_me_routines.md
+src/routines/readme_routines.md
 ```
 
 ## 5. Configuration Files
@@ -450,20 +450,20 @@ verify that the selected routine file is the one used by the run.
 ## 11. Useful Files
 
 ```text
-MOVEMENT_CASES.md
-src/program/config/read_me_config.md
-src/program/data_acquisition/README.md
+movement_cases.md
+src/program/config/readme_config.md
+src/program/data_acquisition/readme_data_acquisition.md
 src/program/data_acquisition/server_protocol.md
-src/program/webapp/README.md
-src/routines/read_me_routines.md
-src/robot/README.md
+src/program/webapp/readme_webapp.md
+src/routines/readme_routines.md
+src/robot/readme_robot.md
 ```
 
 Useful commands:
 
 ```powershell
-python src\program\commands\go_to_waypoint.py
-python src\program\commands\run_single_routine.py
+python tools\robot\go_to_waypoint.py
+python tools\robot\run_single_routine.py
 python src\program\commands\run_repeated_single_point_measurement.py
 python examples\run_force_approach.py
 python examples\create_routines.py

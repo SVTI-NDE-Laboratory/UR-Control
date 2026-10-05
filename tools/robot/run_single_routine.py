@@ -4,7 +4,7 @@ import sys
 from pathlib import Path
 
 
-PROJECT_ROOT = Path(__file__).resolve().parents[3]
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
 ROBOT_DIR = PROJECT_ROOT / "src" / "robot"
 ROUTINES_DIR = PROJECT_ROOT / "src" / "routines"
 
@@ -20,7 +20,7 @@ from run_routine import run_routine
 ROBOT_IP = "192.168.3.10"
 ROUTINES_FILE = ROUTINES_DIR / "routine_files" / "routines_wall_275_top.json"
 
-ROUTINE_NAME = "end_to_home"
+ROUTINE_NAME = "start_to_home"
 JOINT_TOLERANCE = 0.01
 
 WAIT_TIMEOUT = 30.0

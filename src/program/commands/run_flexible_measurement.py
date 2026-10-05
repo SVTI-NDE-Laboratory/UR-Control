@@ -4,7 +4,11 @@ The command starts from Home, enters either side of the taught measurement line,
 then waits for operator commands:
 
     move <x_mm> <y_mm>    move linearly to a measurement-frame XY point
-    force                 apply one force cycle at the current pose
+    force <seconds>       apply default force, hold, then return
+    force <newtons> <seconds|manual>
+                          apply that force until timeout or stop
+    force <contact_n> <holding_n> <seconds|manual>
+                          apply separate contact and holding forces
     pose                  print the current measurement-frame XY estimate
     end                   return to the entry endpoint and run the home routine
 
@@ -12,7 +16,6 @@ All setup values are intentionally hard-coded near the top of the file so this
 command can be opened, reviewed, edited, and run directly.
 """
 
-import json
 import sys
 import time
 from pathlib import Path
@@ -31,9 +34,8 @@ for folder in [PROGRAM_DIR, MEASUREMENT_DIR, ROBOT_DIR, ROUTINES_DIR]:
         sys.path.insert(0, str(folder))
 
 from apply_force import apply_force
-from data_acquisition.server_control import AcquisitionControlServer, read_server_config
 from line_planner import cross, line_geometry, millimetres_to_metres, normalize
-from measurement_config import validate_measurement_config
+from measurement_config import validate_force_config, validate_measurement_config
 from measurement_movement import motion_parameters
 from measurement_state import write_state
 from read_routines import get_waypoint, read_routines_file
@@ -60,22 +62,21 @@ OUTPUT_DIR = CONFIG_DIR
 # for p_end_l. The command returns through the same side when `end` is entered.
 ENTRY_SIDE = "start"
 
-# If True, the command starts the TCP acquisition-control server, waits for the
-# external client to send ALIVE, and during force waits for ISREADY/GO.
-DATA_SERVER_ENABLED = True
-STANDALONE_FORCE_HOLD_SECONDS = 3.0
-
+# Force parameters
 FORCE_PROGRAM_PATH = "Inspection/Programs/apply_force_with_server.urp"
 CONTACT_THRESHOLD = 140.0
 HOLDING_FORCE = 160.0
 MAX_DISPLACEMENT = 50.0
 SIMULATION = False
 
+# Motion limits: do not touch
 LINEAR_ACCELERATION = 100.0
 LINEAR_SPEED = 100.0
 JOINT_TOLERANCE = 0.01
 HOME_JOINT_TOLERANCE = 0.005
 WAIT_TIMEOUT = 30.0
+MIN_MANUAL_Y = -400.0
+MAX_MANUAL_Y = 0.0
 
 HOME_TO_START_ROUTINE = "home_to_start"
 START_TO_HOME_ROUTINE = "start_to_home"
@@ -107,7 +108,7 @@ MEASUREMENT_CONFIG = {
         "holding_force": HOLDING_FORCE,
         "max_displacement": MAX_DISPLACEMENT,
         "simulation": SIMULATION,
-        "data_server": DATA_SERVER_ENABLED,
+        "data_server": False,
     },
 }
 
@@ -149,10 +150,14 @@ def measurement_pose(
     x_mm: float,
     y_mm: float,
     height_mode: str = "low",
+    allow_x_outside_taught_range: bool = False,
 ) -> list[float]:
     """Return a TCP pose at one flexible XY measurement-frame coordinate."""
 
-    if x_mm < -1e-9 or x_mm > geometry["taught_length"] + 1e-9:
+    if (
+        not allow_x_outside_taught_range
+        and (x_mm < -1e-9 or x_mm > geometry["taught_length"] + 1e-9)
+    ):
         raise ValueError(
             "X must be between 0 and the taught line length "
             f"({geometry['taught_length']:.3f} mm)."
@@ -197,73 +202,110 @@ def endpoint_x(geometry: dict[str, Any], side: str) -> float:
     raise ValueError("ENTRY_SIDE must be 'start' or 'end'.")
 
 
-def start_acquisition_server_if_needed(
-    state_file: Path,
-    rtde_receive_provider,
-) -> tuple[AcquisitionControlServer | None, Any]:
-    """Start the acquisition server and wait for ALIVE when enabled."""
+def confirm_outside_taught_x(x_mm: float, geometry: dict[str, Any]) -> bool:
+    """Ask the operator to confirm an X target outside the taught interval."""
 
-    if not DATA_SERVER_ENABLED:
-        print("Data acquisition control server disabled.")
-        return None, None
-
-    def state_provider() -> dict[str, Any]:
-        state: dict[str, Any] = {"mode": "waiting"}
-        try:
-            state.update(json.loads(state_file.read_text(encoding="utf-8")))
-        except Exception:
-            pass
-        rtde_receive = rtde_receive_provider()
-        if rtde_receive is not None:
-            try:
-                speed = rtde_receive.getActualTCPSpeed()
-                state["moving"] = any(abs(value) > 1e-4 for value in speed[:3])
-            except Exception as error:
-                state["rtde_error"] = str(error)
-        return state
-
-    config = read_server_config()
-    server = AcquisitionControlServer(
-        config["host"],
-        int(config["port"]),
-        float(config.get("go_timeout", config.get("request_timeout", 8.0))),
-        state_provider=state_provider,
+    taught_length = float(geometry["taught_length"])
+    if -1e-9 <= x_mm <= taught_length + 1e-9:
+        return True
+    print(
+        "Warning: requested X is outside the taught range "
+        f"[0.000, {taught_length:.3f}] mm: X={x_mm:.3f} mm."
     )
-    try:
-        write_state(
-            state_file,
-            {
-                "mode": "waiting_for_acquisition_client",
-                "message": "Waiting for ALIVE from the data acquisition client.",
-            },
+    answer = input("Type 'yes' to move there anyway: ").strip().lower()
+    return answer == "yes"
+
+
+def validate_manual_y(y_mm: float) -> None:
+    """Reject manual Y targets outside the traditional allowed range."""
+
+    if y_mm > MAX_MANUAL_Y or y_mm < MIN_MANUAL_Y:
+        raise ValueError(
+            "Y must stay between "
+            f"{MIN_MANUAL_Y:.3f} and {MAX_MANUAL_Y:.3f} mm."
         )
-        server.start()
-        print(
-            "Waiting for data acquisition client ALIVE on "
-            f"{config['host']}:{config['port']}."
-        )
-        server.wait_for_client_ready(float(config.get("client_ready_timeout", 5.0)))
-    except BaseException:
-        server.stop()
-        raise
-
-    write_state(
-        state_file,
-        {
-            "mode": "acquisition_client_ready",
-            "message": "Data acquisition client sent ALIVE.",
-        },
-    )
-    print("Data acquisition client is ready.")
-    return server, server.wait_for_go
 
 
-def standalone_force_hold(context: dict[str, Any]) -> dict[str, Any]:
-    """Wait locally when no external acquisition server controls GO."""
+def timed_force_hold(duration_seconds: float):
+    """Return an acquisition callback that releases force after a local delay."""
+
+    def hold(_context: dict[str, Any]) -> dict[str, Any]:
+        start = time.monotonic()
+        print(f"Holding force for {duration_seconds:.3f} s.")
+        time.sleep(duration_seconds)
+        return {"acquisition_time": time.monotonic() - start}
+
+    return hold
+
+
+def manual_force_hold(_context: dict[str, Any]) -> dict[str, Any]:
+    """Block until the operator types stop, then release the force hold."""
 
     start = time.monotonic()
-    time.sleep(STANDALONE_FORCE_HOLD_SECONDS)
-    return {"acquisition_time": time.monotonic() - start}
+    print("Force hold active. Type 'stop' and press Enter to return.")
+    while True:
+        command = input("force> ").strip().lower()
+        if command == "stop":
+            return {"acquisition_time": time.monotonic() - start}
+        print("Type 'stop' to release the force hold.")
+
+
+def force_hold_callback(args: list[str]):
+    """Return the local force-hold callback requested by a force command."""
+
+    if len(args) != 1:
+        raise ValueError("Usage: force <seconds> or force manual")
+    if args[0].lower() == "manual":
+        return manual_force_hold
+    try:
+        duration = float(args[0])
+    except ValueError as error:
+        raise ValueError(
+            "Force duration must be a number of seconds or 'manual'."
+        ) from error
+    if duration < 0:
+        raise ValueError("Force duration must not be negative.")
+    return timed_force_hold(duration)
+
+
+def force_measurement_settings(args: list[str]) -> tuple[dict[str, Any], Any]:
+    """Return measurement settings and hold callback for one force command."""
+
+    measurement = dict(MEASUREMENT_CONFIG["measurement"])
+    if len(args) == 1:
+        callback = force_hold_callback(args)
+    elif len(args) == 2:
+        try:
+            requested_force = float(args[0])
+        except ValueError as error:
+            raise ValueError(
+                "Usage: force <seconds>, force manual, "
+                "force <newtons> <seconds|manual>, or "
+                "force <contact_n> <holding_n> <seconds|manual>"
+            ) from error
+        measurement["contact_threshold"] = requested_force
+        measurement["holding_force"] = requested_force
+        callback = force_hold_callback(args[1:])
+    elif len(args) == 3:
+        try:
+            contact_threshold = float(args[0])
+            holding_force = float(args[1])
+        except ValueError as error:
+            raise ValueError(
+                "Contact and holding force must be numeric newton values."
+            ) from error
+        measurement["contact_threshold"] = contact_threshold
+        measurement["holding_force"] = holding_force
+        callback = force_hold_callback(args[2:])
+    else:
+        raise ValueError(
+            "Usage: force <seconds>, force manual, "
+            "force <newtons> <seconds|manual>, or "
+            "force <contact_n> <holding_n> <seconds|manual>"
+        )
+
+    validate_force_config({"measurement": measurement})
+    return measurement, callback
 
 
 def print_help() -> None:
@@ -272,7 +314,12 @@ def print_help() -> None:
     print(
         "\nCommands:\n"
         "  move <x_mm> <y_mm>    move linearly to measurement-frame X/Y\n"
-        "  force                 apply one force cycle at the current pose\n"
+        "  force <seconds>       apply default force, hold that long, then return\n"
+        "  force manual          apply default force until you type stop\n"
+        "  force <N> <seconds>   apply N newtons, hold that long, then return\n"
+        "  force <N> manual      apply N newtons until you type stop\n"
+        "  force <contact_N> <holding_N> <seconds|manual>\n"
+        "                        use separate contact and holding forces\n"
         "  pose                  print current X/Y estimate\n"
         "  help                  show this help\n"
         "  end                   return to endpoint and run home routine\n"
@@ -374,7 +421,6 @@ def run_interactive_loop(
     routines_data: dict[str, Any],
     geometry: dict[str, Any],
     state_file: Path,
-    acquire_measurement,
     acceleration: float,
     speed: float,
     initial_xy: tuple[float, float],
@@ -419,8 +465,21 @@ def run_interactive_loop(
             try:
                 target_x = float(parts[1])
                 target_y = float(parts[2])
+                validate_manual_y(target_y)
+                allow_x_outside_taught_range = confirm_outside_taught_x(
+                    target_x,
+                    geometry,
+                )
+                if not allow_x_outside_taught_range:
+                    print("Move cancelled.")
+                    continue
                 target_pose = measurement_pose(
-                    routines_data, geometry, target_x, target_y, "low"
+                    routines_data,
+                    geometry,
+                    target_x,
+                    target_y,
+                    "low",
+                    allow_x_outside_taught_range=allow_x_outside_taught_range,
                 )
             except ValueError as error:
                 print(f"Invalid move command: {error}")
@@ -447,10 +506,13 @@ def run_interactive_loop(
             continue
 
         if action == "force":
-            if DATA_SERVER_ENABLED and acquire_measurement is None:
-                raise RuntimeError(
-                    "Data server is enabled but no acquisition callback is available."
+            try:
+                force_measurement, acquire_measurement = force_measurement_settings(
+                    parts[1:]
                 )
+            except ValueError as error:
+                print(error)
+                continue
             write_state(
                 state_file,
                 {
@@ -461,20 +523,17 @@ def run_interactive_loop(
             )
             force_reached, timestamp = apply_force(
                 ROBOT_IP,
-                measurement["program_path"],
-                measurement["max_displacement"],
-                measurement["contact_threshold"],
-                measurement["holding_force"],
-                measurement["simulation"],
-                acquire_data=(
-                    acquire_measurement
-                    if DATA_SERVER_ENABLED
-                    else standalone_force_hold
-                ),
+                force_measurement["program_path"],
+                force_measurement["max_displacement"],
+                force_measurement["contact_threshold"],
+                force_measurement["holding_force"],
+                force_measurement["simulation"],
+                acquire_data=acquire_measurement,
                 acquisition_context={
                     "measurement_index": "manual",
                     "x_coordinate": current_x,
                     "y_coordinate": current_y,
+                    "acquisition_label": "local force hold",
                 },
                 acknowledge_force_hold=True,
             )
@@ -505,14 +564,7 @@ def run() -> None:
         raise ValueError("The Home waypoint has no joint target.")
 
     rtde_receive = None
-    control_server = None
     try:
-        acquire_measurement = None
-        control_server, acquire_measurement = start_acquisition_server_if_needed(
-            state_file,
-            lambda: rtde_receive,
-        )
-
         input(
             "The robot will move after this confirmation. Confirm the path is "
             "clear, then press Enter to start, or Ctrl+C to cancel."
@@ -538,7 +590,6 @@ def run() -> None:
             routines_data,
             geometry,
             state_file,
-            acquire_measurement,
             acceleration,
             speed,
             current_xy,
@@ -580,8 +631,6 @@ def run() -> None:
     finally:
         if rtde_receive is not None:
             rtde_receive.disconnect()
-        if control_server is not None:
-            control_server.stop()
 
 
 if __name__ == "__main__":

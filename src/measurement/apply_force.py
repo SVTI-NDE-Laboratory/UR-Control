@@ -67,6 +67,12 @@ def print_force_contact_log(
     print(f"{force_contact_log_prefix(simulation, acquisition_context)}{message}")
 
 
+def acquisition_control_label(acquisition_context: dict | None) -> str:
+    """Return the operator-facing name for the force-hold release controller."""
+
+    return str((acquisition_context or {}).get("acquisition_label", "client"))
+
+
 def wait_for_status(
     rtde_receive,
     accepted_statuses: set[int],
@@ -268,8 +274,13 @@ def apply_force(
                     acquisition_context,
                 )
             if acquire_data is not None:
+                controller = acquisition_control_label(acquisition_context)
+                if controller == "client":
+                    ready_message = "Indicated to client that force has been reached."
+                else:
+                    ready_message = f"Starting {controller}."
                 print_force_contact_log(
-                    "Indicated to client that force has been reached.",
+                    ready_message,
                     simulation,
                     acquisition_context,
                 )
@@ -283,8 +294,16 @@ def apply_force(
                     if acquisition_time is not None
                     else ""
                 )
+                if controller == "client":
+                    done_message = (
+                        f"End of contact (received GO from client{duration_text})."
+                    )
+                else:
+                    done_message = (
+                        f"End of contact ({controller} completed{duration_text})."
+                    )
                 print_force_contact_log(
-                    f"End of contact (received GO from client{duration_text}).",
+                    done_message,
                     simulation,
                     acquisition_context,
                 )

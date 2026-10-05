@@ -3,7 +3,7 @@
 Use this guide first:
 
 ```text
-documentation\company_run\README.md
+documentation\company_run\readme_company_run.md
 ```
 
 It explains everything needed to run the program:

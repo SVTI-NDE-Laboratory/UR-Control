@@ -2,7 +2,17 @@ import contextlib
 import io
 import json
 import socket
+import sys
 import unittest
+from pathlib import Path
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+DATA_ACQUISITION_DIR = PROJECT_ROOT / "src" / "program" / "data_acquisition"
+TOOLS_DATA_ACQUISITION_DIR = PROJECT_ROOT / "tools" / "data_acquisition"
+if str(DATA_ACQUISITION_DIR) not in sys.path:
+    sys.path.insert(0, str(DATA_ACQUISITION_DIR))
+if str(TOOLS_DATA_ACQUISITION_DIR) not in sys.path:
+    sys.path.insert(0, str(TOOLS_DATA_ACQUISITION_DIR))
 
 from server_control import (
     AcquisitionControlServer,
@@ -10,7 +20,12 @@ from server_control import (
     should_log_tcp_response,
 )
 from server_state import protocol_state_response
-from server_tester import FakeRobotState, run_auto_measurement
+from server_tester import (
+    FakeRobotState,
+    advance_fake_point,
+    run_auto_measurement,
+    wait_for_tester_start,
+)
 
 
 class ProtocolStateResponseTests(unittest.TestCase):
@@ -103,38 +118,8 @@ class AcquisitionControlServerTests(unittest.TestCase):
             self.assertEqual(server._handle_request({"message": "ISREADY"}), "F")
             server.state.begin_force_hold({})
             self.assertEqual(server._handle_request({"message": "ISREADY"}), "T")
-        finally:
-            server.stop()
-
-    def test_wait_cobot_ready_follows_robot_sequence_modes(self):
-        state = {"mode": "waiting_for_start_first"}
-        server = AcquisitionControlServer(
-            "127.0.0.1",
-            0,
-            1.0,
-            state_provider=lambda: dict(state),
-        )
-        try:
-            self.assertEqual(
-                server._handle_request({"message": "Wait Cobot Ready"}),
-                "F",
-            )
-            for mode in [
-                "start_routine",
-                "measurements",
-                "measurements_done",
-                "end_routine",
-            ]:
-                state["mode"] = mode
-                self.assertEqual(
-                    server._handle_request({"message": "WAIT_COBOT_READY"}),
-                    "T",
-                )
-            state["mode"] = "idle"
-            self.assertEqual(
-                server._handle_request({"message": "WAIT-COBOT-READY"}),
-                "F",
-            )
+            self.assertEqual(server._handle_request({"message": "GO"}), "ACK")
+            self.assertEqual(server._handle_request({"message": "ISREADY"}), "F")
         finally:
             server.stop()
 
@@ -143,32 +128,6 @@ class AcquisitionControlServerTests(unittest.TestCase):
         try:
             self.assertEqual(server._handle_request({"message": "START_FIRST"}), "ACK")
             server.wait_for_start_first(0.0)
-        finally:
-            server.stop()
-
-    def test_wait_cobot_ready_uses_fake_tester_modes(self):
-        fake_state = FakeRobotState(point=1, x=0.0, y=7.0)
-        server = AcquisitionControlServer(
-            "127.0.0.1",
-            0,
-            1.0,
-            state_provider=fake_state.snapshot,
-        )
-        try:
-            self.assertEqual(
-                server._handle_request({"message": "WAIT COBOT READY"}),
-                "F",
-            )
-            fake_state.set_mode("measurements")
-            self.assertEqual(
-                server._handle_request({"message": "WAIT COBOT READY"}),
-                "T",
-            )
-            fake_state.set_mode("idle")
-            self.assertEqual(
-                server._handle_request({"message": "WAIT COBOT READY"}),
-                "F",
-            )
         finally:
             server.stop()
 
@@ -209,13 +168,68 @@ class AcquisitionControlServerTests(unittest.TestCase):
 
 
 class AutoMeasurementTesterTests(unittest.TestCase):
+    def test_tester_start_waits_for_client_and_start_first_then_publishes_point(self):
+        class StartupServer:
+            def __init__(self):
+                self.waited_for_client = False
+                self.waited_for_start_first = False
+
+            def wait_for_client_ready(self, timeout):
+                self.waited_for_client = True
+
+            def wait_for_start_first(self):
+                self.waited_for_start_first = True
+
+        server = StartupServer()
+        fake_state = FakeRobotState(point=99, x=0.0, y=0.0)
+
+        with contextlib.redirect_stdout(io.StringIO()):
+            wait_for_tester_start(
+                server,
+                fake_state,
+                point=1,
+                x=12.0,
+                y=7.0,
+            )
+
+        self.assertTrue(server.waited_for_client)
+        self.assertTrue(server.waited_for_start_first)
+        self.assertEqual(
+            fake_state.snapshot(),
+            {
+                "mode": "measurements",
+                "measurement_index": 1,
+                "tcp_position": {"X": 12.0, "Y": 7.0},
+            },
+        )
+        self.assertEqual(
+            protocol_state_response(
+                {
+                    "ready": False,
+                    "context": {},
+                    "state": fake_state.snapshot(),
+                }
+            ),
+            {
+                "X": 12.0,
+                "Y": 7.0,
+                "Point": 1,
+                "Moving": True,
+                "Error": "ok",
+            },
+        )
+
     def test_auto_measurement_advances_actual_points_along_x_axis(self):
         class ImmediateGoServer:
             def __init__(self):
                 self.contexts = []
+                self.waited_for_start_first = False
 
             def wait_for_client_ready(self, timeout):
                 return None
+
+            def wait_for_start_first(self):
+                self.waited_for_start_first = True
 
             def wait_for_go(self, context):
                 self.contexts.append(dict(context))
@@ -233,10 +247,9 @@ class AutoMeasurementTesterTests(unittest.TestCase):
                 x_step=5.0,
                 y=7.0,
                 move_seconds=0.0,
-                wait_for_alive=True,
-                start_prompt=False,
             )
 
+        self.assertTrue(server.waited_for_start_first)
         self.assertEqual(
             server.contexts,
             [
@@ -253,6 +266,24 @@ class AutoMeasurementTesterTests(unittest.TestCase):
                 "tcp_position": {"X": 10.0, "Y": 7.0},
             },
         )
+
+    def test_next_helper_advances_point_and_x_position(self):
+        fake_state = FakeRobotState(point=1, x=10.0, y=7.0)
+
+        state = advance_fake_point(fake_state, x_step=2.5)
+
+        self.assertEqual(
+            state,
+            {
+                "mode": "tester",
+                "measurement_index": 2,
+                "tcp_position": {"X": 12.5, "Y": 7.0},
+            },
+        )
+
+        state = advance_fake_point(fake_state, count=2, x_step=2.5)
+        self.assertEqual(state["measurement_index"], 4)
+        self.assertEqual(state["tcp_position"]["X"], 17.5)
 
 
 if __name__ == "__main__":

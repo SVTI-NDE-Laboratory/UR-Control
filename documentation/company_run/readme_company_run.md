@@ -9,7 +9,7 @@ This folder is the run package:
 
 ```text
 documentation\company_run\
-  README.md
+  readme_company_run.md
   config_server.json
   routine.json
   output\

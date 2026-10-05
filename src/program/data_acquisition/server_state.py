@@ -7,12 +7,6 @@ from typing import Any, Callable
 
 
 MISSING_X_SENTINEL = -9999
-COBOT_READY_MODES = {
-    "start_routine",
-    "measurements",
-    "measurements_done",
-    "end_routine",
-}
 
 
 def json_timestamp() -> str:
@@ -60,20 +54,13 @@ def protocol_state_response(snapshot: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def protocol_cobot_ready(snapshot: dict[str, Any]) -> bool:
-    """Return whether the robot sequence is actively running."""
-
-    program_state = snapshot.get("state") or {}
-    return program_state.get("mode") in COBOT_READY_MODES
-
-
 class AcquisitionControlState:
     """Keep the synchronization state for the acquisition control protocol.
 
     The robot measurement thread changes this state when force is reached and
     it is waiting for data acquisition. The TCP server thread reads or updates
     the same state when the external client sends ALIVE, START_FIRST, ISREADY,
-    or GO.
+    GO, or STATE.
 
     This is a class because the lock, events, and flags belong together. Keeping
     them grouped avoids loose globals and makes the thread handoff explicit.
@@ -105,11 +92,13 @@ class AcquisitionControlState:
             self._go_event.set()
 
     def mark_go(self) -> bool:
-        """Accept a GO message only while the force-hold window is ready."""
+        """Accept GO and clear the ready window when one is active."""
 
         with self._lock:
             accepted = self._ready
             if accepted:
+                self._ready = False
+                self._context = {}
                 self._go_event.set()
             return accepted
 

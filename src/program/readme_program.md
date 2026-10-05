@@ -2,7 +2,7 @@
 
 For installation, robot preparation, every control-panel input, session
 outputs, safety behavior, and troubleshooting, see the project-level
-[`README.md`](../../README.md).
+[`readme_project.md`](../../readme_project.md).
 
 `commands/run_measurement_sequence.py` runs the complete robot sequence:
 
@@ -18,7 +18,7 @@ python src\program\webapp\app.py
 
 It combines configuration, visualization, live measurement status, and
 start/stop control. Its implementation is contained in `webapp/` and described
-in [`webapp/README.md`](webapp/README.md).
+in [`webapp/readme_webapp.md`](webapp/readme_webapp.md).
 
 ## Direct command-line use
 
@@ -169,7 +169,7 @@ data, then sends `GO`. Python acknowledges robot input register 42 only after
 before traversal stops and recovery begins.
 
 The complete data-acquisition TCP guide is in
-[`data_acquisition/README.md`](data_acquisition/README.md). The exact byte-level
+[`data_acquisition/readme_data_acquisition.md`](data_acquisition/readme_data_acquisition.md). The exact byte-level
 wire contract is in [`data_acquisition/server_protocol.md`](data_acquisition/server_protocol.md).
 
 `Ctrl+C`, the web Stop button, robot safety faults, stalled motion, and protocol

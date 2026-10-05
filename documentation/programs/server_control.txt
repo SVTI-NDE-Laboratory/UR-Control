@@ -1,0 +1,198 @@
+server_control.py - data acquisition TCP server
+================================================
+
+Program file:
+
+    src/program/data_acquisition/server_control.py
+
+Related files:
+
+    src/program/data_acquisition/config_server.json
+    src/program/data_acquisition/server_state.py
+    src/program/data_acquisition/server_protocol.md
+    src/program/data_acquisition/readme_data_acquisition.md
+    tools/data_acquisition/server_tester.py
+
+Purpose
+-------
+
+server_control.py is the TCP server used by the main robot measurement program
+when measurement.data_server is true.
+
+The robot/Python program owns the server. The external acquisition client
+connects to it and sends short commands such as ALIVE, START_FIRST, ISREADY,
+GO, and STATE.
+
+The server does not move the robot by itself. It only coordinates the
+acquisition handshake:
+
+    1. wait for the acquisition client to prove it is alive
+    2. wait for START_FIRST before robot motion starts
+    3. report whether the robot is holding force
+    4. wait for GO before Python releases the robot force hold
+
+Configuration
+-------------
+
+The server reads its host, port, and timeouts from:
+
+    src/program/data_acquisition/config_server.json
+
+Typical local settings:
+
+    host: 127.0.0.1
+    port: 5055
+
+Use 127.0.0.1 when the acquisition client runs on the same computer as the
+Python robot program.
+
+If the acquisition client runs on another computer, set host to the control
+computer's LAN IP address and allow inbound TCP traffic on the configured port
+in Windows Firewall.
+
+Protocol
+--------
+
+The external client sends commands. The server sends one response per command.
+
+    ALIVE       -> ACK
+    START_FIRST -> ACK
+    ISREADY    -> T or F
+    GO         -> ACK
+    STATE      -> length-prefixed JSON state
+
+Simple responses are sent without a newline:
+
+    ACK is 3 bytes
+    T is 1 byte
+    F is 1 byte
+
+STATE and error responses are sent as:
+
+    [4 byte signed I32 length][UTF-8 payload]
+
+The exact byte-level protocol is documented in:
+
+    src/program/data_acquisition/server_protocol.md
+
+Normal Real Run Sequence
+------------------------
+
+In server mode, the normal sequence is:
+
+    1. The main measurement program starts server_control.py.
+    2. The acquisition client connects.
+    3. The client sends ALIVE.
+    4. The server replies ACK.
+    5. Python verifies the robot is at Home.
+    6. The client sends START_FIRST.
+    7. The server replies ACK.
+    8. The robot starts moving.
+    9. At a measurement point, the robot applies force.
+    10. When force is reached, Python marks the server state as ready.
+    11. The client sends ISREADY.
+    12. The server replies T.
+    13. The client records data.
+    14. The client sends GO.
+    15. The server replies ACK.
+    16. Python acknowledges the robot force program.
+    17. The robot leaves force mode and returns to the measurement pose.
+
+If the robot is not holding force, ISREADY returns F.
+
+How It Is Started In The Real Program
+-------------------------------------
+
+Do not normally run server_control.py directly for a real robot measurement.
+It is started by the main measurement sequence when the selected configuration
+has:
+
+    "measurement": {
+        "data_server": true
+    }
+
+Start the full measurement program with a server configuration, for example:
+
+    .\.venv\Scripts\python.exe src\program\commands\run_measurement_sequence.py ^
+      --config src\program\config\config_server.json ^
+      --routines-file src\routines\routine_files\routines_wall_275_top.json ^
+      --output-dir C:\path\to\output
+
+In PowerShell, use backticks for line continuation:
+
+    .\.venv\Scripts\python.exe src\program\commands\run_measurement_sequence.py `
+      --config src\program\config\config_server.json `
+      --routines-file src\routines\routine_files\routines_wall_275_top.json `
+      --output-dir C:\path\to\output
+
+How To Test The Server Without Moving The Robot
+-----------------------------------------------
+
+Use the standalone tester:
+
+    python tools\data_acquisition\server_tester.py
+
+This starts the same TCP server implementation, but it does not connect to the
+robot, does not load a URP, and does not move anything.
+
+Auto mode simulates a measurement sequence:
+
+    python tools\data_acquisition\server_tester.py --auto
+
+Useful auto-mode options:
+
+    python tools\data_acquisition\server_tester.py ^
+      --auto ^
+      --points 20 ^
+      --move-seconds 3 ^
+      --x 0 ^
+      --y 0 ^
+      --x-step 10
+
+In PowerShell:
+
+    python tools\data_acquisition\server_tester.py `
+      --auto `
+      --points 20 `
+      --move-seconds 3 `
+      --x 0 `
+      --y 0 `
+      --x-step 10
+
+Manual tester commands:
+
+    ready          make ISREADY return T until the client sends GO
+    next [n]       advance the fake measurement point
+    mode <name>    set raw STATE mode
+    point <n>      set STATE Point
+    pos <x> <y>    set STATE X and Y in mm
+    error <text>   set STATE Error text
+    clear-error    set STATE Error back to ok
+    state          print the current fake state
+    quit           stop the tester
+
+Common Problems
+---------------
+
+If the client cannot connect:
+
+    - check that the server or tester is running
+    - check the IP address
+    - check the port
+    - check that no other process is already using the port
+    - check Windows Firewall when connecting from another computer
+
+If ISREADY always returns F:
+
+    - this is normal while the robot is moving or idle
+    - ISREADY returns T only while the robot is holding force
+    - in server_tester.py manual mode, type ready to simulate that state
+
+If the client waits forever:
+
+    - ALIVE expects 3 response bytes
+    - START_FIRST expects 3 response bytes
+    - ISREADY expects 1 response byte
+    - GO expects 3 response bytes
+    - STATE expects a 4-byte length first, then the JSON payload
+

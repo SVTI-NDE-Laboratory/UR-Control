@@ -32,7 +32,7 @@ utility uses a 0.005 rad tolerance and reports the measured final error only
 after that verification succeeds.
 
 `run_routine.py` provides the reusable routine function used by the main
-program and the retained routine example.
+program and the manual routine tool.
 
 Each step defines `type` (`j` or `l`), `acceleration`, `speed`, and
 `blend_radius`. Joint steps use the waypoint's `q` target; linear steps use its
@@ -44,7 +44,7 @@ be zero.
 
 ## Recovery Routine
 
-`src/program/commands/run_single_routine.py` runs one routine only. It is useful
+`tools/robot/run_single_routine.py` runs one routine only. It is useful
 if the main program gets interrupted and you want to return to a known position.
 
 By default it runs:
@@ -56,12 +56,12 @@ ROUTINE_NAME = "end"
 Run it:
 
 ```powershell
-python src\program\commands\run_single_routine.py
+python tools\robot\run_single_routine.py
 ```
 
 ## Single Waypoint
 
-`src/program/commands/go_to_waypoint.py` moves directly to one waypoint from the active
+`tools/robot/go_to_waypoint.py` moves directly to one waypoint from the active
 `src/routines/routine_files/routines.json` file.
 
 Edit these variables at the top of the file:
@@ -74,5 +74,5 @@ USE_LINEAR_MOVE = False
 Run it:
 
 ```powershell
-python src\program\commands\go_to_waypoint.py
+python tools\robot\go_to_waypoint.py
 ```
