@@ -1,0 +1,234 @@
+run_flexible_measurement.py - flexible manual robot movement and force command
+=============================================================================
+
+Program file:
+
+    src/program/commands/run_flexible_measurement.py
+
+Purpose
+-------
+
+run_flexible_measurement.py is an interactive command-line program for manual
+movement on the taught measurement plane.
+
+It is useful when the operator wants to move to arbitrary X/Y coordinates and
+apply force on demand, instead of running the full automatic measurement
+sequence.
+
+The program:
+
+    1. verifies the robot is at Home
+    2. runs the selected entry routine
+    3. descends to the low measurement endpoint
+    4. waits for typed commands
+    5. moves to requested measurement-frame X/Y points
+    6. applies force when requested
+    7. returns through the selected endpoint when the operator types end
+
+This command can move the real robot. Review the constants at the top of the
+file before running it.
+
+Important Constants To Review
+-----------------------------
+
+At the top of run_flexible_measurement.py, review:
+
+    ROBOT_IP
+    ROUTINES_FILE
+    OUTPUT_DIR
+    ENTRY_SIDE
+    FORCE_PROGRAM_PATH
+    CONTACT_THRESHOLD
+    HOLDING_FORCE
+    MAX_DISPLACEMENT
+    SIMULATION
+    LINEAR_ACCELERATION
+    LINEAR_SPEED
+    MIN_MANUAL_Y
+    MAX_MANUAL_Y
+
+ENTRY_SIDE controls which side of the taught line the robot enters from:
+
+    start  -> use p_start_l side
+    end    -> use p_end_l side
+
+The program returns through the same side when the operator types end.
+
+How To Start
+------------
+
+From the repository root:
+
+    .\.venv\Scripts\python.exe src\program\commands\run_flexible_measurement.py
+
+Or, if the virtual environment is already active:
+
+    python src\program\commands\run_flexible_measurement.py
+
+Before pressing Enter at the safety prompt:
+
+    - verify the robot is powered and in Remote Control mode
+    - verify the robot is at the taught Home joint position
+    - verify the workspace is clear
+    - verify the selected routine file is correct
+    - verify the active TCP and force direction are correct
+    - verify the force values are acceptable
+
+Interactive Commands
+--------------------
+
+After startup, the prompt is:
+
+    measurement>
+
+Available commands:
+
+    help
+        Show the command list.
+
+    pose
+        Print the current measurement-frame X/Y estimate.
+
+    move <x_mm> <y_mm>
+        Move linearly to a measurement-frame point at low height.
+
+        Example:
+
+            move 100 -50
+
+        X is measured along the taught line from p_start_l to p_end_l.
+        Y is measured sideways in the measurement plane.
+
+        The current Y limits are:
+
+            MIN_MANUAL_Y = -400.0
+            MAX_MANUAL_Y = 0.0
+
+        If X is outside the taught start/end interval, the program asks for an
+        explicit yes before moving.
+
+    force <seconds>
+        Apply the default force values from the top of the file, hold for the
+        requested number of seconds, then return.
+
+        Example:
+
+            force 5
+
+    force manual
+        Apply the default force values and hold until the operator types stop at
+        the force prompt.
+
+        Example:
+
+            force manual
+            force> stop
+
+    force <N> <seconds>
+        Apply N newtons as both contact threshold and holding force, hold for
+        the requested number of seconds, then return.
+
+        Example:
+
+            force 120 5
+
+    force <N> manual
+        Apply N newtons as both contact threshold and holding force, then hold
+        until the operator types stop.
+
+        Example:
+
+            force 120 manual
+            force> stop
+
+    force <contact_N> <holding_N> <seconds|manual>
+        Use separate contact and holding forces.
+
+        Example:
+
+            force 100 140 5
+            force 100 140 manual
+
+        contact_N is the measured force threshold required to say contact was
+        reached.
+
+        holding_N is the commanded force used by the robot force program while
+        approaching and holding.
+
+        holding_N must be greater than or equal to contact_N.
+
+    end
+        Return to the selected endpoint, rise to the high point, run the return
+        routine, and finish at Home.
+
+Force Behavior
+--------------
+
+The flexible command calls:
+
+    apply_force(...)
+
+from:
+
+    src/measurement/apply_force.py
+
+Python writes the selected force values to robot RTDE registers, starts the
+configured force URP, waits until the robot reports force reached, then releases
+the hold after the local timed/manual callback finishes.
+
+The actual physical force is applied by the robot-side URScript program through
+force_mode(...). More detail is in:
+
+    documentation/force_application.md
+
+State Output
+------------
+
+The command writes live state to:
+
+    src/program/config/state.json
+
+This file can be useful for checking whether the program is waiting, moving,
+applying force, stopped, or in an error state.
+
+Limitations
+-----------
+
+run_flexible_measurement.py is deliberately hard-coded. It is meant to be
+opened and reviewed before use.
+
+It does not start the acquisition TCP server. Its force command uses a local
+hold callback:
+
+    - timed hold with force <seconds>
+    - manual hold with force manual or force <N> manual
+
+For the full automatic sequence with the external acquisition client, use:
+
+    src/program/commands/run_measurement_sequence.py
+
+Common Problems
+---------------
+
+If startup fails because the robot is not at Home:
+
+    Move the robot to the taught Home joint position in the selected routines
+    file, then start again.
+
+If a move command is rejected:
+
+    Check the X range and Y limits. The program rejects Y outside the configured
+    manual range and asks for confirmation before moving outside the taught X
+    range.
+
+If a force command is rejected:
+
+    Check that the force values are not negative, that both are zero for
+    simulation or both are positive for real force, and that holding force is
+    at least contact force.
+
+If the robot does not reach force:
+
+    Check the TCP orientation, the surface position, max displacement, contact
+    threshold, and holding force.
+

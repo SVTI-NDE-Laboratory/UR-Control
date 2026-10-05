@@ -42,9 +42,12 @@ measurement motion speeds in the saved config, live state, and plan are stored
 in millimetres, mm/s, and mm/s^2. Motion remains linear and is not edited in
 the control panel.
 
-Starting requires an explicit safety confirmation and a read-only Home-position
-preflight. `commands/run_measurement_sequence.py` then runs as a separate
-worker process. The selected output folder receives `config_used.json`,
+Starting creates the run and launches `commands/run_measurement_sequence.py` as
+a separate worker process. In server mode, the worker first waits for the
+acquisition client to send `ALIVE`, verifies Home, then waits for client
+`START_FIRST` before robot motion starts. MIRA mode keeps the explicit browser
+safety confirmation. A read-only Home-position preflight still runs before
+movement. The selected output folder receives `config_used.json`,
 `state.json`, `measurement_plan.json`, and `program.log`. The log is updated in
 real time and prefixes terminal lines with local ISO timestamps. Each program
 start generates a fresh local date-and-time session ID. The

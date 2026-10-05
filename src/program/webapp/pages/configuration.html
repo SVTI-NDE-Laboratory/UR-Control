@@ -93,6 +93,8 @@
     let formDirty = false;
     let operationPending = false;
     let lastImportantMessage = '';
+    let pendingStartConfirmation = false;
+    let handledStartConfirmationSession = null;
 
     function numberValue(id, fallback = 0) {
       const element = document.getElementById(id);
@@ -432,7 +434,7 @@
       document.body.innerHTML = '<main><h1>Application closed</h1><p>You can close this tab.</p></main>';
     });
 
-    function completedState(point, programState) {
+    function completedState(point, programState, points) {
       if (point.measured === false) return 'skipped';
       if (point.data?.force_reached === true) return 'complete';
       if (point.data?.force_reached === false) return 'failed';
@@ -442,17 +444,34 @@
       if (typeof current !== 'number') return 'pending';
       if (point.measurement_index < current) return 'complete';
       if (point.measurement_index > current) return 'pending';
-      if (programState.last_measurement_success === true) return 'complete';
       if (programState.last_measurement_success === false) return 'failed';
+      if (
+        programState.last_measurement_success === true
+        && !points.some(nextPoint =>
+          nextPoint.measured !== false && nextPoint.measurement_index > current
+        )
+      ) {
+        return 'complete';
+      }
       const reachedPosition = programState.line_position;
       const isReached = typeof reachedPosition === 'number'
         && Math.abs(reachedPosition - point.line_position) < 1e-6;
-      return isReached ? 'current' : 'pending';
+      return isReached || point.measurement_index === current ? 'current' : 'pending';
     }
 
     function humanizePhase(mode) {
       const text = String(mode || 'running').replaceAll('_', ' ');
       return text.charAt(0).toUpperCase() + text.slice(1);
+    }
+
+    function activePlanPoint(points, programState) {
+      const mode = programState.mode || '';
+      const current = programState.measurement_index;
+      if (['measurements_done', 'end_routine', 'idle'].includes(mode)) return null;
+      if (typeof current !== 'number') return null;
+      return points.find(point =>
+        point.measured !== false && point.measurement_index === current
+      ) || null;
     }
 
     function drawProgress(data) {
@@ -464,7 +483,9 @@
       const configuredLength = parameters.line_length;
       const lastPosition = points.length ? Math.max(...points.map(point => point.line_position)) : 0;
       const length = configuredLength || lastPosition || 1;
-      const currentPosition = typeof programState.line_position === 'number' ? programState.line_position : null;
+      const reachedPosition = typeof programState.line_position === 'number' ? programState.line_position : null;
+      const activePoint = activePlanPoint(points, programState);
+      const currentPosition = activePoint ? activePoint.line_position : reachedPosition;
       const obstacle = config?.obstacle;
       const left = 55, right = 585, lowY = 170;
       const obstacleHeight = 62, obstacleBottomY = lowY - 3;
@@ -480,7 +501,7 @@
       let complete = 0;
       const measuredTotal = points.filter(point => point.measured !== false).length;
       for (const point of points) {
-        const pointState = completedState(point, programState);
+        const pointState = completedState(point, programState, points);
         if (pointState === 'complete') complete += 1;
         const colors = {pending:'#9aa9b8', current:'#1769aa', complete:'#159447', failed:'#b42318', skipped:'#b85b5b'};
         addSvg('circle', {cx:scale(point.line_position), cy:lowY, r:pointState === 'current' ? 10 : 7, fill:colors[pointState], stroke:'white', 'stroke-width':2});
@@ -517,6 +538,40 @@
       }
       if (running || (data.validated && !formDirty)) drawProgress(data);
       else drawVisualization();
+      maybeConfirmMovementStart(data);
+    }
+
+    async function maybeConfirmMovementStart(data) {
+      const programState = data.program_state || {};
+      const sessionKey = data.session_id || data.worker?.state_file || 'active';
+      if (
+        data.worker?.running !== true ||
+        programState.mode !== 'waiting_for_operator_start' ||
+        pendingStartConfirmation ||
+        handledStartConfirmationSession === sessionKey
+      ) {
+        return;
+      }
+
+      pendingStartConfirmation = true;
+      handledStartConfirmationSession = sessionKey;
+      try {
+        const confirmed = window.confirm('Start robot motion? Confirm that the workspace is clear, tooling is secure, the robot is in Remote Control, and the emergency stop is accessible.');
+        if (!confirmed) {
+          const stopResponse = await fetch('/api/worker/stop', {method:'POST'});
+          const stopResult = await stopResponse.json();
+          if (!stopResponse.ok) throw new Error(stopResult.detail || `HTTP ${stopResponse.status}`);
+          return;
+        }
+        const response = await fetch('/api/measurement/start-movement', {method:'POST'});
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.detail || `HTTP ${response.status}`);
+      } catch (error) {
+        showImportant(error.message);
+      } finally {
+        pendingStartConfirmation = false;
+        await refreshMeasurement();
+      }
     }
 
     async function refreshMeasurement() {
@@ -540,7 +595,6 @@
           if (!response.ok) throw new Error(result.detail || `HTTP ${response.status}`);
         } else {
           await checkConfiguration('/api/configuration/validate');
-          if (!window.confirm('Start robot motion? Confirm that the workspace is clear, tooling is secure, the robot is in Remote Control, and the emergency stop is accessible.')) return;
           const response = await fetch('/api/measurement/start', {
             method:'POST',
             headers:{'Content-Type':'application/json'},
@@ -548,7 +602,7 @@
               output_directory:outputDirectory.value,
               show_terminal:showTerminal.checked,
               create_session_folder:createSessionFolder.checked,
-              operator_confirmed:true,
+              operator_confirmed:false,
             }),
           });
           const result = await response.json();

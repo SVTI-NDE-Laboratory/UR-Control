@@ -3,7 +3,7 @@
 For the complete step-by-step operator guide, read:
 
 ```text
-documentation\company_run\README.md
+documentation\company_run\readme_company_run.md
 ```
 
 This file is the shorter technical reference.

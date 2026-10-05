@@ -1,0 +1,5 @@
+{
+  "mode": "error",
+  "error_type": "RobotSafetyError",
+  "message": "Robot motion stopped: protective stop, stopped due to safety."
+}

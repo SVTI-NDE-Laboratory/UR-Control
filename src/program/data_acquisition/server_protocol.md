@@ -47,6 +47,7 @@ Accepted plain-text commands:
 
 ```text
 ALIVE
+START_FIRST
 ISREADY
 GO
 STATE
@@ -67,16 +68,18 @@ lengths. They do not include `\n`, `\r\n`, or a length prefix.
 
 | Request | Response | Bytes to read | Meaning |
 |---|---|---:|---|
-| `ALIVE` | `OK` | 2 | Client is present and startup may continue |
-| `ISREADY` | `true` | 4 | Robot is holding force and data can be acquired |
-| `ISREADY` | `false` | 5 | Robot is not ready for acquisition |
+| `ALIVE` | `ACK` | 3 | Client is present and startup may continue |
+| `START_FIRST` | `ACK` | 3 | Client permits the first robot routine to start |
+| `ISREADY` | `T` | 1 | Robot is holding force and data can be acquired |
+| `ISREADY` | `F` | 1 | Robot is not ready for acquisition |
 | `GO` | `ACK` | 3 | Server received the release/acquisition-complete command |
 
 Raw response examples:
 
 ```text
-ALIVE   -> b'OK'
-ISREADY -> b'true' or b'false'
+ALIVE   -> b'ACK'
+START_FIRST -> b'ACK'
+ISREADY -> b'T' or b'F'
 GO      -> b'ACK'
 ```
 
@@ -107,11 +110,26 @@ Use this as the startup and watchdog command.
 Response:
 
 ```text
-OK
+ACK
 ```
 
 The first successful `ALIVE` marks the external client as available. The main
 measurement sequence waits for this before it moves on from acquisition startup.
+
+### `START_FIRST`
+
+Use this after the acquisition system and operator-side safety checks are ready
+for robot motion to begin in server acquisition mode.
+
+Response:
+
+```text
+ACK
+```
+
+For server acquisition runs, the robot program waits for this command just
+before launching the first routine. MIRA acquisition runs keep the local
+operator prompt instead.
 
 ### `ISREADY`
 
@@ -121,13 +139,13 @@ holding force for the current measurement point.
 Response while force is held:
 
 ```json
-true
+T
 ```
 
 Response otherwise:
 
 ```json
-false
+F
 ```
 
 ### `GO`
@@ -155,11 +173,15 @@ Response:
 {"X":123.0,"Y":333.0,"Point":1,"Moving":false,"Error":"ok"}
 ```
 
-The response is sent as `[4 Byte I32][Data]`. `X` and `Y` are the live TCP
-position in millimetres when an RTDE connection is available. Before the robot
-connection is established they are `null`. `Point` is the current measurement
-index, `Moving` is a JSON boolean based on TCP speed, and `Error` is `"ok"` or
-the current error text.
+The response is sent as `[4 Byte I32][Data]`. `X` is the live TCP X position in
+millimetres when available. Until an X value exists, `STATE` returns `-9999`.
+`Y` is the configured `line.parameters.offset_y` value in millimetres. `Point`
+is the current or next measurement index, including before the first force
+measurement starts.
+`Moving` is a JSON boolean derived from the force-hold ready flag. It is the
+opposite of `ISREADY`: when `ISREADY` returns `T`, `Moving` is `false`; when
+`ISREADY` returns `F`, `Moving` is `true`. `Error` is `"ok"` or the current
+error text.
 
 ## Timeouts
 

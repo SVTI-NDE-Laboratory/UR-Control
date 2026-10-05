@@ -40,6 +40,7 @@ Home
 -> home_to_start routine
 -> p_start_h
 -> p_start_l
+-> apply X start if configured
 -> apply Y offset if configured
 -> first measurement point
 ```
@@ -54,6 +55,17 @@ current low measurement point
 -> next low measurement point
 ```
 
+When returning from the start side, the robot goes back in the opposite order:
+
+```text
+last low measurement point
+-> translate on the offset low measurement line to p_start_offset
+-> return from Y offset to the zero-Y line
+-> return from X start to p_start_l
+-> p_start_h
+-> start_to_home routine
+```
+
 ## Case 2: Obstacle Blocks The First Measurement Point
 
 If the first planned point is inside the obstacle, the robot does not go to
@@ -64,13 +76,16 @@ Home
 -> home_to_end routine
 -> p_end_h
 -> p_end_l
--> apply Y offset if configured
 -> translate on low measurement line
 -> first available measurement point after the obstacle
+-> apply Y offset if configured
 ```
 
 The important part is that the robot descends to `p_end_l` before any line
 translation. It never translates from `p_end_h`.
+
+When returning from the end side, the robot removes the Y offset, returns to
+`p_end_l`, moves to `p_end_h`, then runs `end_to_home`.
 
 ## Case 3: Obstacle After One Or More Measurements
 
@@ -89,9 +104,9 @@ last valid low measurement point before obstacle
 -> home_to_end routine
 -> p_end_h
 -> p_end_l
--> apply Y offset if configured
 -> translate on low measurement line
 -> first available measurement point after the obstacle
+-> apply Y offset if configured
 ```
 
 Again, the robot does not translate along the high plane. The high waypoints

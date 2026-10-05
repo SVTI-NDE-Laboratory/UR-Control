@@ -5,7 +5,7 @@ import sys
 from pathlib import Path
 
 
-PROJECT_ROOT = Path(__file__).resolve().parents[3]
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
 ROBOT_DIR = PROJECT_ROOT / "src" / "robot"
 ROUTINES_DIR = PROJECT_ROOT / "src" / "routines"
 
@@ -24,7 +24,7 @@ ROBOT_IP = "192.168.3.10"
 ROUTINES_FILE = ROUTINES_DIR / "routine_files" / "routines_wall_275_top.json"
 
 WAYPOINT_NAME = "p_start_h"
-USE_LINEAR_MOVE = False  # Set to False to use movej instead of movel
+USE_LINEAR_MOVE = True  # Set to False to use movej instead of movel
 
 LINEAR_ACCELERATION = 100.0
 LINEAR_SPEED = 50.0
@@ -32,6 +32,7 @@ JOINT_ACCELERATION = 0.1
 JOINT_SPEED = 0.05
 JOINT_TOLERANCE = 0.005
 WAIT_TIMEOUT = 30.0
+
 
 
 if __name__ == "__main__":
@@ -59,7 +60,7 @@ if __name__ == "__main__":
         print(
             f"Waypoint '{WAYPOINT_NAME}' reached and settled. "
             f"Position error: {position_error * 1000:.3f} mm; "
-            f"rotation-vector error: {rotation_error:.6f} rad."
+            f"rotation error: {rotation_error:.6f} rad."
         )
     else:
         if "q" not in waypoint:

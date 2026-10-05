@@ -95,6 +95,11 @@ def start_program(
     output_directory.mkdir(parents=True, exist_ok=True)
     write_json_atomic(output_directory / "config_used.json", config)
     write_json_atomic(output_directory / "state.json", {"mode": "starting"})
+    start_signal_file = output_directory / "start_movement.signal"
+    try:
+        start_signal_file.unlink()
+    except FileNotFoundError:
+        pass
 
     executable = Path(sys.executable)
     if executable.name.lower() == "pythonw.exe":
@@ -109,6 +114,8 @@ def start_program(
         "--config",
         str(TEMP_CONFIG_FILE),
         "--operator-confirmed",
+        "--start-signal-file",
+        str(start_signal_file),
         "--routines-file",
         str(routine_file),
         "--output-dir",

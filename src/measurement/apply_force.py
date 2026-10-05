@@ -40,6 +40,39 @@ FORCE_POSITION_PROGRESS_THRESHOLD = 0.00005
 FORCE_ROTATION_PROGRESS_THRESHOLD = 0.001
 
 
+def force_contact_log_prefix(
+    simulation: bool,
+    acquisition_context: dict | None,
+) -> str:
+    """Return the standard operator prefix for force-contact log lines."""
+
+    context = acquisition_context or {}
+    simulation_text = "SIMU " if simulation else ""
+    measurement_index = context.get("measurement_index", "?")
+    x_coordinate = context.get("x_coordinate", context.get("line_position"))
+    if x_coordinate is None:
+        x_text = "X+offset=n/a"
+    else:
+        x_text = f"X+offset={float(x_coordinate):.3f} mm"
+    return f"{simulation_text}Point {measurement_index} {x_text}: "
+
+
+def print_force_contact_log(
+    message: str,
+    simulation: bool,
+    acquisition_context: dict | None,
+) -> None:
+    """Print one standardized force-contact status line."""
+
+    print(f"{force_contact_log_prefix(simulation, acquisition_context)}{message}")
+
+
+def acquisition_control_label(acquisition_context: dict | None) -> str:
+    """Return the operator-facing name for the force-hold release controller."""
+
+    return str((acquisition_context or {}).get("acquisition_label", "client"))
+
+
 def wait_for_status(
     rtde_receive,
     accepted_statuses: set[int],
@@ -127,6 +160,7 @@ def apply_force(
     acquire_data: Callable[[dict], dict] | None = None,
     acquisition_context: dict | None = None,
     acknowledge_force_hold: bool = True,
+    on_force_success: Callable[[str], None] | None = None,
 ) -> tuple[bool, str]:
     """Run a force cycle and return its result plus measurement timestamp.
 
@@ -194,6 +228,12 @@ def apply_force(
         if not rtde_io.setInputIntRegister(status_register, 0): raise RuntimeError(f"Could not reset input integer register {status_register}.")
 
         # Start the robot-side force sequence.
+        if acknowledge_force_hold:
+            print_force_contact_log(
+                "The cobot starts its procedure to apply force.",
+                simulation,
+                acquisition_context,
+            )
         load_and_play_urp(robot_ip, program_path)
 
         # Wait for the URP to clear any stale status.
@@ -225,8 +265,25 @@ def apply_force(
 
         if status == 1:
             force_reached = True
+            if on_force_success is not None:
+                on_force_success(measurement_timestamp)
+            if acknowledge_force_hold:
+                print_force_contact_log(
+                    "The cobot is in contact with the wall (force reached).",
+                    simulation,
+                    acquisition_context,
+                )
             if acquire_data is not None:
-                print("Data acquisition: requesting measurement.")
+                controller = acquisition_control_label(acquisition_context)
+                if controller == "client":
+                    ready_message = "Indicated to client that force has been reached."
+                else:
+                    ready_message = f"Starting {controller}."
+                print_force_contact_log(
+                    ready_message,
+                    simulation,
+                    acquisition_context,
+                )
                 acquisition_result = acquire_data(dict(acquisition_context or {}))
                 completed_at = acquisition_result.get("completed_at")
                 if completed_at:
@@ -237,7 +294,19 @@ def apply_force(
                     if acquisition_time is not None
                     else ""
                 )
-                print(f"Data acquisition: measurement completed{duration_text}.")
+                if controller == "client":
+                    done_message = (
+                        f"End of contact (received GO from client{duration_text})."
+                    )
+                else:
+                    done_message = (
+                        f"End of contact ({controller} completed{duration_text})."
+                    )
+                print_force_contact_log(
+                    done_message,
+                    simulation,
+                    acquisition_context,
+                )
             elif acknowledge_force_hold:
                 print(
                     "Data acquisition callback unavailable; using standalone "
@@ -296,7 +365,7 @@ def apply_force(
         print(
             "Force program: return verified "
             f"(position error {position_error * 1000:.3f} mm, "
-            f"rotation-vector error {rotation_error:.6f} rad)."
+            f"rotation error {rotation_error:.6f} rad)."
         )
 
         return force_reached, measurement_timestamp

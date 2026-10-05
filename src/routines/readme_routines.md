@@ -73,9 +73,10 @@ waypoints before moving the robot.
 
 ## 4. Use the routines
 
-`main.py`, `go_to_waypoint.py`, and `run_single_routine.py` all read the
-configured JSON file from `routine_files`. Regenerate it whenever waypoint
-positions, routine orders, or routine motion settings change.
+`main.py`, `tools/robot/go_to_waypoint.py`, and
+`tools/robot/run_single_routine.py` all read the configured JSON file from
+`routine_files`. Regenerate it whenever waypoint positions, routine orders, or
+routine motion settings change.
 
 For a standalone example that writes a non-active output file, run:
 

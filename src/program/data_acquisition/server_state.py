@@ -6,28 +6,13 @@ from datetime import datetime
 from typing import Any, Callable
 
 
-TRUE_VALUES = {"1", "true", "t", "yes", "y", "on"}
-FALSE_VALUES = {"0", "false", "f", "no", "n", "off", ""}
+MISSING_X_SENTINEL = -9999
 
 
 def json_timestamp() -> str:
     """Return a local timestamp suitable for JSON status records."""
 
     return datetime.now().astimezone().isoformat(timespec="milliseconds")
-
-
-def json_boolean(value: Any) -> bool:
-    """Normalize common protocol flags to a JSON boolean value."""
-
-    if isinstance(value, bool):
-        return value
-    if isinstance(value, str):
-        normalized = value.strip().lower()
-        if normalized in TRUE_VALUES:
-            return True
-        if normalized in FALSE_VALUES:
-            return False
-    return bool(value)
 
 
 def protocol_state_response(snapshot: dict[str, Any]) -> dict[str, Any]:
@@ -37,6 +22,7 @@ def protocol_state_response(snapshot: dict[str, Any]) -> dict[str, Any]:
     context = snapshot.get("context") or {}
     tcp_position = program_state.get("tcp_position") or {}
     mode = program_state.get("mode")
+    ready = bool(snapshot.get("ready", False))
     error = "ok"
 
     if "rtde_error" in program_state:
@@ -50,14 +36,20 @@ def protocol_state_response(snapshot: dict[str, Any]) -> dict[str, Any]:
             or mode
         )
 
+    x_position = tcp_position.get("X")
+    point = None
+    if ready:
+        point = context.get("measurement_index")
+    if point is None:
+        point = program_state.get("measurement_index")
+    if point is None:
+        point = context.get("measurement_index")
+
     return {
-        "X": tcp_position.get("X"),
+        "X": MISSING_X_SENTINEL if x_position is None else x_position,
         "Y": tcp_position.get("Y"),
-        "Point": context.get(
-            "measurement_index",
-            program_state.get("measurement_index"),
-        ),
-        "Moving": json_boolean(program_state.get("moving", False)),
+        "Point": point,
+        "Moving": not ready,
         "Error": error,
     }
 
@@ -67,7 +59,8 @@ class AcquisitionControlState:
 
     The robot measurement thread changes this state when force is reached and
     it is waiting for data acquisition. The TCP server thread reads or updates
-    the same state when the external client sends ALIVE, ISREADY, or GO.
+    the same state when the external client sends ALIVE, START_FIRST, ISREADY,
+    GO, or STATE.
 
     This is a class because the lock, events, and flags belong together. Keeping
     them grouped avoids loose globals and makes the thread handoff explicit.
@@ -77,6 +70,7 @@ class AcquisitionControlState:
         self._lock = threading.Lock()
         self._go_event = threading.Event()
         self._client_ready_event = threading.Event()
+        self._start_first_event = threading.Event()
         self._ready = False
         self._context: dict[str, Any] = {}
         self._state_provider = state_provider
@@ -98,11 +92,13 @@ class AcquisitionControlState:
             self._go_event.set()
 
     def mark_go(self) -> bool:
-        """Accept a GO message only while the force-hold window is ready."""
+        """Accept GO and clear the ready window when one is active."""
 
         with self._lock:
             accepted = self._ready
             if accepted:
+                self._ready = False
+                self._context = {}
                 self._go_event.set()
             return accepted
 
@@ -111,12 +107,25 @@ class AcquisitionControlState:
 
         self._client_ready_event.set()
 
+    def mark_start_first(self) -> None:
+        """Record that the external client allowed the first robot routine."""
+
+        self._start_first_event.set()
+
     def wait_for_client_ready(self, timeout: float) -> None:
         """Block startup until the external client sends ALIVE."""
 
         if not self._client_ready_event.wait(timeout):
             raise TimeoutError(
                 "Timed out waiting for ALIVE from the data acquisition client."
+            )
+
+    def wait_for_start_first(self, timeout: float | None = None) -> None:
+        """Block robot motion startup until the client sends START_FIRST."""
+
+        if not self._start_first_event.wait(timeout):
+            raise TimeoutError(
+                "Timed out waiting for START_FIRST from the data acquisition client."
             )
 
     def wait_for_go(self, context: dict[str, Any], timeout: float) -> dict[str, Any]:

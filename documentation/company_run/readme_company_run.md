@@ -9,7 +9,7 @@ This folder is the run package:
 
 ```text
 documentation\company_run\
-  README.md
+  readme_company_run.md
   config_server.json
   routine.json
   output\
@@ -223,18 +223,24 @@ STATE
 
 Response format:
 
-| Command | Response |
-|---|---|
-| `ALIVE` | `OK` |
-| `ISREADY` | `true` or `false` |
-| `GO` | `ACK` |
-| `STATE` | 4-byte length prefix, then JSON |
+| Command | Response | Bytes to read |
+|---|---|---:|
+| `ALIVE` | `ACK` | 3 |
+| `ISREADY` | `T` | 1 |
+| `ISREADY` | `F` | 1 |
+| `GO` | `ACK` | 3 |
+| `STATE` | 4-byte length prefix, then JSON | read 4-byte length first |
+
+The simple responses do not include a newline.
 
 Example `STATE` JSON:
 
 ```json
 {"X":1,"Y":11,"Point":1,"Moving":true,"Error":"ok"}
 ```
+
+`Moving` is the opposite of `ISREADY`: while `ISREADY` is `T`, `Moving` is
+`false`; while `ISREADY` is `F`, `Moving` is `true`.
 
 ## 8. Start The Robot Program
 
@@ -248,6 +254,8 @@ From the repository root, run:
 ```
 
 The program starts the acquisition TCP server first and waits for `ALIVE`.
+The first robot routine will not start until the acquisition client has sent
+`ALIVE`.
 
 When the terminal asks for confirmation, do not press Enter until:
 
@@ -265,7 +273,7 @@ The expected sequence is:
 1. Python verifies the robot is at `Home`.
 2. Python moves the robot to the measurement start position.
 3. At each measurement point, the robot applies force.
-4. When force is reached, `ISREADY` returns `true`.
+4. When force is reached, `ISREADY` returns `T`.
 5. The acquisition client records data.
 6. The acquisition client sends `GO`.
 7. The robot continues to the next point.
@@ -317,10 +325,10 @@ again.
 The Python server is waiting for the acquisition client to send `ALIVE`. Start
 or fix the acquisition client connection.
 
-### `ISREADY` stays `false`
+### `ISREADY` stays `F`
 
 This is normal until the robot is holding force at a measurement point. It only
-returns `true` during that force-hold window.
+returns `T` during that force-hold window.
 
 ### Python cannot import `rtde_io` or `rtde_receive`
 

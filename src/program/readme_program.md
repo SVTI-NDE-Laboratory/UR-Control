@@ -2,7 +2,7 @@
 
 For installation, robot preparation, every control-panel input, session
 outputs, safety behavior, and troubleshooting, see the project-level
-[`README.md`](../../README.md).
+[`readme_project.md`](../../readme_project.md).
 
 `commands/run_measurement_sequence.py` runs the complete robot sequence:
 
@@ -18,7 +18,7 @@ python src\program\webapp\app.py
 
 It combines configuration, visualization, live measurement status, and
 start/stop control. Its implementation is contained in `webapp/` and described
-in [`webapp/README.md`](webapp/README.md).
+in [`webapp/readme_webapp.md`](webapp/readme_webapp.md).
 
 ## Direct command-line use
 
@@ -50,9 +50,9 @@ python src\program\commands\run_measurement_sequence.py `
   --output-dir C:\path\to\output
 ```
 
-Direct use asks for terminal confirmation before connecting to the robot. The
-web launcher supplies `--operator-confirmed` only after its browser safety
-confirmation and read-only Home preflight.
+Direct MIRA use asks for terminal confirmation before robot motion. In server
+mode, the worker waits for the acquisition client and starts motion only after
+the client sends `START_FIRST`.
 
 ## How `run_measurement_sequence.py` works
 
@@ -65,18 +65,20 @@ movement and measurement work to the measurement and robot modules.
 Startup:
 
 1. `parse_args()` reads the selected config file, routine file, output folder,
-   and `--operator-confirmed` flag.
+   `--operator-confirmed` flag, and optional web start-signal file.
 2. `prepare_output_directory()` creates the output directory and mirrors stdout
    and stderr to `program.log`.
 3. `load_run_inputs()` reads the routine JSON and measurement config, validates
    them through `read_measurement_config()`, writes `config_used.json`, creates
    `measurement_plan.json`, and chooses the live `state.json` path.
 4. `start_acquisition_if_enabled()` starts the TCP acquisition server when
-   `measurement.data_server=true`. That server handles `ALIVE`, `ISREADY`,
-   `GO`, and `STATE`. Its state provider reads `state.json` and, after RTDE is
-   connected, adds live TCP `X/Y` position and movement status.
-5. If the run was started directly from a terminal, `confirm_operator_if_needed()`
-   waits for Enter. The web panel skips this only after its own confirmation.
+   `measurement.data_server=true`. That server handles `ALIVE`, `START_FIRST`,
+   `ISREADY`, `GO`, and `STATE`. Its state provider reads `state.json` and,
+   after RTDE is connected, adds live TCP `X/Y` position and movement status.
+5. `wait_for_start_permission()` gates the first robot routine. Server mode
+   writes `mode="waiting_for_start_first"` and continues only after the
+   acquisition client sends `START_FIRST`. MIRA mode keeps the operator prompt
+   or web start-signal safety confirmation.
 
 Robot preflight:
 
@@ -167,7 +169,7 @@ data, then sends `GO`. Python acknowledges robot input register 42 only after
 before traversal stops and recovery begins.
 
 The complete data-acquisition TCP guide is in
-[`data_acquisition/README.md`](data_acquisition/README.md). The exact byte-level
+[`data_acquisition/readme_data_acquisition.md`](data_acquisition/readme_data_acquisition.md). The exact byte-level
 wire contract is in [`data_acquisition/server_protocol.md`](data_acquisition/server_protocol.md).
 
 `Ctrl+C`, the web Stop button, robot safety faults, stalled motion, and protocol

@@ -33,7 +33,6 @@ from measurement_movement import (
     high_to_low,
     low_to_high,
     motion_parameters,
-    move_to_zero_y_high,
     move_to_zero_y_low,
     translate_along_line,
 )
@@ -133,7 +132,9 @@ def _run_measurements(
     step = 0
     measurement_index = None
     reached_line_position = None
-    finish_side = "end"
+    first_position_blocked = bool(positions and is_obstacle(positions[0][1], config))
+    current_side = "end" if first_position_blocked else "start"
+    finish_side = current_side
 
     while step < len(positions):
         # Describe the active step without claiming that its contact position
@@ -141,9 +142,18 @@ def _run_measurements(
         index, position = positions[step]
         point_id = index + 1
         in_obstacle = is_obstacle(position, config)
+        if in_obstacle:
+            next_step = next_measurement_step(positions, step + 1, config)
+            next_point_id = (
+                positions[next_step][0] + 1
+                if next_step is not None
+                else None
+            )
+        else:
+            next_point_id = point_id
         state = {
             "mode": "measurements",
-            "measurement_index": point_id if not in_obstacle else None,
+            "measurement_index": next_point_id,
             "line_position": reached_line_position,
             "height_mode": height_mode,
             "in_obstacle": in_obstacle,
@@ -159,7 +169,6 @@ def _run_measurements(
         # points, startup has already routed to p_end_h; descend to p_end_l
         # before translating back to the first valid measurement.
         if in_obstacle:
-            next_step = next_measurement_step(positions, step + 1, config)
             if next_step is None:
                 print("Obstacle until end of line")
                 if height_mode == "low":
@@ -231,6 +240,15 @@ def _run_measurements(
         state["line_position"] = reached_line_position
         write_state(state_path, state)
 
+        def publish_force_success(_success_timestamp: str) -> None:
+            state["last_measurement_success"] = True
+            state["measurement_index"] = next_successful_measurement_index(
+                positions,
+                step,
+                config,
+            )
+            write_state(state_path, state)
+
         measurement_success, measurement_timestamp = apply_force(
             robot_ip,
             measurement["program_path"],
@@ -242,8 +260,10 @@ def _run_measurements(
             {
                 "measurement_index": measurement_index,
                 "line_position": position,
+                "x_coordinate": geometry.get("x_start", 0.0) + position,
             },
             acknowledge_force_hold=measurement.get("data_server", True),
+            on_force_success=publish_force_success,
         )
         if measurement_plan_path is not None:
             record_measurement_result(
@@ -253,6 +273,12 @@ def _run_measurements(
                 measurement_timestamp,
             )
         state["last_measurement_success"] = measurement_success
+        if measurement_success:
+            state["measurement_index"] = next_successful_measurement_index(
+                positions,
+                step,
+                config,
+            )
         write_state(state_path, state)
 
         if not measurement_success:
@@ -320,6 +346,7 @@ def _run_measurements(
                     routine_wait_timeout=routine_wait_timeout,
                     routine_verbose=routine_verbose,
                 )
+                current_side = "end"
                 step = next_step
                 continue
 
@@ -337,69 +364,90 @@ def _run_measurements(
         step += 1
 
     # Always finish at the safe high level, including after the last measure.
-    final_zero_y_done = False
-    final_position = (
-        geometry["length"]
-        if geometry["method"] == "point_to_point"
-        else positions[-1][1]
-    )
     if height_mode == "low":
         current_position = (
             reached_line_position
             if reached_line_position is not None
             else positions[-1][1]
         )
-        zero_y_final = geometry["method"] == "point_to_point" and abs(geometry["offset_y"]) > 1e-12
-        should_move_to_end = (
-            geometry["method"] == "point_to_point"
-            and abs(current_position - final_position) > 1e-9
-            and not crosses_obstacle(current_position, final_position, config)
-        )
-        if should_move_to_end:
-            print("\nEnd of line: move to the low end-of-line position")
-            translate_along_line(
+        if geometry["method"] == "point_to_point":
+            if current_side == "start":
+                print("\nEnd of line: return to p_start_offset on the low measurement line")
+                if abs(current_position) > 1e-9:
+                    translate_along_line(
+                        robot_ip,
+                        rtde_receive,
+                        config,
+                        -current_position,
+                        routines_data,
+                        0.0,
+                        "low",
+                    )
+                print("End of line: remove Y and X offsets, then move p_start_l -> p_start_h")
+                low_to_high(
+                    robot_ip,
+                    rtde_receive,
+                    config,
+                    routines_data,
+                    0.0,
+                    lateral_offset=True,
+                )
+                finish_side = "start"
+            else:
+                print("\nEnd of line: return to p_end_l through zero-Y end approach")
+                acceleration, speed = motion_parameters(config)
+                taught_end_pose = routines_data["waypoints"][geometry["end_name"]]["p"]
+                taught_end_high_pose = routines_data["waypoints"]["p_end_h"]["p"]
+                if abs(geometry["offset_y"]) > 1e-12:
+                    movel_pose(
+                        robot_ip,
+                        rtde_receive,
+                        point_pose(geometry, current_position, "low", lateral_offset=False),
+                        acceleration,
+                        speed,
+                        30.0,
+                    )
+                taught_end_position = taught_endpoint_position(geometry, "end")
+                if abs(current_position - taught_end_position) > 1e-9:
+                    translate_along_line(
+                        robot_ip,
+                        rtde_receive,
+                        config,
+                        taught_end_position - current_position,
+                        routines_data,
+                        taught_end_position,
+                        "low",
+                        lateral_offset=False,
+                    )
+                movel_pose(
+                    robot_ip,
+                    rtde_receive,
+                    taught_end_pose,
+                    acceleration,
+                    speed,
+                    30.0,
+                )
+                movel_pose(
+                    robot_ip,
+                    rtde_receive,
+                    taught_end_high_pose,
+                    acceleration,
+                    speed,
+                    30.0,
+                )
+                finish_side = "end"
+        else:
+            final_position = positions[-1][1]
+            print("\nEnd of line: move low -> high")
+            low_to_high(
                 robot_ip,
                 rtde_receive,
                 config,
-                final_position - current_position,
-                routines_data,
-                final_position,
-                "low",
-            )
-        elif geometry["method"] == "point_to_point" and abs(current_position - final_position) > 1e-9:
-            final_position = current_position
-        if zero_y_final:
-            print("\nEnd of line: return from Y offset to taught low line")
-            move_to_zero_y_low(
-                robot_ip,
-                rtde_receive,
-                config,
                 routines_data,
                 final_position,
             )
-            final_zero_y_done = True
-        print("\nEnd of line: move low -> high")
-        low_to_high(
-            robot_ip,
-            rtde_receive,
-            config,
-            routines_data,
-            final_position,
-            lateral_offset=not zero_y_final,
-        )
+            finish_side = "end"
         height_mode = "high"
-        finish_side = "end"
-
-    if geometry["method"] == "point_to_point":
-        if abs(geometry["offset_y"]) > 1e-12 and not final_zero_y_done:
-            print("End of line: return from Y offset to taught line")
-            move_to_zero_y_high(
-                robot_ip,
-                rtde_receive,
-                config,
-                routines_data,
-                final_position,
-            )
 
     # Publish a final state so the caller knows traversal has finished.
     final_state = {
@@ -437,6 +485,28 @@ def force_failure_recovery_target(
     if line_position <= obstacle_midpoint:
         return "start", line_start
     return "end", line_end
+
+
+def next_successful_measurement_index(
+    positions: list[tuple[int, float]],
+    completed_step: int,
+    config: dict,
+) -> int | None:
+    """Return the point ID to publish after a successful force approach.
+
+    The monitoring state starts on the first point to be measured. After a
+    successful force approach, it should immediately point to the next
+    measurable point, skipping obstacle points. When the completed point is the
+    last measurable point, keep that last point ID.
+    """
+
+    if not positions or completed_step < 0 or completed_step >= len(positions):
+        return None
+
+    next_step = next_measurement_step(positions, completed_step + 1, config)
+    if next_step is None:
+        return positions[completed_step][0] + 1
+    return positions[next_step][0] + 1
 
 
 def taught_endpoint_position(geometry: dict, side: str) -> float:
@@ -496,14 +566,35 @@ def move_to_line_side_high(
         )
 
     print(f"Obstacle-side return: move low -> high to {high_waypoint}")
-    low_to_high(
-        robot_ip,
-        rtde_receive,
-        config,
-        routines_data,
-        taught_side_position,
-        lateral_offset=False,
-    )
+    if side == "start":
+        low_to_high(
+            robot_ip,
+            rtde_receive,
+            config,
+            routines_data,
+            taught_side_position,
+            lateral_offset=False,
+        )
+    else:
+        acceleration, speed = motion_parameters(config)
+        low_pose = routines_data["waypoints"][geometry["end_name"]]["p"]
+        high_pose = routines_data["waypoints"][high_waypoint]["p"]
+        movel_pose(
+            robot_ip,
+            rtde_receive,
+            low_pose,
+            acceleration,
+            speed,
+            30.0,
+        )
+        movel_pose(
+            robot_ip,
+            rtde_receive,
+            high_pose,
+            acceleration,
+            speed,
+            30.0,
+        )
     return side, taught_side_position
 
 
@@ -555,40 +646,30 @@ def enter_line_from_end_high(
     routines_data: dict | None,
     next_position: float,
 ) -> str:
-    """Move p_end_h -> p_end_l, apply any Y offset, then translate on low line."""
+    """Move ``p_end_h -> p_end_l -> X position -> Y offset``."""
 
     geometry = line_geometry(config, routines_data)
     if geometry["method"] != "point_to_point":
         raise ValueError("End-side obstacle entry requires point-to-point geometry.")
     taught_end_position = taught_endpoint_position(geometry, "end")
+    taught_end_pose = routines_data["waypoints"][geometry["end_name"]]["p"]
 
     print("Obstacle route: p_end_h -> p_end_l")
-    high_to_low(
-        robot_ip,
-        rtde_receive,
-        config,
-        routines_data,
-        taught_end_position,
-        lateral_offset=False,
-    )
-
-    if abs(geometry["offset_y"]) > 1e-12:
-        print(
-            "Obstacle route: apply Y offset at taught line end "
-            f"({taught_end_position:.3f} mm)"
-        )
-        acceleration, speed = motion_parameters(config)
-        movel_pose(
-            robot_ip,
-            rtde_receive,
-            point_pose(geometry, taught_end_position, "low"),
-            acceleration,
-            speed,
-            30.0,
-        )
-
     if abs(next_position - taught_end_position) > 1e-9:
         print(f"Obstacle route: translate on low line to {next_position:.3f} mm")
+    if abs(geometry["offset_y"]) > 1e-12:
+        print(f"Obstacle route: apply Y offset at {next_position:.3f} mm")
+
+    acceleration, speed = motion_parameters(config)
+    movel_pose(
+        robot_ip,
+        rtde_receive,
+        taught_end_pose,
+        acceleration,
+        speed,
+        30.0,
+    )
+    if abs(next_position - taught_end_position) > 1e-9:
         translate_along_line(
             robot_ip,
             rtde_receive,
@@ -597,6 +678,16 @@ def enter_line_from_end_high(
             routines_data,
             next_position,
             "low",
+            lateral_offset=False,
+        )
+    if abs(geometry["offset_y"]) > 1e-12:
+        movel_pose(
+            robot_ip,
+            rtde_receive,
+            point_pose(geometry, next_position, "low", lateral_offset=True),
+            acceleration,
+            speed,
+            30.0,
         )
     return "low"
 
