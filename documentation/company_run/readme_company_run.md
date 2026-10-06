@@ -180,7 +180,7 @@ On the teach pendant:
 5. Make sure the force program exists on the robot:
 
 ```text
-Inspection/Programs/apply_force_with_server.urp
+Inspection/Programs/apply_force_with_server_z.urp
 ```
 
 The Python program checks that the robot is at `Home` before it allows motion.

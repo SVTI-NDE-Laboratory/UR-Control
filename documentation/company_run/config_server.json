@@ -18,7 +18,7 @@
     "speed": 150.0
   },
   "measurement": {
-    "program_path": "Inspection/Programs/apply_force_with_server.urp",
+    "program_path": "Inspection/Programs/apply_force_with_server_z.urp",
     "contact_threshold": 200.0,
     "holding_force": 220.0,
     "max_displacement": 50.0,

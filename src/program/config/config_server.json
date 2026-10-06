@@ -2,8 +2,8 @@
   "line": {
     "method": "point_to_point",
     "parameters": {
-      "increment": 175.0,
-      "number_of_measurements": 7,
+      "increment": 200.0,
+      "number_of_measurements": 8,
       "x_start": 0.0,
       "x_end": 0.0,
       "offset_y": 0.0,
@@ -18,9 +18,9 @@
     "speed": 150.0
   },
   "measurement": {
-    "program_path": "Inspection/Programs/apply_force_with_server.urp",
+    "program_path": "Inspection/Programs/apply_force_with_server_z.urp",
     "contact_threshold": 200.0,
-    "holding_force": 220.0,
+    "holding_force": 200.0,
     "max_displacement": 50.0,
     "simulation": false,
     "data_server": true

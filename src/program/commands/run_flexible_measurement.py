@@ -55,7 +55,7 @@ from run_routine import run_routine
 # ---------------------------------------------------------------------------
 
 ROBOT_IP = "192.168.3.10"
-ROUTINES_FILE = ROUTINES_DIR / "routine_files" / "routines_wall_275_top.json"
+ROUTINES_FILE = ROUTINES_DIR / "routine_files" / "routine_mira.json"
 OUTPUT_DIR = CONFIG_DIR
 
 # Choose which side the robot enters from. Use "start" for p_start_l, or "end"
@@ -63,8 +63,7 @@ OUTPUT_DIR = CONFIG_DIR
 ENTRY_SIDE = "start"
 
 # Force parameters
-FORCE_PROGRAM_PATH = "Inspection/Programs/apply_force_with_server.urp"
-FORCE_PROGRAM_PATH = "Inspection/Programs/apply_force_display.urp"
+FORCE_PROGRAM_PATH = "Inspection/Programs/apply_force_with_server_z.urp"
 CONTACT_THRESHOLD = 140.0
 HOLDING_FORCE = 160.0
 MAX_DISPLACEMENT = 50.0
