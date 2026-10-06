@@ -10,14 +10,13 @@ if str(ROUTINES_DIR) not in sys.path:
     sys.path.insert(0, str(ROUTINES_DIR))
 
 from robot_move import (
-    joint_degrees,
     movej,
     movel_pose,
     wait_until_at_joint_target,
     wait_until_at_tcp_target,
 )
 from robot_connection import assert_robot_running, send_script, stop_robot
-from robot_scripts import routine_script, ur_pose
+from robot_scripts import routine_script
 from read_routines import get_routine, get_waypoint
 
 MM_PER_METRE = 1000.0
@@ -119,7 +118,7 @@ def _run_routine(
             )
             if verbose:
                 print(
-                    f"Moving to {waypoint_name}. Target: {ur_pose(waypoint['p'])} "
+                    f"Moving to {waypoint_name} "
                     f"(movel, a={acceleration} mm/s^2, "
                     f"v={speed} mm/s, r={blend_radius} mm)"
                 )
@@ -130,7 +129,7 @@ def _run_routine(
             q_target = waypoint["q"]
             if verbose:
                 print(
-                    f"Moving to {waypoint_name}. Target: {joint_degrees(q_target)} "
+                    f"Moving to {waypoint_name} "
                     f"(movej, a={acceleration}, v={speed}, r={blend_radius})"
                 )
             target = q_target

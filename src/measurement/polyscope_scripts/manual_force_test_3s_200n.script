@@ -1,0 +1,65 @@
+# Tablet-only force check for taught waypoint programs.
+#
+# Paste the function into a PolyScope Script node, then call
+# manual_force_test_3s_200n() after moving to each waypoint you want to test.
+# It applies 200 N along the current TCP Z+ direction for up to 3 seconds,
+# limits approach travel to 40 mm, then returns to the starting TCP pose.
+
+def manual_force_test_3s_200n():
+
+  global manual_force_state = "starting"
+  global manual_force_elapsed = 0.0
+  global manual_force_travelled_mm = 0.0
+
+  force_n = 200.0
+  hold_time_s = 3.0
+  max_travel_m = 0.040
+  max_speed_m_s = 0.020
+
+  return_acceleration = 0.100
+  return_speed = 0.020
+
+  start_pose = get_actual_tcp_pose()
+  force_frame = start_pose
+
+  zero_ftsensor()
+  sleep(0.2)
+
+  manual_force_state = "applying 200 N"
+  elapsed = 0.0
+  travelled = 0.0
+
+  while (elapsed < hold_time_s) and (travelled < max_travel_m):
+    force_mode(
+      force_frame,
+      [0, 0, 1, 0, 0, 0],
+      [0, 0, force_n, 0, 0, 0],
+      2,
+      [0.010, 0.010, max_speed_m_s, 0.10, 0.10, 0.10]
+    )
+
+    current_pose = get_actual_tcp_pose()
+    relative_pose = pose_trans(pose_inv(start_pose), current_pose)
+    travelled = relative_pose[2]
+    manual_force_travelled_mm = travelled * 1000.0
+
+    elapsed = elapsed + get_steptime()
+    manual_force_elapsed = elapsed
+    sync()
+  end
+
+  manual_force_state = "ending force mode"
+  end_force_mode()
+  stopl(1.0)
+  sleep(0.1)
+
+  manual_force_state = "returning to start pose"
+  movel(start_pose, a=return_acceleration, v=return_speed)
+
+  if travelled >= max_travel_m:
+    manual_force_state = "stopped at travel limit"
+  else:
+    manual_force_state = "force test complete"
+  end
+
+end

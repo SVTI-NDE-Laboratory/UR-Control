@@ -64,6 +64,7 @@ ENTRY_SIDE = "start"
 
 # Force parameters
 FORCE_PROGRAM_PATH = "Inspection/Programs/apply_force_with_server.urp"
+FORCE_PROGRAM_PATH = "Inspection/Programs/apply_force_display.urp"
 CONTACT_THRESHOLD = 140.0
 HOLDING_FORCE = 160.0
 MAX_DISPLACEMENT = 50.0

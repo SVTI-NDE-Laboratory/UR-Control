@@ -101,8 +101,8 @@ def create_routines_file(
 
 if __name__ == "__main__":
     routines_dir = PROJECT_ROOT / "src" / "routines"
-    script_path = routines_dir / "polyscope_scripts" / "Define_Points_Wall_90deg.script"
-    output_path = routines_dir / "routine_files" / "routines_wall_275_top.json"
+    script_path = routines_dir / "polyscope_scripts" / "2026-10-06 Wall Y-275mm.script"
+    output_path = routines_dir / "routine_files" / "routine_mira.json"
 
     home_to_start_waypoints = [
         "Home",

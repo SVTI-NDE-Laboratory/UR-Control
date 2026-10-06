@@ -13,18 +13,17 @@ for folder in [ROBOT_DIR, ROUTINES_DIR]:
     if str(folder) not in sys.path:
         sys.path.insert(0, str(folder))
 
-from robot_move import joint_degrees, movej, movel_pose, tcp_target_errors
-from robot_scripts import ur_pose
+from robot_move import movej, movel_pose, tcp_target_errors
 from read_routines import read_waypoint
 from robot_connection import assert_robot_running, get_rtde_receive
 
 
 MM_PER_METRE = 1000.0
 ROBOT_IP = "192.168.3.10"
-ROUTINES_FILE = ROUTINES_DIR / "routine_files" / "routines_wall_275_top.json"
+ROUTINES_FILE = ROUTINES_DIR / "routine_files" / "routine_mira.json"
 
 WAYPOINT_NAME = "p_start_h"
-USE_LINEAR_MOVE = True  # Set to False to use movej instead of movel
+USE_LINEAR_MOVE = False  # Set to False to use movej instead of movel
 
 LINEAR_ACCELERATION = 100.0
 LINEAR_SPEED = 50.0
@@ -32,6 +31,7 @@ JOINT_ACCELERATION = 0.1
 JOINT_SPEED = 0.05
 JOINT_TOLERANCE = 0.005
 WAIT_TIMEOUT = 30.0
+
 
 
 
@@ -45,7 +45,7 @@ if __name__ == "__main__":
     if USE_LINEAR_MOVE:
         if "p" not in waypoint:
             raise ValueError(f"Waypoint '{WAYPOINT_NAME}' has no p target for linear move.")
-        print(f"Moving to {WAYPOINT_NAME}. Target: {ur_pose(waypoint['p'])} linear")
+        print(f"Moving to {WAYPOINT_NAME} (linear).")
         movel_pose(
             ROBOT_IP,
             rtde_receive,
@@ -65,7 +65,7 @@ if __name__ == "__main__":
     else:
         if "q" not in waypoint:
             raise ValueError(f"Waypoint '{WAYPOINT_NAME}' has no q target for movej.")
-        print(f"Moving to {WAYPOINT_NAME}. Target: {joint_degrees(waypoint['q'])}")
+        print(f"Moving to {WAYPOINT_NAME} (joint).")
         movej(
             ROBOT_IP,
             rtde_receive,

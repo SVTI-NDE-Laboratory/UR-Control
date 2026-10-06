@@ -1,0 +1,35 @@
+# Diagnostic script for checking TCP force/torque axes.
+#
+# Use this in a temporary PolyScope program Script node.
+# The robot does not move and does not enter force mode. It only zeros the
+# force/torque sensor, then continuously publishes live wrench values in the
+# Variables view while you gently push the tool by hand.
+
+global wrench_fx = 0.0
+global wrench_fy = 0.0
+global wrench_fz = 0.0
+global wrench_tx = 0.0
+global wrench_ty = 0.0
+global wrench_tz = 0.0
+global force_norm = 0.0
+global state_message = "Zeroing force/torque sensor"
+
+zero_ftsensor()
+sleep(0.5)
+
+state_message = "Reading TCP wrench; push gently by hand to identify axes"
+
+while True:
+    wrench = get_tcp_force()
+
+    wrench_fx = wrench[0]
+    wrench_fy = wrench[1]
+    wrench_fz = wrench[2]
+    wrench_tx = wrench[3]
+    wrench_ty = wrench[4]
+    wrench_tz = wrench[5]
+
+    force_norm = force()
+
+    sync()
+end
