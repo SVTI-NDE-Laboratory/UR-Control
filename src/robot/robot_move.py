@@ -15,6 +15,7 @@ from robot_scripts import movej_script, movel_pose_script
 
 
 CARTESIAN_MOTION_START_TIMEOUT = 1.0
+JOINT_MOTION_START_TIMEOUT = 2.0
 CARTESIAN_STALL_TIMEOUT = 1.5
 CARTESIAN_POSITION_PROGRESS_THRESHOLD = 0.0002
 CARTESIAN_ROTATION_PROGRESS_THRESHOLD = 0.002
@@ -38,7 +39,7 @@ def wait_until_at_joint_target(
     tolerance: float,
     timeout: float,
     watchdog: bool = True,
-    motion_start_timeout: float = CARTESIAN_MOTION_START_TIMEOUT,
+    motion_start_timeout: float = JOINT_MOTION_START_TIMEOUT,
     stall_timeout: float = CARTESIAN_STALL_TIMEOUT,
     progress_threshold: float = JOINT_PROGRESS_THRESHOLD,
     require_target_progress: bool = True,

@@ -12,7 +12,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 ROUTINES_DIR = PROJECT_ROOT / "src" / "routines"
 
 # Edit this line to choose the routine file used by the flexible program.
-ROUTINES_FILE = ROUTINES_DIR / "routine_files" / "routine_mira.json"
+ROUTINES_FILE = ROUTINES_DIR / "routine_files" / "routine_bam_at_svti.json"
 
 COMMAND_FILE = (
     PROJECT_ROOT

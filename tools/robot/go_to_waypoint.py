@@ -20,19 +20,17 @@ from robot_connection import assert_robot_running, get_rtde_receive
 
 MM_PER_METRE = 1000.0
 ROBOT_IP = "192.168.3.10"
-ROUTINES_FILE = ROUTINES_DIR / "routine_files" / "routine_mira.json"
+ROUTINES_FILE = ROUTINES_DIR / "routine_files" / "routine_bam_at_svti.json"
 
 WAYPOINT_NAME = "p_start_h"
-USE_LINEAR_MOVE = False  # Set to False to use movej instead of movel
+USE_LINEAR_MOVE = True  # Set to False to use movej instead of movel
 
 LINEAR_ACCELERATION = 100.0
-LINEAR_SPEED = 50.0
+LINEAR_SPEED = 150.0
 JOINT_ACCELERATION = 0.1
 JOINT_SPEED = 0.05
 JOINT_TOLERANCE = 0.005
 WAIT_TIMEOUT = 30.0
-
-
 
 
 if __name__ == "__main__":

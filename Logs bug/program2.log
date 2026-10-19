@@ -1,0 +1,161 @@
+[2026-10-08T09:44:54.646+02:00] Waiting for data acquisition client ALIVE on 127.0.0.1:5055.
+[2026-10-08T09:44:56.186+02:00] Data acquisition client 127.0.0.1:55641: connected
+[2026-10-08T09:44:57.138+02:00] Data acquisition control server listening on 127.0.0.1:5055.
+[2026-10-08T09:44:57.222+02:00] Startup position verified: robot is at Home.
+[2026-10-08T09:44:57.226+02:00] Waiting for data acquisition client START_FIRST before robot motion.
+[2026-10-08T09:45:11.694+02:00] Data acquisition client sent START_FIRST; starting robot sequence.
+[2026-10-08T09:45:11.695+02:00] Data acquisition client 127.0.0.1:55641: received START_FIRST
+[2026-10-08T09:45:11.728+02:00] Routine: home_to_start
+[2026-10-08T09:45:11.728+02:00] Moving to Home (movej, a=0.4, v=2.0, r=0.0)
+[2026-10-08T09:45:11.739+02:00] Moving to home_to_start1 (movej, a=0.4, v=2.0, r=5.0)
+[2026-10-08T09:45:11.739+02:00] Moving to home_to_start2 (movej, a=0.4, v=2.0, r=5.0)
+[2026-10-08T09:45:11.739+02:00] Moving to p_start_h (movej, a=0.4, v=2.0, r=0.0)
+[2026-10-08T09:45:21.554+02:00] 
+[2026-10-08T09:45:21.554+02:00] Measurement 1, position 0.000 mm
+[2026-10-08T09:45:21.554+02:00] Measurement point: move high -> low
+[2026-10-08T09:45:24.707+02:00] SIMU Point 1 X+offset=0.000 mm: The cobot starts its procedure to apply force.
+[2026-10-08T09:45:24.917+02:00] Force program: waiting for initialization.
+[2026-10-08T09:45:24.928+02:00] Force program: waiting for contact, distance limit, or timeout.
+[2026-10-08T09:45:27.239+02:00] SIMU Point 1 X+offset=0.000 mm: The cobot is in contact with the wall (force reached).
+[2026-10-08T09:45:27.239+02:00] SIMU Point 1 X+offset=0.000 mm: Indicated to client that force has been reached.
+[2026-10-08T09:45:27.541+02:00] Data acquisition client 127.0.0.1:55641: received STATE
+[2026-10-08T09:45:27.541+02:00] Data acquisition client 127.0.0.1:55641: sent {"X":-999.8113996723467,"Y":0.0,"Point":1,"Moving":false,"Error":"ok"}
+[2026-10-08T09:45:28.360+02:00] SIMU Point 1 X+offset=0.000 mm: End of contact (received GO from client in 1.125 s).
+[2026-10-08T09:45:28.360+02:00] Data acquisition client 127.0.0.1:55641: received GOForce program: acquisition acknowledged; releasing force hold.
+[2026-10-08T09:45:28.360+02:00] Force program: waiting for return to the measurement pose.
+[2026-10-08T09:45:28.360+02:00] 
+[2026-10-08T09:45:28.878+02:00] Force program: verifying the pre-force pose.
+[2026-10-08T09:45:28.878+02:00] Force program: return verified (position error 0.024 mm, rotation error 0.000040 rad).
+[2026-10-08T09:45:29.914+02:00] Translate to next line position
+[2026-10-08T09:45:32.224+02:00] 
+[2026-10-08T09:45:32.224+02:00] Measurement 2, position 150.000 mm
+[2026-10-08T09:45:32.397+02:00] SIMU Point 2 X+offset=150.000 mm: The cobot starts its procedure to apply force.
+[2026-10-08T09:45:32.636+02:00] Force program: waiting for initialization.
+[2026-10-08T09:45:32.636+02:00] Force program: waiting for contact, distance limit, or timeout.
+[2026-10-08T09:45:34.949+02:00] SIMU Point 2 X+offset=150.000 mm: The cobot is in contact with the wall (force reached).
+[2026-10-08T09:45:34.949+02:00] SIMU Point 2 X+offset=150.000 mm: Indicated to client that force has been reached.
+[2026-10-08T09:45:35.033+02:00] Data acquisition client 127.0.0.1:55641: received STATE
+[2026-10-08T09:45:35.033+02:00] Data acquisition client 127.0.0.1:55641: sent {"X":-849.8512975961594,"Y":0.0,"Point":2,"Moving":false,"Error":"ok"}
+[2026-10-08T09:45:35.847+02:00] SIMU Point 2 X+offset=150.000 mm: End of contact (received GO from client in 0.891 s).
+[2026-10-08T09:45:35.847+02:00] Data acquisition client 127.0.0.1:55641: received GO
+[2026-10-08T09:45:35.847+02:00] Force program: acquisition acknowledged; releasing force hold.
+[2026-10-08T09:45:35.847+02:00] Force program: waiting for return to the measurement pose.
+[2026-10-08T09:45:36.036+02:00] Force program: verifying the pre-force pose.
+[2026-10-08T09:45:36.036+02:00] Measurement target verification failed; correcting pose before force application (position error 0.000030 m, rotation error 0.000139 rad).
+[2026-10-08T09:45:36.393+02:00] Force program: return verified (position error 0.036 mm, rotation error 0.000045 rad).
+[2026-10-08T09:45:37.442+02:00] Pass obstacle through Home detour to 600.000 mm
+[2026-10-08T09:45:37.442+02:00] Obstacle route: measured low line -> p_start_l
+[2026-10-08T09:45:39.764+02:00] Obstacle route: p_start_l -> p_start_h
+[2026-10-08T09:45:42.749+02:00] Obstacle route: p_start_h -> Home
+[2026-10-08T09:45:42.794+02:00] Routine: start_to_home
+[2026-10-08T09:45:42.794+02:00] Moving to p_start_h (movej, a=0.4, v=2.0, r=0.0)
+[2026-10-08T09:45:42.794+02:00] Moving to home_to_start2 (movej, a=0.4, v=2.0, r=5.0)
+[2026-10-08T09:45:42.794+02:00] Moving to home_to_start1 (movej, a=0.4, v=2.0, r=5.0)
+[2026-10-08T09:45:42.794+02:00] Moving to Home (movej, a=0.4, v=2.0, r=0.0)
+[2026-10-08T09:45:52.565+02:00] Obstacle route: Home -> p_end_h
+[2026-10-08T09:45:52.604+02:00] Routine: home_to_end
+[2026-10-08T09:45:52.605+02:00] Moving to Home (movej, a=0.4, v=2.0, r=0.0)
+[2026-10-08T09:45:52.605+02:00] Moving to end_to_home3 (movej, a=0.4, v=2.0, r=5.0)
+[2026-10-08T09:45:52.605+02:00] Moving to end_to_home2 (movej, a=0.4, v=2.0, r=5.0)
+[2026-10-08T09:45:52.605+02:00] Moving to end_to_home1 (movej, a=0.4, v=2.0, r=5.0)
+[2026-10-08T09:45:52.605+02:00] Moving to p_end_h (movej, a=0.4, v=2.0, r=0.0)
+[2026-10-08T09:46:05.167+02:00] Obstacle route: p_end_h -> p_end_l
+[2026-10-08T09:46:05.167+02:00] Obstacle route: translate on low line to 600.000 mm
+[2026-10-08T09:46:18.800+02:00] 
+[2026-10-08T09:46:18.800+02:00] Measurement 5, position 600.000 mm
+[2026-10-08T09:46:18.983+02:00] SIMU Point 5 X+offset=600.000 mm: The cobot starts its procedure to apply force.
+[2026-10-08T09:46:19.185+02:00] Force program: waiting for initialization.
+[2026-10-08T09:46:19.185+02:00] Force program: waiting for contact, distance limit, or timeout.
+[2026-10-08T09:46:21.504+02:00] SIMU Point 5 X+offset=600.000 mm: The cobot is in contact with the wall (force reached).
+[2026-10-08T09:46:21.504+02:00] SIMU Point 5 X+offset=600.000 mm: Indicated to client that force has been reached.
+[2026-10-08T09:46:21.818+02:00] Data acquisition client 127.0.0.1:55641: received STATE
+[2026-10-08T09:46:21.818+02:00] Data acquisition client 127.0.0.1:55641: sent {"X":-399.85053636936976,"Y":0.0,"Point":5,"Moving":false,"Error":"ok"}
+[2026-10-08T09:46:22.610+02:00] SIMU Point 5 X+offset=600.000 mm: End of contact (received GO from client in 1.109 s).
+[2026-10-08T09:46:22.610+02:00] Data acquisition client 127.0.0.1:55641: received GO
+[2026-10-08T09:46:22.610+02:00] Force program: acquisition acknowledged; releasing force hold.
+[2026-10-08T09:46:22.610+02:00] Force program: waiting for return to the measurement pose.
+[2026-10-08T09:46:22.984+02:00] Force program: verifying the pre-force pose.
+[2026-10-08T09:46:22.984+02:00] Force program: return verified (position error 0.023 mm, rotation error 0.000051 rad).
+[2026-10-08T09:46:24.025+02:00] Translate to next line position
+[2026-10-08T09:46:26.349+02:00] 
+[2026-10-08T09:46:26.349+02:00] Measurement 6, position 750.000 mm
+[2026-10-08T09:46:26.529+02:00] SIMU Point 6 X+offset=750.000 mm: The cobot starts its procedure to apply force.
+[2026-10-08T09:46:26.721+02:00] Force program: waiting for initialization.
+[2026-10-08T09:46:26.721+02:00] Force program: waiting for contact, distance limit, or timeout.
+[2026-10-08T09:46:29.048+02:00] SIMU Point 6 X+offset=750.000 mm: The cobot is in contact with the wall (force reached).
+[2026-10-08T09:46:29.048+02:00] SIMU Point 6 X+offset=750.000 mm: Indicated to client that force has been reached.
+[2026-10-08T09:46:29.272+02:00] Data acquisition client 127.0.0.1:55641: received STATE
+[2026-10-08T09:46:29.272+02:00] Data acquisition client 127.0.0.1:55641: sent {"X":-249.72098303952563,"Y":0.0,"Point":6,"Moving":false,"Error":"ok"}
+[2026-10-08T09:46:30.059+02:00] SIMU Point 6 X+offset=750.000 mm: End of contact (received GO from client in 1.015 s).
+[2026-10-08T09:46:30.059+02:00] Data acquisition client 127.0.0.1:55641: received GO
+[2026-10-08T09:46:30.059+02:00] Force program: acquisition acknowledged; releasing force hold.
+[2026-10-08T09:46:30.059+02:00] Force program: waiting for return to the measurement pose.
+[2026-10-08T09:46:30.879+02:00] Force program: verifying the pre-force pose.
+[2026-10-08T09:46:30.879+02:00] Force program: return verified (position error 0.011 mm, rotation error 0.000035 rad).
+[2026-10-08T09:46:31.919+02:00] Translate to next line position
+[2026-10-08T09:46:34.239+02:00] 
+[2026-10-08T09:46:34.239+02:00] Measurement 7, position 900.000 mm
+[2026-10-08T09:46:34.393+02:00] SIMU Point 7 X+offset=900.000 mm: The cobot starts its procedure to apply force.
+[2026-10-08T09:46:34.553+02:00] Force program: waiting for initialization.
+[2026-10-08T09:46:34.553+02:00] Force program: waiting for contact, distance limit, or timeout.
+[2026-10-08T09:46:36.884+02:00] SIMU Point 7 X+offset=900.000 mm: The cobot is in contact with the wall (force reached).
+[2026-10-08T09:46:36.884+02:00] SIMU Point 7 X+offset=900.000 mm: Indicated to client that force has been reached.
+[2026-10-08T09:46:37.231+02:00] Data acquisition client 127.0.0.1:55641: received STATE
+[2026-10-08T09:46:37.231+02:00] Data acquisition client 127.0.0.1:55641: sent {"X":-99.84708211555,"Y":0.0,"Point":7,"Moving":false,"Error":"ok"}
+[2026-10-08T09:46:38.022+02:00] SIMU Point 7 X+offset=900.000 mm: End of contact (received GO from client in 1.141 s).
+[2026-10-08T09:46:38.022+02:00] Data acquisition client 127.0.0.1:55641: received GO
+[2026-10-08T09:46:38.022+02:00] Force program: acquisition acknowledged; releasing force hold.
+[2026-10-08T09:46:38.022+02:00] Force program: waiting for return to the measurement pose.
+[2026-10-08T09:46:38.373+02:00] Force program: verifying the pre-force pose.
+[2026-10-08T09:46:38.373+02:00] Force program: return verified (position error 0.011 mm, rotation error 0.000024 rad).
+[2026-10-08T09:46:39.401+02:00] Translate to next line position
+[2026-10-08T09:46:41.716+02:00] 
+[2026-10-08T09:46:41.716+02:00] Measurement 8, position 1050.000 mm
+[2026-10-08T09:46:41.883+02:00] SIMU Point 8 X+offset=1050.000 mm: The cobot starts its procedure to apply force.
+[2026-10-08T09:46:42.056+02:00] Force program: waiting for initialization.
+[2026-10-08T09:46:42.056+02:00] Force program: waiting for contact, distance limit, or timeout.
+[2026-10-08T09:46:44.385+02:00] SIMU Point 8 X+offset=1050.000 mm: The cobot is in contact with the wall (force reached).
+[2026-10-08T09:46:44.385+02:00] SIMU Point 8 X+offset=1050.000 mm: Indicated to client that force has been reached.
+[2026-10-08T09:46:44.689+02:00] Data acquisition client 127.0.0.1:55641: received STATE
+[2026-10-08T09:46:44.689+02:00] Data acquisition client 127.0.0.1:55641: sent {"X":50.15633446985101,"Y":0.0,"Point":8,"Moving":false,"Error":"ok"}
+[2026-10-08T09:46:45.476+02:00] SIMU Point 8 X+offset=1050.000 mm: End of contact (received GO from client in 1.094 s).
+[2026-10-08T09:46:45.476+02:00] Data acquisition client 127.0.0.1:55641: received GO
+[2026-10-08T09:46:45.476+02:00] Force program: acquisition acknowledged; releasing force hold.
+[2026-10-08T09:46:45.476+02:00] Force program: waiting for return to the measurement pose.
+[2026-10-08T09:46:45.850+02:00] Force program: verifying the pre-force pose.
+[2026-10-08T09:46:45.850+02:00] Force program: return verified (position error 0.008 mm, rotation error 0.000039 rad).
+[2026-10-08T09:46:46.891+02:00] Translate to next line position
+[2026-10-08T09:46:49.218+02:00] 
+[2026-10-08T09:46:49.218+02:00] Measurement 9, position 1200.000 mm
+[2026-10-08T09:46:49.399+02:00] SIMU Point 9 X+offset=1200.000 mm: The cobot starts its procedure to apply force.
+[2026-10-08T09:46:49.587+02:00] Force program: waiting for initialization.
+[2026-10-08T09:46:49.587+02:00] Force program: waiting for contact, distance limit, or timeout.
+[2026-10-08T09:46:51.902+02:00] SIMU Point 9 X+offset=1200.000 mm: The cobot is in contact with the wall (force reached).
+[2026-10-08T09:46:51.902+02:00] SIMU Point 9 X+offset=1200.000 mm: Indicated to client that force has been reached.
+[2026-10-08T09:46:52.139+02:00] Data acquisition client 127.0.0.1:55641: received STATE
+[2026-10-08T09:46:52.139+02:00] Data acquisition client 127.0.0.1:55641: sent {"X":200.09903882239965,"Y":0.0,"Point":9,"Moving":false,"Error":"ok"}
+[2026-10-08T09:46:52.934+02:00] SIMU Point 9 X+offset=1200.000 mm: End of contact (received GO from client in 1.031 s).
+[2026-10-08T09:46:52.934+02:00] Data acquisition client 127.0.0.1:55641: received GO
+[2026-10-08T09:46:52.934+02:00] Force program: acquisition acknowledged; releasing force hold.
+[2026-10-08T09:46:52.934+02:00] Force program: waiting for return to the measurement pose.
+[2026-10-08T09:46:53.144+02:00] Force program: verifying the pre-force pose.
+[2026-10-08T09:46:53.144+02:00] Force program: return verified (position error 0.019 mm, rotation error 0.000114 rad).
+[2026-10-08T09:46:54.192+02:00] Translate to next line position
+[2026-10-08T09:46:57.100+02:00] Traceback (most recent call last):
+[2026-10-08T09:46:57.100+02:00]   File "C:\Users\benoit.jordan\Documents\UR15 Cobot\src\program\commands\run_measurement_sequence.py", line 591, in <module>
+[2026-10-08T09:46:57.101+02:00]     main()
+[2026-10-08T09:46:57.101+02:00]   File "C:\Users\benoit.jordan\Documents\UR15 Cobot\src\program\commands\run_measurement_sequence.py", line 539, in main
+[2026-10-08T09:46:57.101+02:00]     run_robot_sequence(
+[2026-10-08T09:46:57.101+02:00]   File "C:\Users\benoit.jordan\Documents\UR15 Cobot\src\program\commands\run_measurement_sequence.py", line 465, in run_robot_sequence
+[2026-10-08T09:46:57.102+02:00]     finish_side = run_measurements(
+[2026-10-08T09:46:57.102+02:00]                   ^^^^^^^^^^^^^^^^^
+[2026-10-08T09:46:57.102+02:00]   File "C:\Users\benoit.jordan\Documents\UR15 Cobot\src\measurement\run_measurements.py", line 91, in run_measurements
+[2026-10-08T09:46:57.103+02:00]     return _run_measurements(
+[2026-10-08T09:46:57.103+02:00]            ^^^^^^^^^^^^^^^^^^
+[2026-10-08T09:46:57.103+02:00]   File "C:\Users\benoit.jordan\Documents\UR15 Cobot\src\measurement\run_measurements.py", line 162, in _run_measurements
+[2026-10-08T09:46:57.103+02:00]     write_state(state_path, state)
+[2026-10-08T09:46:57.103+02:00]   File "C:\Users\benoit.jordan\Documents\UR15 Cobot\src\measurement\measurement_state.py", line 16, in write_state
+[2026-10-08T09:46:57.104+02:00]     temporary_path.replace(state_path)
+[2026-10-08T09:46:57.104+02:00]   File "C:\Users\benoit.jordan\AppData\Local\Programs\Python\Python312\Lib\pathlib.py", line 1376, in replace
+[2026-10-08T09:46:57.109+02:00]     os.replace(self, target)
+[2026-10-08T09:46:57.109+02:00] PermissionError: [WinError 5] Access is denied: 'C:\\Users\\benoit.jordan\\Documents\\UR15 Cobot\\temporary_data\\2026-10-08_09-44-54-320208\\state.json.tmp' -> 'C:\\Users\\benoit.jordan\\Documents\\UR15 Cobot\\temporary_data\\2026-10-08_09-44-54-320208\\state.json'

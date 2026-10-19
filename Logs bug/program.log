@@ -1,0 +1,70 @@
+[2026-10-08T09:33:59.770+02:00] Data acquisition control server disabled by measurement.data_server=false.
+[2026-10-08T09:33:59.850+02:00] Startup position verified: robot is at Home.
+[2026-10-08T09:33:59.856+02:00] Waiting for operator confirmation to start robot motion.
+[2026-10-08T09:34:09.872+02:00] Operator confirmed robot motion start.
+[2026-10-08T09:34:09.905+02:00] Routine: home_to_start
+[2026-10-08T09:34:09.905+02:00] Moving to Home (movej, a=0.4, v=2.0, r=0.0)
+[2026-10-08T09:34:09.905+02:00] Moving to home_to_start1 (movej, a=0.4, v=2.0, r=5.0)
+[2026-10-08T09:34:09.905+02:00] Moving to home_to_start2 (movej, a=0.4, v=2.0, r=5.0)
+[2026-10-08T09:34:09.905+02:00] Moving to p_start_h (movej, a=0.4, v=2.0, r=0.0)
+[2026-10-08T09:34:19.759+02:00] 
+[2026-10-08T09:34:19.759+02:00] Measurement 1, position 0.000 mm
+[2026-10-08T09:34:19.759+02:00] Measurement point: move high -> low
+[2026-10-08T09:34:23.662+02:00] Force program: waiting for initialization.
+[2026-10-08T09:34:23.662+02:00] Force program: waiting for contact, distance limit, or timeout.
+[2026-10-08T09:34:25.973+02:00] Data acquisition control disabled; robot program owns acquisition and return.
+[2026-10-08T09:34:25.973+02:00] Force program: waiting for return to the measurement pose.
+[2026-10-08T09:34:28.341+02:00] Force program: verifying the pre-force pose.
+[2026-10-08T09:34:28.341+02:00] Force program: return verified (position error 0.022 mm, rotation error 0.000032 rad).
+[2026-10-08T09:34:29.384+02:00] Translate to next line position
+[2026-10-08T09:34:31.717+02:00] 
+[2026-10-08T09:34:31.717+02:00] Measurement 2, position 150.000 mm
+[2026-10-08T09:34:32.106+02:00] Force program: waiting for initialization.
+[2026-10-08T09:34:32.106+02:00] Force program: waiting for contact, distance limit, or timeout.
+[2026-10-08T09:34:34.423+02:00] Data acquisition control disabled; robot program owns acquisition and return.
+[2026-10-08T09:34:34.423+02:00] Force program: waiting for return to the measurement pose.
+[2026-10-08T09:34:36.873+02:00] Force program: verifying the pre-force pose.
+[2026-10-08T09:34:36.873+02:00] Force program: return verified (position error 0.020 mm, rotation error 0.000060 rad).
+[2026-10-08T09:34:37.914+02:00] Pass obstacle through Home detour to 600.000 mm
+[2026-10-08T09:34:37.916+02:00] Obstacle route: measured low line -> p_start_l
+[2026-10-08T09:34:40.235+02:00] Obstacle route: p_start_l -> p_start_h
+[2026-10-08T09:34:43.209+02:00] Obstacle route: p_start_h -> Home
+[2026-10-08T09:34:43.225+02:00] Routine: start_to_home
+[2026-10-08T09:34:43.226+02:00] Moving to p_start_h (movej, a=0.4, v=2.0, r=0.0)
+[2026-10-08T09:34:43.226+02:00] Moving to home_to_start2 (movej, a=0.4, v=2.0, r=5.0)
+[2026-10-08T09:34:43.226+02:00] Moving to home_to_start1 (movej, a=0.4, v=2.0, r=5.0)
+[2026-10-08T09:34:43.226+02:00] Moving to Home (movej, a=0.4, v=2.0, r=0.0)
+[2026-10-08T09:34:53.061+02:00] Obstacle route: Home -> p_end_h
+[2026-10-08T09:34:53.102+02:00] Routine: home_to_end
+[2026-10-08T09:34:53.102+02:00] Moving to Home (movej, a=0.4, v=2.0, r=0.0)
+[2026-10-08T09:34:53.102+02:00] Moving to end_to_home3 (movej, a=0.4, v=2.0, r=5.0)
+[2026-10-08T09:34:53.102+02:00] Moving to end_to_home2 (movej, a=0.4, v=2.0, r=5.0)
+[2026-10-08T09:34:53.102+02:00] Moving to end_to_home1 (movej, a=0.4, v=2.0, r=5.0)
+[2026-10-08T09:34:53.102+02:00] Moving to p_end_h (movej, a=0.4, v=2.0, r=0.0)
+[2026-10-08T09:35:05.620+02:00] Obstacle route: p_end_h -> p_end_l
+[2026-10-08T09:35:05.620+02:00] Obstacle route: translate on low line to 600.000 mm
+[2026-10-08T09:35:19.260+02:00] 
+[2026-10-08T09:35:19.260+02:00] Measurement 5, position 600.000 mm
+[2026-10-08T09:35:19.667+02:00] Force program: waiting for initialization.
+[2026-10-08T09:35:19.667+02:00] Force program: waiting for contact, distance limit, or timeout.
+[2026-10-08T09:35:22.000+02:00] Data acquisition control disabled; robot program owns acquisition and return.
+[2026-10-08T09:35:22.000+02:00] Force program: waiting for return to the measurement pose.
+[2026-10-08T09:35:25.062+02:00] Traceback (most recent call last):
+[2026-10-08T09:35:25.062+02:00]   File "C:\Users\benoit.jordan\Documents\UR15 Cobot\src\program\commands\run_measurement_sequence.py", line 591, in <module>
+[2026-10-08T09:35:25.062+02:00]     main()
+[2026-10-08T09:35:25.062+02:00]   File "C:\Users\benoit.jordan\Documents\UR15 Cobot\src\program\commands\run_measurement_sequence.py", line 539, in main
+[2026-10-08T09:35:25.064+02:00]     run_robot_sequence(
+[2026-10-08T09:35:25.064+02:00]   File "C:\Users\benoit.jordan\Documents\UR15 Cobot\src\program\commands\run_measurement_sequence.py", line 465, in run_robot_sequence
+[2026-10-08T09:35:25.064+02:00]     finish_side = run_measurements(
+[2026-10-08T09:35:25.064+02:00]                   ^^^^^^^^^^^^^^^^^
+[2026-10-08T09:35:25.064+02:00]   File "C:\Users\benoit.jordan\Documents\UR15 Cobot\src\measurement\run_measurements.py", line 91, in run_measurements
+[2026-10-08T09:35:25.064+02:00]     return _run_measurements(
+[2026-10-08T09:35:25.064+02:00]            ^^^^^^^^^^^^^^^^^^
+[2026-10-08T09:35:25.064+02:00]   File "C:\Users\benoit.jordan\Documents\UR15 Cobot\src\measurement\run_measurements.py", line 252, in _run_measurements
+[2026-10-08T09:35:25.064+02:00]     measurement_success, measurement_timestamp = apply_force(
+[2026-10-08T09:35:25.064+02:00]                                                  ^^^^^^^^^^^^
+[2026-10-08T09:35:25.069+02:00]   File "C:\Users\benoit.jordan\Documents\UR15 Cobot\src\measurement\apply_force.py", line 346, in apply_force
+[2026-10-08T09:35:25.072+02:00]     wait_for_status(
+[2026-10-08T09:35:25.072+02:00]   File "C:\Users\benoit.jordan\Documents\UR15 Cobot\src\measurement\apply_force.py", line 114, in wait_for_status
+[2026-10-08T09:35:25.072+02:00]     raise TimeoutError(
+[2026-10-08T09:35:25.072+02:00] TimeoutError: Force program motion did not start during return to the measurement pose within 2.0 s; last status was 1.
