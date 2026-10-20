@@ -68,6 +68,9 @@ input, select {
 .toggle-row, .inline-controls, .actions { display: flex; align-items: center; gap: 10px; }
 .option-toggle, .checkbox-label { display: flex; align-items: center; gap: 8px; cursor: pointer; }
 .option-toggle input, .checkbox-label input { width: auto; }
+.toggle-row { margin-bottom: 12px; }
+fieldset > .option-toggle { margin-bottom: 12px; }
+.run-options { margin-bottom: 12px; }
 .optional-disabled { opacity: .46; }
 .actions { justify-content: flex-end; margin-top: 14px; }
 .config-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 14px; }
@@ -119,3 +122,4 @@ button:disabled { cursor: not-allowed; opacity: .48; }
   .parameter-row.single::after { display: none; }
   .routine-file-row select { grid-column: auto; }
 }
+.simulation-force { filter: blur(3px); opacity: .5; }

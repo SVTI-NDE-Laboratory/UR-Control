@@ -236,6 +236,16 @@ def line_geometry(config: dict, routines_data: dict | None = None) -> dict:
 
     safe_name = parameters.get("safe_start_point", "p_start_h")
     taught_safe_pose = _waypoint_pose(routines_data, safe_name)
+    auto_fit = parameters.get("auto_fit", True)
+    if not isinstance(auto_fit, bool):
+        raise ValueError("auto_fit must be true or false.")
+    if not auto_fit:
+        if isinstance(count, bool) or not isinstance(count, int) or count < 2:
+            raise ValueError("number_of_measurements must be an integer of at least 2.")
+        if requested_increment is None or not math.isfinite(requested_increment) or requested_increment <= 0:
+            raise ValueError("Point-to-point increment must be positive and finite.")
+        parameters = dict(parameters)
+        parameters["x_end"] = float(parameters.get("x_start", parameters.get("offset_x", 0.0))) + (count - 1) * requested_increment
     offset_geometry = point_to_point_offset_geometry(
         parameters,
         taught_safe_pose,
@@ -253,7 +263,9 @@ def line_geometry(config: dict, routines_data: dict | None = None) -> dict:
         raise ValueError("Point-to-point increment must be positive.")
     if spacing_source not in {"increment", "count"}:
         raise ValueError("Point-to-point spacing_source must be 'increment' or 'count'.")
-    if spacing_source == "count":
+    if not auto_fit:
+        increment = float(requested_increment)
+    elif spacing_source == "count":
         if count is None:
             raise ValueError("Point-to-point count spacing requires number_of_measurements.")
         increment = length / (count - 1)

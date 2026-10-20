@@ -4,6 +4,8 @@ import json
 import os
 import subprocess
 import sys
+import tempfile
+import time
 from pathlib import Path
 from typing import Any
 
@@ -62,9 +64,24 @@ def choose_directory() -> Path | None:
 def write_json_atomic(path: Path, value: dict[str, Any]) -> None:
     """Write JSON without exposing a partially written file to the UI."""
 
-    temporary_path = path.with_suffix(path.suffix + ".tmp")
-    temporary_path.write_text(json.dumps(value, indent=2) + "\n", encoding="utf-8")
-    temporary_path.replace(path)
+    # Each writer owns its staging file. Windows readers can briefly prevent
+    # replacement of the destination, so retry without exposing partial JSON.
+    descriptor, name = tempfile.mkstemp(prefix=path.name + ".", suffix=".tmp", dir=path.parent)
+    temporary_path = Path(name)
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
+            stream.write(json.dumps(value, indent=2) + "\n")
+        deadline = time.monotonic() + .5
+        while True:
+            try:
+                temporary_path.replace(path)
+                break
+            except PermissionError:
+                if time.monotonic() >= deadline:
+                    raise
+                time.sleep(.01)
+    finally:
+        temporary_path.unlink(missing_ok=True)
 
 
 def assert_safe_start_position(routine_file: Path) -> None:

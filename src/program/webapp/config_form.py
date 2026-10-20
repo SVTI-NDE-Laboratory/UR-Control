@@ -101,6 +101,7 @@ def edited_config(
         except ValueError as error:
             raise ValueError(f"{FIELD_LABELS.get(key, key)}: {error}") from error
     config["line"] = {"method": method, "parameters": parameters}
+    parameters["auto_fit"] = parse_value(fields.get("line.parameters.auto_fit", ["true"])[0], True)
     if method == "point_to_point":
         spacing_source = fields.get(
             "line.parameters.spacing_source", ["increment"]
@@ -263,11 +264,14 @@ def form_html(
         f'value="{html.escape(point_values["spacing_source"], quote=True)}">'
     )
     point_offset_attributes = "required"
+    auto_fit_checked = " checked" if parameters.get("auto_fit", True) else ""
     sections = [
         '<fieldset><legend>Measurement Line</legend>'
         '<div class="parameter-row routine-file-row"><label for="routine-file">Routine File</label>'
         '<select id="routine-file" aria-label="Routine file used by the measurement"></select></div>'
-        '<small id="point-method-note" class="muted">Fixed: p_start_l to p_end_l</small>'
+        '<small id="point-method-note" hidden></small>'
+        '<div class="toggle-row"><label class="option-toggle">'
+        f'<input id="auto-fit" type="checkbox"{auto_fit_checked}>Automatic Fit</label></div>'
         '<div class="parameter-row double line-spacing-row">'
         f'<span>Increment [mm] / # Measurements</span>{increment}'
         f'<input id="measurement-count" name="line.parameters.number_of_measurements" type="number" min="2" step="1" value="{measurement_count}" aria-label="Number of measurements" required>'
@@ -305,11 +309,14 @@ def form_html(
     holding = input_html("measurement", "holding_force")
     maximum = input_html("measurement", "max_displacement")
     server_checked = " checked" if current_value("measurement", "data_server") else ""
+    simulation_checked = " checked" if current_value("measurement", "simulation") else ""
     measurement_controls = (
         '<div class="toggle-row">'
         '<label class="option-toggle"><input id="acquisition-server-enabled" '
         'name="acquisition.server_profile" type="checkbox" value="server"'
-        f'{server_checked}>Measurement with server</label></div>'
+        f'{server_checked}>With RTM Program</label>'
+        '<label class="option-toggle">'
+        f'<input id="simulation-enabled" type="checkbox"{simulation_checked}>Simulation</label></div>'
         f'<div class="parameter-row double force-row"><span>Force Contact / Holding [N]</span>{contact}{holding}</div>'
         '<div class="parameter-row single">'
         f'<label for="measurement.max_displacement">Maximum Displacement [mm]</label>{maximum}</div>'

@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>SVTI UR Cobot Control</title>
+  <link rel="stylesheet" href="/static/styles.css">
+  <link rel="stylesheet" href="/v2-static/styles.css">
+  <script src="/v2-static/app.js" defer></script>
+</head>
+<body>
+  <header class="control-header">
+    <h1>SVTI UR Cobot Control</h1>
+    <nav aria-label="Control mode"><a href="/manual" id="manual-tab">Manual Mode</a><a href="/flexible" id="flexible-tab">Flexible measurement</a><a href="/automatic" id="automatic-tab">Automatic measurements</a></nav>
+    <div class="header-tools">
+      <a id="settings-tab" class="settings-button" href="/settings" title="Settings">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><path d="m10 2-.5 2.2-1.8.8-1.9-1.2-2.8 2.8 1.2 1.9-.8 1.8L2 10v4l2.2.5.8 1.8-1.2 1.9 2.8 2.8 1.9-1.2 1.8.8.5 2.2h4l.5-2.2 1.8-.8 1.9 1.2 2.8-2.8-1.2-1.9.8-1.8L22 14v-4l-2.2-.5-.8-1.8 1.2-1.9-2.8-2.8-1.9 1.2-1.8-.8L14 2Z"/><circle cx="12" cy="12" r="3"/></svg>
+        Settings
+      </a>
+      <span class="routine-file-label">Routine file: <span id="routine-file">Loading…</span></span>
+      <button id="close">Close app</button>
+    </div>
+  </header>
+  <div class="layout">
+    <main>
+      <section id="manual-page" aria-label="Manual control">
+        <div class="cards">
+          <form id="waypoint-form" class="panel">
+            <fieldset><legend>Go to waypoint</legend>
+              <div class="parameter-row routine-file-row"><label for="waypoint">Waypoint</label><select id="waypoint" required></select></div>
+              <div class="parameter-row routine-file-row"><label for="motion">Motion type</label><select id="motion"><option value="l">Linear (movel)</option><option value="j">Joint (movej)</option></select></div>
+              <div class="parameter-row single"><label for="speed" id="speed-label">Speed [mm/s]</label><input id="speed" type="number" value="50" min="0.001" max="150" step="any" required></div>
+              <div class="parameter-row single"><label for="acceleration" id="acceleration-label">Acceleration [mm/s²]</label><input id="acceleration" type="number" value="100" min="0.001" max="150" step="any" required></div>
+            </fieldset>
+            <div class="actions"><button class="primary action" type="submit">Go to waypoint</button></div>
+          </form>
+          <form id="routine-form" class="panel">
+            <fieldset><legend>Perform routine</legend>
+              <div class="parameter-row routine-file-row"><label for="routine">Routine</label><select id="routine" required></select></div>
+              <dl class="state-grid"><dt>Starting waypoint</dt><dd id="routine-first">—</dd></dl>
+            </fieldset>
+            <div class="actions"><button class="primary action" type="submit">Perform routine</button></div>
+          </form>
+        </div>
+      </section>
+      <section id="flexible-page" aria-label="Flexible measurement" hidden>
+        <div class="cards">
+          <section class="panel flexible-session">
+            <fieldset><legend>Flexible measurement</legend>
+              <dl class="state-grid">
+                <dt>Session</dt><dd id="flexible-state">Not started</dd>
+                <dt>Plane X / Y [mm]</dt><dd id="flexible-position">—</dd>
+              </dl>
+            </fieldset>
+            <div class="actions"><button id="start-flexible" class="primary" type="button">Start program</button><button id="end-flexible" type="button" disabled>End and return Home</button></div>
+          </section>
+          <form id="plane-form" class="panel">
+            <fieldset><legend>Move in plane</legend>
+              <div class="parameter-row single"><label for="plane-x">X [mm]</label><input id="plane-x" type="number" value="0" step="any" required></div>
+              <div class="parameter-row single"><label for="plane-y">Y [mm]</label><input id="plane-y" type="number" value="0" step="any" required></div>
+            </fieldset>
+            <div class="actions"><button id="move-plane" class="primary" type="submit" disabled>Move</button></div>
+          </form>
+          <form id="force-form" class="panel">
+            <fieldset><legend>Apply force</legend>
+              <label class="option-toggle"><input id="force-simulation" type="checkbox">Simulation</label>
+              <div class="parameter-row single"><label for="threshold">Contact threshold [N]</label><input id="threshold" type="number" value="140" min="0.001" step="any" required></div>
+              <div class="parameter-row single"><label for="force">Contact force [N]</label><input id="force" type="number" value="160" min="0.001" step="any" required></div>
+              <div class="parameter-row single"><label for="force-duration">Hold [s]</label><input id="force-duration" type="number" value="3" min="0" max="8" step="any" required></div>
+            </fieldset>
+            <div class="actions"><button id="apply-force" class="primary action" type="submit" disabled>Apply force</button></div>
+          </form>
+        </div>
+      </section>
+      <section id="automatic-page" hidden><iframe title="Automatic measurement parameters and progress" id="configuration-frame"></iframe></section>
+      <section id="settings-page" aria-label="Settings" hidden></section>
+    </main>
+    <aside class="panel" aria-label="Cobot status">
+      <fieldset><legend>Status</legend>
+        <p id="general" class="mode-status">Idle</p>
+      </fieldset>
+      <fieldset><legend>Position</legend>
+        <dl class="state-grid position-grid">
+          <dt>Waypoint</dt><dd id="position">—</dd>
+          <dt>TCP (X, Y, Z)</dt><dd id="coordinates">—</dd>
+          <dt>Plane (X, Y)</dt><dd id="plane-coordinates">—</dd>
+        </dl>
+      </fieldset>
+      <fieldset><legend>Indicators</legend>
+        <ul class="indicators">
+          <li><i id="moving-led" class="led" role="img" aria-label="Moving inactive"></i>Moving</li>
+          <li><i id="force-led" class="led" role="img" aria-label="Force mode inactive"></i>Force mode</li>
+          <li class="indicator-full"><i id="server-led" class="led" role="img" aria-label="Acquisition inactive"></i>Acquisition</li>
+          <li class="indicator-full"><i id="error-led" class="led" role="img" aria-label="Error inactive"></i>Error</li>
+        </ul>
+      </fieldset>
+      <div class="actions"><button id="stop" class="danger" disabled>Stop current action</button></div>
+    </aside>
+  </div>
+  <dialog id="blocking-error-dialog" role="alertdialog" aria-labelledby="blocking-error-title" aria-describedby="blocking-error-message">
+    <h2 id="blocking-error-title">Error</h2>
+    <p id="blocking-error-message"></p>
+    <form method="dialog" class="actions">
+      <button id="blocking-error-ok" type="submit" autofocus>OK</button>
+    </form>
+  </dialog>
+  <dialog id="waypoint-safety-dialog" aria-labelledby="waypoint-safety-title" aria-describedby="waypoint-safety-message">
+    <h2 id="waypoint-safety-title">Check waypoint safety</h2>
+    <p id="waypoint-safety-message"></p>
+    <form method="dialog" class="actions">
+      <button id="waypoint-safety-no" type="submit" value="no" autofocus>No</button>
+      <button type="submit" value="yes">Yes, move forward</button>
+    </form>
+  </dialog>
+</body>
+</html>
