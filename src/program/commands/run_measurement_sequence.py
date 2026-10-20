@@ -44,7 +44,7 @@ from robot_connection import (
 )
 from run_measurements import MeasurementUnavailableError, run_measurements
 from run_routine import run_routine
-from line_planner import is_obstacle, line_positions
+from line_planner import is_obstacle, line_positions, line_geometry, start_entry_crosses_obstacle
 from data_acquisition.server_control import (
     AcquisitionControlServer,
     read_server_config,
@@ -401,12 +401,14 @@ def first_measurement_is_blocked(
     measurement_config: dict[str, Any],
     routines_data: dict[str, Any],
 ) -> bool:
-    """Return whether the first planned measurement position is in an obstacle."""
+    """Return whether the first point or the taught-start approach is blocked."""
 
     positions = line_positions(measurement_config, routines_data)
     if not positions:
         return False
-    return is_obstacle(positions[0][1], measurement_config)
+    return is_obstacle(positions[0][1], measurement_config) or start_entry_crosses_obstacle(
+        measurement_config, line_geometry(measurement_config, routines_data)
+    )
 
 
 def run_robot_sequence(

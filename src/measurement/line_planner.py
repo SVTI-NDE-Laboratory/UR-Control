@@ -6,6 +6,7 @@ import math
 TRANSLATION = "translation"
 POINT_TO_POINT = "point_to_point"
 MM_PER_METRE = 1000.0
+X_SCOPE_ALLOWANCE_MM = 100.0
 
 
 def as_millimetres(value: float) -> float:
@@ -53,7 +54,11 @@ def line_parameters(config: dict) -> dict:
 
 
 def obstacle_interval(config: dict) -> tuple[float, float] | None:
-    """Return the configured obstacle interval, or ``None`` when omitted."""
+    """Return obstacle bounds relative to the selected segment's start.
+
+    Point-to-point obstacle entries use the taught X origin, like X Start/End.
+    Motion planning uses distance from X Start, so convert at this boundary.
+    """
 
     obstacle = config.get("obstacle") or {}
     has_start = "start" in obstacle
@@ -65,11 +70,17 @@ def obstacle_interval(config: dict) -> tuple[float, float] | None:
 
     start = obstacle["start"]
     end = obstacle["end"]
+    if not all(math.isfinite(value) for value in (start, end)):
+        raise ValueError("Obstacle positions must be finite numbers.")
     if start < 0:
         raise ValueError("Obstacle start must not be negative.")
     if start > end:
         raise ValueError("Obstacle start must not be greater than obstacle end.")
-    return start, end
+    origin = 0.0
+    if config.get("line", {}).get("method", TRANSLATION) == POINT_TO_POINT:
+        parameters = line_parameters(config)
+        origin = float(parameters.get("x_start", parameters.get("offset_x", 0.0)))
+    return start - origin, end - origin
 
 
 def normalize(vector: list[float]) -> list[float]:
@@ -127,7 +138,7 @@ def point_to_point_offsets(parameters: dict, line_length: float) -> tuple[float,
 
     x_start = float(parameters.get("x_start", parameters.get("offset_x", 0.0)))
     x_end = float(parameters.get("x_end", line_length))
-    if x_end <= 0:
+    if x_end == 0 and parameters.get("auto_fit", True):
         x_end = line_length
     return x_start, x_end, float(parameters.get("offset_y", 0.0))
 
@@ -141,7 +152,7 @@ def point_to_point_offset_geometry(
 ) -> dict:
     """Resolve the selected point-to-point segment and lateral offset.
 
-    X follows ``p_start_l -> p_end_l`` and is bounded by those taught
+    X follows ``p_start_l -> p_end_l``, allowing up to 100 mm beyond the taught
     endpoints. Z is used only to derive the local point-to-point frame from
     ``p_start_h -> p_start_l``. Y is perpendicular to the X/Z plane using the
     right-hand convention
@@ -149,11 +160,18 @@ def point_to_point_offset_geometry(
     """
 
     x_start, x_end, offset_y = point_to_point_offsets(parameters, line_length)
-    if x_start < 0:
-        raise ValueError("X Start must not be negative.")
-    if x_end > line_length + 1e-9:
-        raise ValueError("X End must not exceed the taught point-to-point line length.")
-    if x_start >= x_end:
+    if not all(math.isfinite(value) for value in (x_start, x_end, offset_y)):
+        raise ValueError("X Start, X End and Y Offset must be finite numbers.")
+    if any(value < -X_SCOPE_ALLOWANCE_MM - 1e-9 or
+           value > line_length + X_SCOPE_ALLOWANCE_MM + 1e-9
+           for value in (x_start, x_end)):
+        raise ValueError(
+            f"X Start and X End must be between {-X_SCOPE_ALLOWANCE_MM:g} and "
+            f"{line_length + X_SCOPE_ALLOWANCE_MM:g} mm "
+            f"(at most {X_SCOPE_ALLOWANCE_MM:g} mm beyond the taught line)."
+        )
+    single_point = parameters.get("auto_fit", True) is False and parameters.get("number_of_measurements") == 1
+    if x_start > x_end or (x_start == x_end and not single_point):
         raise ValueError("X Start must be smaller than X End.")
 
     z_axis = normalize([start_pose[index] - safe_pose[index] for index in range(3)])
@@ -187,6 +205,26 @@ def point_to_point_offset_geometry(
         "y_axis": y_axis,
         "z_axis": z_axis,
     }
+
+
+def line_scope_warning(geometry: dict) -> str | None:
+    """Describe a selected segment outside the taught line for start approval."""
+
+    if geometry["method"] != POINT_TO_POINT:
+        return None
+    start, end, taught = (geometry[key] for key in ("x_start", "x_end", "taught_length"))
+    if start >= -1e-9 and end <= taught + 1e-9:
+        return None
+    def shown(value):
+        text = f"{value:.2f}".rstrip("0").rstrip(".")
+        return "0" if text == "-0" else text
+
+    return (
+        f"The measurement line goes slightly outside the taught range "
+        f"(0 to {shown(taught)} mm). X Start is {shown(start)} mm and X End is {shown(end)} mm. "
+        "Moving beyond the taught endpoints could reach a singularity or cause "
+        "unexpected movements. Do you want to start this automatic program?"
+    )
 
 
 def shifted_pose(pose: list[float], offset_vector: list[float]) -> list[float]:
@@ -240,8 +278,8 @@ def line_geometry(config: dict, routines_data: dict | None = None) -> dict:
     if not isinstance(auto_fit, bool):
         raise ValueError("auto_fit must be true or false.")
     if not auto_fit:
-        if isinstance(count, bool) or not isinstance(count, int) or count < 2:
-            raise ValueError("number_of_measurements must be an integer of at least 2.")
+        if isinstance(count, bool) or not isinstance(count, int) or count < 1:
+            raise ValueError("number_of_measurements must be a positive integer.")
         if requested_increment is None or not math.isfinite(requested_increment) or requested_increment <= 0:
             raise ValueError("Point-to-point increment must be positive and finite.")
         parameters = dict(parameters)
@@ -256,31 +294,27 @@ def line_geometry(config: dict, routines_data: dict | None = None) -> dict:
     length = offset_geometry["x_end"] - offset_geometry["x_start"]
 
     if count is not None and (
-        isinstance(count, bool) or not isinstance(count, int) or count < 2
+        isinstance(count, bool) or not isinstance(count, int) or count < 1
     ):
-        raise ValueError("number_of_measurements must be an integer of at least 2.")
-    if requested_increment is not None and requested_increment <= 0:
-        raise ValueError("Point-to-point increment must be positive.")
+        raise ValueError("number_of_measurements must be a positive integer.")
+    if requested_increment is not None and (not math.isfinite(requested_increment) or requested_increment <= 0):
+        raise ValueError("Point-to-point increment must be positive and finite.")
     if spacing_source not in {"increment", "count"}:
         raise ValueError("Point-to-point spacing_source must be 'increment' or 'count'.")
     if not auto_fit:
         increment = float(requested_increment)
     elif spacing_source == "count":
-        if count is None:
-            raise ValueError("Point-to-point count spacing requires number_of_measurements.")
+        if count is None or count < 2:
+            raise ValueError("Automatic Fit by count requires at least 2 measurements.")
         increment = length / (count - 1)
     elif requested_increment is not None:
         interval_ratio = length / requested_increment
         nearest_integer = round(interval_ratio)
         interval_count = (
             nearest_integer
-            if math.isclose(interval_ratio, nearest_integer, rel_tol=1e-9, abs_tol=1e-12)
+            if abs(nearest_integer * requested_increment - length) <= 1e-9
             else math.floor(interval_ratio)
         )
-        if interval_count < 1:
-            raise ValueError(
-                "Point-to-point increment must not exceed the line length."
-            )
         count = interval_count + 1
         increment = float(requested_increment)
     else:
@@ -371,15 +405,12 @@ def point_pose(
 ) -> list[float]:
     """Return the absolute point-to-point pose at a millimetre line position."""
 
-    fraction = position / geometry["length"]
     if lateral_offset:
         start_pose = geometry["start_pose"]
-        end_pose = geometry["end_pose"]
     else:
         start_pose = geometry["zero_y_start_pose"]
-        end_pose = geometry["zero_y_end_pose"]
     pose = [
-        start_pose[index] + fraction * (end_pose[index] - start_pose[index])
+        start_pose[index] + geometry["x_axis"][index] * millimetres_to_metres(position)
         for index in range(3)
     ] + list(start_pose[3:6])
     if height_mode == "high":
@@ -410,6 +441,11 @@ def crosses_obstacle(start_position: float, end_position: float, config: dict) -
     segment_start = min(start_position, end_position)
     segment_end = max(start_position, end_position)
     return segment_start <= obstacle_end + 1e-9 and segment_end >= obstacle_start - 1e-9
+
+
+def start_entry_crosses_obstacle(config: dict, geometry: dict) -> bool:
+    """Check the approach from the taught start to the first selected point."""
+    return crosses_obstacle(-geometry.get("x_start", 0.0), 0.0, config)
 
 
 def line_positions(

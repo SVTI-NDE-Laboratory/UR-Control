@@ -28,6 +28,7 @@ from line_planner import (
     obstacle_interval,
     point_pose,
     scale,
+    start_entry_crosses_obstacle,
 )
 from measurement_movement import (
     high_to_low,
@@ -132,8 +133,8 @@ def _run_measurements(
     step = 0
     measurement_index = None
     reached_line_position = None
-    first_position_blocked = bool(positions and is_obstacle(positions[0][1], config))
-    current_side = "end" if first_position_blocked else "start"
+    start_from_end = bool(positions and start_entry_crosses_obstacle(config, geometry))
+    current_side = "end" if start_from_end else "start"
     finish_side = current_side
 
     while step < len(positions):
@@ -153,6 +154,10 @@ def _run_measurements(
             next_point_id = point_id
         state = {
             "mode": "measurements",
+            "activity": ("obstacle_avoidance" if in_obstacle else
+                         "entry_routine" if step == 0 and height_mode == "high" else "point"),
+            "active_point": point_id if not in_obstacle else next_point_id,
+            "point_completed": False,
             "measurement_index": next_point_id,
             "line_position": reached_line_position,
             "height_mode": height_mode,
@@ -215,7 +220,10 @@ def _run_measurements(
         # At a valid point, descend to measurement height and run the force URP.
         if height_mode == "high":
             print("Measurement point: move high -> low")
-            high_to_low(robot_ip, rtde_receive, config, routines_data, position)
+            if step == 0 and start_from_end:
+                enter_line_from_end_high(robot_ip, rtde_receive, config, routines_data, position)
+            else:
+                high_to_low(robot_ip, rtde_receive, config, routines_data, position)
             height_mode = "low"
 
         state["height_mode"] = height_mode
@@ -237,6 +245,7 @@ def _run_measurements(
         # Publish the position only after the exact lateral/contact target is
         # verified. This keeps the UI synchronized with the physical robot.
         reached_line_position = position
+        state["activity"] = "point"
         state["line_position"] = reached_line_position
         write_state(state_path, state)
 
@@ -273,6 +282,8 @@ def _run_measurements(
                 measurement_timestamp,
             )
         state["last_measurement_success"] = measurement_success
+        # apply_force returns only after verifying the exact pre-force pose.
+        state["point_completed"] = measurement_success
         if measurement_success:
             state["measurement_index"] = next_successful_measurement_index(
                 positions,
@@ -330,6 +341,10 @@ def _run_measurements(
             crosses = crosses_obstacle(position, next_position, config)
 
             if crosses:
+                state["activity"] = "obstacle_avoidance"
+                state["active_point"] = positions[next_step][0] + 1
+                state["point_completed"] = False
+                write_state(state_path, state)
                 print(
                     f"Pass obstacle through Home detour to "
                     f"{next_position:.3f} mm"
@@ -351,6 +366,10 @@ def _run_measurements(
                 continue
 
             print("Translate to next line position")
+            state["activity"] = "point"
+            state["active_point"] = positions[next_step][0] + 1
+            state["point_completed"] = False
+            write_state(state_path, state)
             translate_along_line(
                 robot_ip,
                 rtde_receive,
@@ -364,6 +383,14 @@ def _run_measurements(
         step += 1
 
     # Always finish at the safe high level, including after the last measure.
+    write_state(state_path, {
+        "mode": "measurements",
+        "activity": "exit_routine",
+        "measurement_index": measurement_index,
+        "line_position": reached_line_position,
+        "height_mode": height_mode,
+        "in_obstacle": False,
+    })
     if height_mode == "low":
         current_position = (
             reached_line_position

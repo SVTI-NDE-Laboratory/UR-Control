@@ -51,7 +51,9 @@ def validate_measurement_config(
     geometry = line_geometry(config, routines_data)
     high_low_movement(config, routines_data)
     interval = obstacle_interval(config)
-    if interval is not None and interval[1] > geometry["length"] + 1e-9:
+    obstacle_limit = (geometry["taught_length"] - geometry["x_start"]
+                      if geometry["method"] == POINT_TO_POINT else geometry["length"])
+    if interval is not None and interval[1] > obstacle_limit + 1e-9:
         raise ValueError("Obstacle end must not exceed the measurement line length.")
 
     motion = config["motion"]
@@ -108,7 +110,8 @@ def print_measurement_config_summary(
     if obstacle is None:
         print("  obstacle: none")
     else:
-        print(f"  obstacle: start={obstacle[0]} mm, end={obstacle[1]} mm")
+        origin = geometry.get("x_start", 0.0)
+        print(f"  obstacle: start={obstacle[0] + origin} mm, end={obstacle[1] + origin} mm")
     print(
         f"  measurement: contact_threshold={measurement['contact_threshold']} N, "
         f"holding_force={measurement['holding_force']} N, "

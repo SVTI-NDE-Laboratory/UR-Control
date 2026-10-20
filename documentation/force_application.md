@@ -27,6 +27,50 @@ src/measurement/polyscope_scripts/apply_force_mira.script
 The server script waits for Python to release the force hold. The MIRA script
 performs the acquisition pulse on the robot by switching tool voltage.
 
+## Unified Time / Feedback Script
+
+The combined Script-node source is
+`src/measurement/polyscope_scripts/apply_force.script`. The original sources
+remain available. Set input integer register **47** before starting this script:
+
+| Value | Mode | End of acquisition |
+|---:|---|---|
+| `0` | Feedback | Input integer register 42 becomes `1` (10-second timeout) |
+| `1` | Time | `acquisition_duration` seconds elapse (default `0.5`) |
+
+Time mode pulses tool voltage at **12 V** during acquisition and switches it
+back to **0 V** afterward. Change `acquisition_duration` near the top of the
+script to set its duration. Time mode ignores the acknowledgement register.
+Feedback mode does not change tool voltage; reset input integer register 42 to
+`0` before starting it, then write `1` after acquisition to release the hold.
+
+The existing force inputs are unchanged: float registers 43/44/45 contain the
+maximum distance in metres, contact threshold in newtons, and holding force in
+newtons. Integer register 46 selects simulation (`1`) or real contact detection
+(`0`). Parameters and mode are read once at the start of each cycle.
+
+Contact detection preserves the supplied scripts' different conventions: time
+mode uses `force()` (total force magnitude), while feedback mode uses
+`abs(get_tcp_force()[2])` (base-frame Z component). The approach and holding
+force are commanded along the captured starting TCP Z axis in both modes.
+
+Simulation preserves the original approach motion and reports force reached
+at the two-second timeout or distance limit, without requiring measured contact.
+It stops force mode before the acquisition stage; time mode still performs the
+12 V pulse, and feedback mode still waits for acknowledgement.
+
+Output integer register 42 retains statuses 0–3 described below. An unsupported
+mode produces status **4** and performs no motion or tool-voltage changes.
+Statuses 2 and 3 are reset to 0 after returning to the starting pose; status 4
+remains set because the cycle was rejected.
+
+The current Python wrapper does **not** write register 47 or handle status 4.
+To adopt the unified source, place it in the robot's force URP and explicitly
+configure register 47 before starting that URP. A caller using feedback mode must
+send the acknowledgement; a caller using time mode should wait for completion
+without sending one (`acknowledge_force_hold=False` in the existing wrapper).
+The existing application program selection has not been migrated.
+
 ## Python Side
 
 The Python entry point is:
@@ -86,6 +130,13 @@ pre-force pose.
 
 Finally, Python waits until the robot reports status `0` again, then verifies
 that the TCP returned to the captured pre-force pose.
+
+This completion wait keeps checking robot safety and has a 30-second deadline.
+It does not require motion to start within two seconds: status `1` includes the
+acquisition hold as well as return, and simulation or contact near the initial
+pose can require no observable return displacement. Status `3` during this wait
+immediately reports the controller's acknowledgement timeout. Completion timeout
+or a robot safety error still stops the force program and aborts the cycle.
 
 ## URScript Side
 

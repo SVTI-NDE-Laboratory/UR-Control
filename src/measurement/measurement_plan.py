@@ -4,6 +4,7 @@ import json
 from datetime import datetime
 from pathlib import Path
 
+from atomic_json import write_json_atomic
 from line_planner import POINT_TO_POINT, is_obstacle, line_geometry, line_positions, point_pose
 
 
@@ -37,6 +38,8 @@ def create_measurement_plan(config: dict, routines_data: dict | None = None) -> 
         if blocked:
             point["skip_reason"] = "obstacle"
         if geometry["method"] == POINT_TO_POINT:
+            point["x_coordinate"] = round(geometry["x_start"] + line_position, 12)
+            point["y_coordinate"] = geometry["offset_y"]
             point["tcp_pose"] = [
                 round(value, 12)
                 for value in display_tcp_pose(point_pose(geometry, line_position))
@@ -45,6 +48,7 @@ def create_measurement_plan(config: dict, routines_data: dict | None = None) -> 
 
     units = {"line_position": "mm"}
     if geometry["method"] == POINT_TO_POINT:
+        units.update(x_coordinate="mm", y_coordinate="mm")
         units["tcp_pose"] = ["mm", "mm", "mm", "rad", "rad", "rad"]
 
     return {
@@ -71,10 +75,7 @@ def write_measurement_plan(
     """Atomically write and return the measurement plan."""
 
     plan = create_measurement_plan(config, routines_data)
-    plan_path = Path(path)
-    temporary_path = plan_path.with_suffix(plan_path.suffix + ".tmp")
-    temporary_path.write_text(json.dumps(plan, indent=2) + "\n", encoding="utf-8")
-    temporary_path.replace(plan_path)
+    write_json_atomic(path, plan)
     return plan
 
 
@@ -106,7 +107,5 @@ def record_measurement_result(
             "force_reached": bool(force_reached),
         }
     )
-    temporary_path = plan_path.with_suffix(plan_path.suffix + ".tmp")
-    temporary_path.write_text(json.dumps(plan, indent=2) + "\n", encoding="utf-8")
-    temporary_path.replace(plan_path)
+    write_json_atomic(plan_path, plan)
     return point

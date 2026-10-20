@@ -32,7 +32,7 @@ for folder in [MEASUREMENT_DIR, ROBOT_DIR, ROUTINES_DIR]:
 
 FIELD_LABELS = {
     "line_length": "Total Length [mm]",
-    "increment": "Increment [mm]",
+    "increment": "Step Size [mm]",
     "direction_start_end": "Start-to-End Direction [x, y, z]",
     "start": "Start Position [mm]",
     "end": "End Position [mm]",
@@ -49,7 +49,7 @@ FIELD_LABELS = {
     "force_direction": "Force Direction [x, y, z]",
     "start_point": "Low Start Waypoint",
     "end_point": "Low End Waypoint",
-    "number_of_measurements": "Number of Measurements",
+    "number_of_measurements": "Nb. Points",
     "x_start": "X Start [mm]",
     "x_end": "X End [mm]",
     "offset_y": "Y Offset [mm]",

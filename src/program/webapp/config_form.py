@@ -39,9 +39,20 @@ def display_value(value: Any) -> str:
 def display_field_value(key: str, value: Any) -> str:
     """Return a field value in its operator-facing unit."""
 
-    if isinstance(value, float):
-        return f"{value:.3f}"
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        shown = f"{value:.2f}".rstrip("0").rstrip(".")
+        return "0" if shown == "-0" else shown
     return display_value(value)
+
+
+def numeric_display_attributes(key: str, value: Any) -> str:
+    """Keep exact numeric inputs available independently of their shown text."""
+
+    if not isinstance(value, (int, float)) or isinstance(value, bool):
+        return ""
+    raw = html.escape(str(value), quote=True)
+    shown = html.escape(display_field_value(key, value), quote=True)
+    return f' data-raw-value="{raw}" data-display-value="{shown}" data-initial-raw-value="{raw}"'
 
 
 def parse_value(text: str, template: Any) -> Any:
@@ -89,19 +100,20 @@ def edited_config(
         "offset_y": 0.0,
     }
 
-    current_parameters = defaults.get("line", {}).get("parameters", {})
     parameters = {}
     for key, fallback in parameter_templates.items():
         field_name = f"line.parameters.{key}"
         if field_name not in fields:
             raise ValueError(f"Missing field: {FIELD_LABELS.get(key, key)}")
-        template = current_parameters.get(key, fallback)
+        template = fallback
         try:
             parameters[key] = parse_field_value(key, fields[field_name][0], template)
         except ValueError as error:
             raise ValueError(f"{FIELD_LABELS.get(key, key)}: {error}") from error
     config["line"] = {"method": method, "parameters": parameters}
     parameters["auto_fit"] = parse_value(fields.get("line.parameters.auto_fit", ["true"])[0], True)
+    if parameters["auto_fit"] and parameters["x_end"] <= parameters["x_start"]:
+        raise ValueError("X End must be larger than X Start when Automatic Fit is enabled.")
     if method == "point_to_point":
         spacing_source = fields.get(
             "line.parameters.spacing_source", ["increment"]
@@ -139,7 +151,7 @@ def edited_config(
             raise ValueError(f"Missing field: {FIELD_LABELS.get(key, key)}")
         try:
             obstacle[key] = parse_field_value(
-                key, fields[field_name][0], defaults.get("obstacle", {}).get(key, 0.0)
+                key, fields[field_name][0], 0.0
             )
         except ValueError as error:
             label = FIELD_LABELS.get(key, key.replace("_", " ").title())
@@ -211,7 +223,7 @@ def form_html(
         label = html.escape(FIELD_LABELS.get(key, key.replace("_", " ").title()), quote=True)
         return (
             f'<input id="{name}" name="{name}" value="{value_text(section, key)}" '
-            f'aria-label="{label}" {attributes}>'
+            f'aria-label="{label}"{numeric_display_attributes(key, current_value(section, key))} {attributes}>'
         )
 
     hidden_controls = []
@@ -235,7 +247,7 @@ def form_html(
         shown = html.escape(display_field_value(key, value), quote=True)
         return (
             f'<input id="{name}" name="{name}" value="{shown}" '
-            f'aria-label="{label}" {attributes}>'
+            f'aria-label="{label}"{numeric_display_attributes(key, value)} {attributes}>'
         )
 
     point_values = {
@@ -273,8 +285,8 @@ def form_html(
         '<div class="toggle-row"><label class="option-toggle">'
         f'<input id="auto-fit" type="checkbox"{auto_fit_checked}>Automatic Fit</label></div>'
         '<div class="parameter-row double line-spacing-row">'
-        f'<span>Increment [mm] / # Measurements</span>{increment}'
-        f'<input id="measurement-count" name="line.parameters.number_of_measurements" type="number" min="2" step="1" value="{measurement_count}" aria-label="Number of measurements" required>'
+        f'<span>Step Size [mm] / Nb. Points</span>{increment}'
+        f'<input id="measurement-count" name="line.parameters.number_of_measurements" type="number" min="1" step="1" value="{measurement_count}" aria-label="Nb. Points" required>'
         '</div>'
         '<div class="parameter-row double">'
         f'<span>X Start / X End [mm]</span>{line_input("x_start", point_values["x_start"], point_offset_attributes)}'

@@ -6,6 +6,7 @@ import tempfile
 import time
 import unittest
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import ExitStack
 from copy import deepcopy
 from pathlib import Path
 from unittest.mock import Mock, patch
@@ -13,10 +14,11 @@ from unittest.mock import Mock, patch
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from src.program.webapp2 import flexible_worker as worker
+from src.program.webapp2 import flexible_worker as worker, measurement_worker
 from src.program.webapp2.feedback import Feedback
 from src.program.webapp2.settings import ROUTINE_FILE
 from webapp import launcher
+import atomic_json
 from read_routines import read_routines_file
 
 
@@ -44,7 +46,7 @@ class AtomicPublishingTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             target = Path(directory) / "feedback.json"
             target.write_text('{"old": true}')
-            with patch.object(Path, "replace", side_effect=PermissionError("Locked")), patch.object(launcher.time, "monotonic", side_effect=[0, 1]):
+            with patch.object(Path, "replace", side_effect=PermissionError("Locked")), patch.object(atomic_json.time, "monotonic", side_effect=[0, 1]):
                 with self.assertRaises(PermissionError):
                     launcher.write_json_atomic(target, {"new": True})
             self.assertEqual(json.loads(target.read_text()), {"old": True})
@@ -60,6 +62,26 @@ class AtomicPublishingTests(unittest.TestCase):
 
 
 class LiveFeedbackTests(unittest.TestCase):
+    def test_automatic_plane_feedback_tracks_motion_and_rejects_high_plane(self):
+        data = read_routines_file(ROUTINE_FILE)
+        geometry = worker.plane_geometry(data)
+        receiver = Mock()
+        receiver.getSafetyStatusBits.return_value = 0
+        receiver.getActualQ.return_value = []
+        receiver.getActualTCPSpeed.return_value = [.01, 0, 0, 0, 0, 0]
+        feedback = Feedback(Path("unused.json"), data, classifier=measurement_worker.classify_plane)
+        feedback.attach(receiver)
+        with patch("src.program.webapp2.feedback.write_json_atomic"):
+            for x, y in [(100, -20), (200, -50), (geometry["taught_length"] + 50, -30)]:
+                receiver.getActualTCPPose.return_value = worker.flexible.measurement_pose(data, geometry, x, y, allow_x_outside_taught_range=True)
+                feedback.sample()
+                self.assertTrue(feedback.last["in_measurement_plane"])
+                self.assertAlmostEqual(feedback.last["measurement_xy"]["X"], x)
+                self.assertAlmostEqual(feedback.last["measurement_xy"]["Y"], y)
+            receiver.getActualTCPPose.return_value = data["waypoints"]["p_start_h"]["p"]
+            feedback.sample()
+            self.assertFalse(feedback.last["in_measurement_plane"])
+
     def test_failed_publish_does_not_kill_sampling_loop(self):
         feedback = Feedback(Path("unused.json"), {})
         feedback.finished = Mock()
@@ -107,6 +129,54 @@ class LiveFeedbackTests(unittest.TestCase):
 
 
 class AutomaticFailureRegressionTests(unittest.TestCase):
+    def test_status_tracks_active_point_detour_and_exit_during_actions(self):
+        import run_measurements as automatic
+        data = read_routines_file(ROUTINE_FILE)
+        config = deepcopy(worker.flexible.MEASUREMENT_CONFIG)
+        config["line"]["parameters"].update(auto_fit=False, x_start=0, increment=100, number_of_measurements=3)
+        config["obstacle"] = {"start": 40, "end": 60}
+        receiver = Mock()
+        receiver.getActualTCPPose.return_value = data["waypoints"]["p_start_h"]["p"]
+        states = []
+        actions = []
+
+        def capture(path, state):
+            states.append(deepcopy(state))
+
+        def force(*args, **kwargs):
+            before = deepcopy(states[-1])
+            kwargs["on_force_success"]("test")
+            after = states[-1]
+            self.assertEqual(after["active_point"], before["active_point"])
+            self.assertFalse(after["point_completed"])
+            actions.append(("force", before))
+            return True, "test"
+
+        def detour(*args, **kwargs):
+            actions.append(("detour", deepcopy(states[-1])))
+            return "low"
+
+        def translate(*args, **kwargs):
+            actions.append(("translate", deepcopy(states[-1])))
+
+        with ExitStack() as stack:
+            for name in ("ensure_at_tcp_target", "movel_pose"):
+                stack.enter_context(patch.object(automatic, name))
+            stack.enter_context(patch.object(automatic, "translate_along_line", side_effect=translate))
+            stack.enter_context(patch.object(automatic, "write_state", side_effect=capture))
+            stack.enter_context(patch.object(automatic, "apply_force", side_effect=force))
+            stack.enter_context(patch.object(automatic, "safe_avoid_obstacle", side_effect=detour))
+            stack.enter_context(patch.object(automatic, "high_to_low", side_effect=lambda *a: actions.append(("entry", deepcopy(states[-1])))))
+            automatic._run_measurements("test", receiver, config, "unused.json", data)
+        self.assertEqual(actions[0][1]["activity"], "entry_routine")
+        self.assertEqual([state["active_point"] for name, state in actions if name == "force"], [1, 2, 3])
+        self.assertEqual([state["activity"] for name, state in actions if name == "detour"], ["obstacle_avoidance"])
+        self.assertEqual([state["active_point"] for name, state in actions if name == "detour"], [2])
+        self.assertEqual(next(state["active_point"] for name, state in actions if name == "translate"), 3)
+        self.assertEqual([state["active_point"] for state in states if state.get("point_completed")], [1, 2, 3])
+        self.assertTrue(any(state.get("activity") == "exit_routine" for state in states))
+        self.assertEqual(states[-1]["mode"], "measurements_done")
+
     def test_automatic_contact_failure_still_recovers_and_ends_measurement(self):
         import run_measurements as automatic
         data = read_routines_file(ROUTINE_FILE)

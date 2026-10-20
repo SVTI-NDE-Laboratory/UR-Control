@@ -79,8 +79,9 @@ class IndicatorFeedbackTests(unittest.TestCase):
             self.assertFalse(self.feedback.last["force_mode"])
             connection.disconnect()
 
-        with tempfile.TemporaryDirectory() as directory, patch.object(sequence, "get_rtde_receive", return_value=self.receiver) as connect, patch.object(sequence, "main", side_effect=workflow), patch.object(measurements, "apply_force", side_effect=force) as apply, patch.object(measurement_worker, "Feedback", return_value=self.feedback), patch.object(sys, "argv", ["worker", "--output-dir", directory]):
+        with tempfile.TemporaryDirectory() as directory, patch.object(sequence, "get_rtde_receive", return_value=self.receiver) as connect, patch.object(sequence, "main", side_effect=workflow), patch.object(measurements, "apply_force", side_effect=force) as apply, patch.object(measurement_worker, "Feedback", return_value=self.feedback) as feedback_factory, patch.object(sys, "argv", ["worker", "--output-dir", directory]):
             measurement_worker.main()
+            self.assertIs(feedback_factory.call_args.kwargs["classifier"], measurement_worker.classify_plane)
             self.assertIs(measurements.apply_force, apply)
             self.assertIs(sequence.get_rtde_receive, connect)
             apply.assert_called_once_with("test")

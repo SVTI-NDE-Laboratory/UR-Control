@@ -49,6 +49,7 @@ else:
     from worker_manager import WorkerBusyError, WorkerManager
 
 from measurement_plan import create_measurement_plan
+from line_planner import line_geometry, line_scope_warning
 from read_routines import get_waypoint, read_routines_file
 
 
@@ -218,6 +219,7 @@ def validate_configuration(
         "message": "Configuration validated. The measurement is ready to start.",
         "config": config,
         "plan": plan,
+        "scope_warning": line_scope_warning(line_geometry(config, routines_data)),
     }
 
 
@@ -344,6 +346,9 @@ def start_measurement(request: MeasurementStartRequest) -> dict[str, Any]:
     base_output_directory = request.output_directory.resolve()
     routine_file = state.get_routine_file()
     try:
+        warning = line_scope_warning(line_geometry(config, read_routines_file(routine_file)))
+        if warning and not request.outside_line_confirmed:
+            raise HTTPException(status_code=409, detail=warning)
         assert_safe_start_position(routine_file)
         session_id, session_started_at = create_session_identity()
         output_directory = (

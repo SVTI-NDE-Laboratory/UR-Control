@@ -5,6 +5,7 @@ from pathlib import Path
 
 from .settings import ROOT, ROUTINE_FILE
 from .feedback import Feedback, TrackedServer
+from .flexible_worker import classify_plane
 from read_routines import read_routines_file
 
 
@@ -14,7 +15,7 @@ def main():
     import run_measurement_sequence as sequence
     import run_measurements as measurements
     output = Path(sys.argv[sys.argv.index("--output-dir") + 1])
-    feedback = Feedback(output / "feedback.json", read_routines_file(ROUTINE_FILE))
+    feedback = Feedback(output / "feedback.json", read_routines_file(ROUTINE_FILE), classifier=classify_plane)
     original_connect = sequence.get_rtde_receive
     original_server = sequence.AcquisitionControlServer
     original_force = measurements.apply_force

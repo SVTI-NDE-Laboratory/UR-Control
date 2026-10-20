@@ -341,15 +341,19 @@ def apply_force(
         elif status == 3:
             raise TimeoutError("Robot timed out while waiting for acknowledgement.")
 
-        # Wait until the robot has returned to its initial pose.
+        # Status 1 covers acquisition AND return; it does not mark the start of
+        # return motion. In time mode the robot may still be intentionally
+        # holding, and simulation/contact at the initial pose may need no return
+        # displacement. Require bounded program completion, not visible motion.
         print("Force program: waiting for return to the measurement pose.")
-        wait_for_status(
+        return_status = wait_for_status(
             rtde_receive,
-            {0},
+            {0, 3},
             RETURN_TIMEOUT,
             "return to the measurement pose",
-            motion_watchdog=True,
         )
+        if return_status == 3:
+            raise TimeoutError("Robot timed out while waiting for acknowledgement.")
         print("Force program: verifying the pre-force pose.")
         returned_pose = ensure_at_tcp_target(
             robot_ip,

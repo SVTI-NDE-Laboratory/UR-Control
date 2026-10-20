@@ -1,7 +1,8 @@
 """Write the current measurement state."""
 
-import json
 from pathlib import Path
+
+from atomic_json import write_json_atomic
 
 
 def write_state(path: str | Path, state: dict) -> None:
@@ -10,7 +11,4 @@ def write_state(path: str | Path, state: dict) -> None:
     The state file is meant for monitoring/debugging the running sequence.
     """
 
-    state_path = Path(path)
-    temporary_path = state_path.with_suffix(state_path.suffix + ".tmp")
-    temporary_path.write_text(json.dumps(state, indent=2), encoding="utf-8")
-    temporary_path.replace(state_path)
+    write_json_atomic(path, state)

@@ -46,8 +46,12 @@ function reportWorkerError(data) {
   led('error', errorVisible);
 }
 
+function formatNumber(value) {
+  return String(Number(value.toFixed(2)));
+}
+
 function positionTuple(position, axes) {
-  return `(${axes.map(axis => Number.isFinite(position[axis]) ? position[axis].toFixed(1) : '—').join(', ')})`;
+  return `(${axes.map(axis => Number.isFinite(position[axis]) ? formatNumber(position[axis]) : '—').join(', ')})`;
 }
 
 function resizeConfiguration() {
@@ -118,7 +122,23 @@ function renderGeneral() {
       }[phase];
       status = label ? `Flexible: ${label}` : 'Flexible';
     } else {
-      status = latest.worker.kind === 'measurement' ? 'Automatic' : 'Idle';
+      if (latest.worker.kind === 'measurement') {
+        const state = latest.program_state;
+        const phase = state.activity || state.mode;
+        const label = {
+          starting:'Preparing', checking_home:'Checking Home',
+          waiting_for_acquisition_client:'Waiting for acquisition',
+          acquisition_client_ready:'Ready', waiting_for_operator_start:'Waiting for confirmation',
+          waiting_for_start_first:'Waiting for acquisition',
+          start_routine:'Entry routine', entry_routine:'Entry routine',
+          obstacle_avoidance:'Obstacle Avoidance',
+          end_routine:'Exit Routine', exit_routine:'Exit Routine', measurements_done:'Exit Routine',
+          idle:'Finished', measurement_failed:'Measurement failed', error:'Error', unsafe_start:'Unsafe start',
+        }[phase];
+        const point = state.active_point ?? state.measurement_index;
+        status = `Automatic: ${label || (state.in_obstacle ? 'Obstacle Avoidance'
+          : point ? `Point ${point}` : 'Preparing')}`;
+      }
     }
   }
   $('general').textContent = status;
@@ -206,7 +226,8 @@ async function refresh() {
     led('force', forceActive);
     led('server', f.acquisition_connected === true);
     const xy = f.measurement_xy;
-    const entryOrExit = ['starting','entry_routine','exit_routine'].includes(s.mode)
+    const entryOrExit = ['starting','start_routine','end_routine','measurements_done','entry_routine','exit_routine'].includes(s.mode)
+      || ['entry_routine','exit_routine','obstacle_avoidance'].includes(s.activity)
       || (s.mode === 'command_pending' && ['start','end'].includes(s.action));
     const planeText = xy && f.in_measurement_plane === true && !entryOrExit && !f.feedback_error
       ? positionTuple(xy, ['X','Y']) : '—';
@@ -346,7 +367,7 @@ async function moveInPlane() {
     try {
       confirmed = await confirmWaypointSafety(
         `X = ${x} mm, Y = ${y} mm is outside the configured movement range.\n\n`
-        + `X range: ${flexibleLimits.x_min} to ${flexibleLimits.x_max.toFixed(3)} mm\n`
+        + `X range: ${formatNumber(flexibleLimits.x_min)} to ${formatNumber(flexibleLimits.x_max)} mm\n`
         + `Y range: ${flexibleLimits.y_min} to ${flexibleLimits.y_max} mm\n\n`
         + 'This move could reach a singularity or cause unexpected movements. Are you sure you want to move forward?',
         'Check movement range');
@@ -388,8 +409,8 @@ async function initialize() {
   // Schedule after completion so slow requests cannot pile up.
   async function poll() {
     await refresh();
-    const movingInPlane = latest?.worker.running && latest.worker.kind === 'flexible'
-      && latest.program_state.mode === 'move';
+    const movingInPlane = latest?.worker.running && (latest.worker.kind === 'measurement'
+      || (latest.worker.kind === 'flexible' && latest.program_state.mode === 'move'));
     setTimeout(poll, movingInPlane ? 200 : 500);
   }
   setTimeout(poll, 500);

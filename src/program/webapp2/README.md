@@ -94,13 +94,41 @@ retain their existing acquisition-server behavior.
 
 Automatic measurements also provide a **Simulation** toggle, beside **With RTM
 Program**, so forces do not need to be set to zero. Changing With RTM Program
-preserves the measurement line settings. **Automatic Fit** defaults to on and
-loads X End from the routine file on initialization and whenever switched back
-on. It keeps Increment and Count linked to the selected range.
-With it off, Start, Increment and Count are
-independent; End is read-only and calculated as `Start + (Count - 1) * Increment`.
-The calculated range must still fit inside the taught line. The visualization
+preserves the measurement line settings. **Automatic Fit** defaults to on.
+At initialization and whenever re-enabled, it resets X Start to zero, X End
+to the exact taught length and the lead variable to Step Size. Step Size lead
+keeps the step and calculates `Count = floor((End - Start) / Increment) + 1`;
+the last point may precede End. Editing Count instead calculates
+`Increment = (End - Start) / (Count - 1)` and includes both ends (Count ≥ 2).
+With fit off, Start, Increment and Count are independent; End is read-only and
+calculated as `Start + (Count - 1) * Increment`.
+X Start and X End (including the calculated End with fit off) may extend up to
+100 mm beyond either taught endpoint. Starting an automatic program outside
+the taught range requires an explicit confirmation with No focused by default;
+the backend rejects an unconfirmed start before connecting to the robot.
+The controls are labelled **Step Size [mm]** and **Nb. Points**. The visualization
 updates on every edit and displays the current X range and Y offset.
+Y Offset is a fixed perpendicular shift and never changes the X spacing.
+Obstacle Start/End use the same taught X origin as X Start/End, including when
+X Start is nonzero. Obstacles only mark existing samples as skipped; they
+never change the sample coordinates or count. Preview and progress use that
+same coordinate system. Plans include explicit X/Y coordinates in millimetres
+alongside the existing distance-from-X-Start and TCP fields.
+Automatic mode publishes live plane X/Y from the same taught frame as Flexible
+mode, including confirmed positions beyond the line endpoints. Plane coordinates
+are hidden during entry, obstacle detours, exit, or whenever the TCP is outside
+the measurement plane. Status identifies Entry routine, Obstacle Avoidance,
+Exit Routine, or the active Point number. The active point remains displayed
+through acquisition and the verified return to its pre-force pose, even when
+the acquisition protocol advances its next point counter. The visualization
+advances immediately before travel to the next measurable point, skipping
+obstacle points. Automatic feedback is polled every 200 ms while running.
+State, feedback and measurement-plan JSON snapshots share an atomic writer
+with a separate staging file for each write and a bounded 0.5-second retry for
+Windows permission errors. Persistent failures remain errors; the previous
+snapshot is retained and staging files are cleaned up.
+An obstacle between the taught start and X Start also selects the existing
+end-side entry route without changing the measurement grid.
 
 The status panel remains visible beside all three tabs. Its Status field shows
 one action or mode: Idle, Manual: Go to waypoint, Manual: Perform routine,

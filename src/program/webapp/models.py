@@ -18,6 +18,7 @@ class MeasurementStartRequest(BaseModel):
     show_terminal: bool = False
     create_session_folder: bool = True
     operator_confirmed: bool = False
+    outside_line_confirmed: bool = False
 
 
 class RoutineFileSelection(BaseModel):

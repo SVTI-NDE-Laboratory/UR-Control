@@ -1,0 +1,187 @@
+# Unified Script-node source: select time or feedback mode before starting.
+# Input integer 47: 0 = feedback, 1 = time. Other values refuse the cycle.
+# Input integer 46: 0 = real contact detection, 1 = simulated force reached.
+# Input integer 42: reset to 0 before starting; write 1 to end feedback hold.
+# Input floats: 43 = maximum approach [m], 44 = contact threshold [N],
+#              45 = commanded holding force [N].
+# Output integer 42: 0 = initialized/completed, 1 = force reached,
+#                   2 = approach failed, 3 = feedback timeout, 4 = invalid mode.
+# Failure statuses 2/3 remain set during return, then reset to 0.
+# Status 4 stays set; no approach, return, or tool-voltage change is performed.
+# Simulation preserves the original approach motion, then reports success after
+# 2 seconds or at the distance limit. Time mode still pulses the tool at 12 V.
+
+register = 42
+global state_message = "Setting program variables"
+global operation_mode = read_input_integer_register(47)
+global distance_max = read_input_float_register(43)
+global force_contact = read_input_float_register(44)
+global force_holding = read_input_float_register(45)
+global simulation = read_input_integer_register(46) == 1
+global force_reached = False
+global distance_reached = False
+global measured_force = 0.0
+
+# Time-mode duration is configured here, in seconds.
+acquisition_duration = 0.5
+acknowledgement_timeout = 10.0
+max_approach_speed = 0.02
+approach_timeout = 10.0
+if simulation:
+    approach_timeout = 2.0
+end
+return_speed = 0.04
+return_acceleration = 0.100
+
+if (operation_mode != 0) and (operation_mode != 1):
+    state_message = "Invalid force mode: integer register 47 must be 0 or 1"
+    write_output_integer_register(register, 4)
+else:
+    write_output_integer_register(register, 0)
+    if operation_mode == 1:
+        set_tool_voltage(0)
+    end
+
+    # Feedback must start with a cleared acknowledgement. Time mode ignores it.
+    if operation_mode == 0:
+        state_message = "Waiting for feedback acknowledgement reset"
+        while read_input_integer_register(register) != 0:
+            sync()
+        end
+    end
+
+    start_pose = get_actual_tcp_pose()
+    force_frame = start_pose
+    zero_ftsensor()
+    sleep(0.2)
+
+    contact_detected = False
+    approach_timed_out = False
+    approach_elapsed = 0.0
+    state_message = "Moving to reach contact force"
+
+    # Approach along the starting TCP Z+ direction.
+    while (contact_detected == False) and (distance_reached == False) and (approach_timed_out == False):
+        force_mode(
+            force_frame,
+            [0, 0, 1, 0, 0, 0],
+            [0, 0, force_holding, 0, 0, 0],
+            2,
+            [0.010, 0.010, max_approach_speed, 0.10, 0.10, 0.10]
+        )
+        current_pose = get_actual_tcp_pose()
+        relative_pose = pose_trans(pose_inv(start_pose), current_pose)
+        travelled_z = relative_pose[2]
+
+        # Preserve each original script's contact-detection convention:
+        # time = total force magnitude; feedback = absolute base-frame Z force.
+        if operation_mode == 1:
+            measured_force = force()
+        else:
+            wrench = get_tcp_force()
+            measured_force = abs(wrench[2])
+        end
+
+        if (simulation == False) and (measured_force >= force_contact):
+            contact_detected = True
+        elif travelled_z >= distance_max:
+            distance_reached = True
+        end
+        approach_elapsed = approach_elapsed + get_steptime()
+        if approach_elapsed >= approach_timeout:
+            approach_timed_out = True
+        end
+        sync()
+    end
+
+    force_mode_stopped = False
+    if contact_detected:
+        force_reached = True
+    elif simulation and (distance_reached or approach_timed_out):
+        force_reached = True
+        end_force_mode()
+        stopl(1.0)
+        sleep(0.1)
+        force_mode_stopped = True
+    end
+
+    if force_reached:
+        state_message = "Force reached"
+        if simulation:
+            state_message = "Simulating force reached"
+        end
+        write_output_integer_register(register, 1)
+
+        elapsed_time = 0.0
+        acknowledged = False
+        timed_out = False
+        hold_completed = False
+        if operation_mode == 1:
+            state_message = "Time mode: acquisition pulse"
+            set_tool_voltage(12)
+        else:
+            state_message = "Feedback mode: waiting for acknowledgement"
+        end
+
+        while hold_completed == False:
+            # Simulation has already stopped force mode before this hold.
+            if contact_detected:
+                force_mode(
+                    force_frame,
+                    [0, 0, 1, 0, 0, 0],
+                    [0, 0, force_holding, 0, 0, 0],
+                    2,
+                    [0.010, 0.010, max_approach_speed, 0.10, 0.10, 0.10]
+                )
+            end
+            elapsed_time = elapsed_time + get_steptime()
+            if operation_mode == 1:
+                hold_completed = elapsed_time >= acquisition_duration
+            else:
+                acknowledged = read_input_integer_register(register) == 1
+                if acknowledged:
+                    hold_completed = True
+                elif elapsed_time >= acknowledgement_timeout:
+                    timed_out = True
+                    hold_completed = True
+                end
+            end
+            sync()
+        end
+
+        if operation_mode == 1:
+            set_tool_voltage(0)
+            state_message = "Time mode: acquisition completed"
+        elif timed_out:
+            state_message = "Feedback mode: acknowledgement timed out"
+            write_output_integer_register(register, 3)
+        else:
+            state_message = "Feedback mode: hold completed"
+        end
+    else:
+        if approach_timed_out:
+            state_message = "Force approach timed out"
+        else:
+            state_message = "Maximum displacement reached"
+        end
+        write_output_integer_register(register, 2)
+    end
+
+    if operation_mode == 1:
+        set_tool_voltage(0)
+    end
+    if force_mode_stopped == False:
+        end_force_mode()
+        stopl(1.0)
+        sleep(0.1)
+    end
+
+    state_message = "Moving back to initial position"
+    movel(
+        start_pose,
+        a=return_acceleration,
+        v=return_speed
+    )
+    write_output_integer_register(register, 0)
+    state_message = "Cycle completed"
+end

@@ -4,8 +4,6 @@ import json
 import os
 import subprocess
 import sys
-import tempfile
-import time
 from pathlib import Path
 from typing import Any
 
@@ -28,6 +26,7 @@ else:
 
 from read_routines import get_waypoint, read_routines_file
 from robot_connection import assert_at_home, assert_robot_running, get_rtde_receive
+from atomic_json import write_json_atomic
 
 
 def choose_directory() -> Path | None:
@@ -59,29 +58,6 @@ def choose_directory() -> Path | None:
         raise OSError(result.stderr.strip() or "Folder picker failed.")
     selected_path = result.stdout.strip()
     return Path(selected_path) if selected_path else None
-
-
-def write_json_atomic(path: Path, value: dict[str, Any]) -> None:
-    """Write JSON without exposing a partially written file to the UI."""
-
-    # Each writer owns its staging file. Windows readers can briefly prevent
-    # replacement of the destination, so retry without exposing partial JSON.
-    descriptor, name = tempfile.mkstemp(prefix=path.name + ".", suffix=".tmp", dir=path.parent)
-    temporary_path = Path(name)
-    try:
-        with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
-            stream.write(json.dumps(value, indent=2) + "\n")
-        deadline = time.monotonic() + .5
-        while True:
-            try:
-                temporary_path.replace(path)
-                break
-            except PermissionError:
-                if time.monotonic() >= deadline:
-                    raise
-                time.sleep(.01)
-    finally:
-        temporary_path.unlink(missing_ok=True)
 
 
 def assert_safe_start_position(routine_file: Path) -> None:

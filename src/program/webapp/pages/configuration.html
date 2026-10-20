@@ -61,6 +61,15 @@
     </div>
   </form>
 
+  <dialog id="line-scope-dialog" aria-labelledby="line-scope-title">
+    <h2 id="line-scope-title">Measurement outside the taught line</h2>
+    <p id="line-scope-message"></p>
+    <form method="dialog">
+      <button id="line-scope-no" value="no" autofocus>No</button>
+      <button value="yes">Yes, start program</button>
+    </form>
+  </dialog>
+
   <script>
     const form = document.getElementById('config-form');
     const configurationControls = document.getElementById('configuration-controls');
@@ -98,19 +107,34 @@
     let pendingStartConfirmation = false;
     let handledStartConfirmationSession = null;
 
-    function numberValue(id, fallback = 0) {
-      const element = document.getElementById(id);
-      const value = element ? Number.parseFloat(element.value) : fallback;
+    function formatNumber(value) {
+      return String(Number(value.toFixed(2)));
+    }
+
+    function setNumericInput(input, value) {
+      input.value = formatNumber(value);
+      input.dataset.rawValue = String(value);
+      input.dataset.displayValue = input.value;
+    }
+
+    function inputNumber(input, fallback = 0) {
+      const text = input && input.value === input.dataset.displayValue
+        ? input.dataset.rawValue : input?.value;
+      const value = Number.parseFloat(text);
       return Number.isFinite(value) ? value : fallback;
     }
 
+    function numberValue(id, fallback = 0) {
+      return inputNumber(document.getElementById(id), fallback);
+    }
+
     function formatMillimetres(millimetres) {
-      return `${Number(millimetres.toFixed(3))} mm`;
+      return `${formatNumber(millimetres)} mm`;
     }
 
     function selectedPointLength() {
-      const xStart = Number.parseFloat(xStartInput?.value || '0');
-      const xEnd = Number.parseFloat(xEndInput?.value || String(pointGeometry?.line_length || 0));
+      const xStart = inputNumber(xStartInput);
+      const xEnd = inputNumber(xEndInput, pointGeometry?.line_length || 0);
       if (!Number.isFinite(xStart) || !Number.isFinite(xEnd)) return 0;
       return Math.max(0, xEnd - xStart);
     }
@@ -136,11 +160,11 @@
 
     function synchronizeFields() {
       if (!autoFit.checked) {
-        const count = Number(measurementCountInput.value);
-        const increment = Number(incrementInput.value);
-        const start = Number(xStartInput.value);
-        if (Number.isInteger(count) && count >= 2 && increment > 0 && Number.isFinite(start)) {
-          xEndInput.value = String(Number((start + (count - 1) * increment).toFixed(9)));
+        const count = inputNumber(measurementCountInput, NaN);
+        const increment = inputNumber(incrementInput, NaN);
+        const start = inputNumber(xStartInput, NaN);
+        if (Number.isInteger(count) && count >= 1 && increment > 0 && Number.isFinite(start)) {
+          setNumericInput(xEndInput, start + (count - 1) * increment);
         }
       }
       xEndInput.readOnly = !autoFit.checked;
@@ -159,12 +183,8 @@
       totalLengthInput.classList.toggle('optional-disabled', pointToPoint);
       safeHeightRow?.classList.toggle('optional-disabled', pointToPoint);
       if (pointToPoint && pointGeometry) {
-        if (autoFit.checked && xEndInput && Number.parseFloat(xEndInput.value) <= 0) {
-          if (xStartInput) xStartInput.value = '0.000';
-          xEndInput.value = pointGeometry.line_length.toFixed(3);
-        }
-        totalLengthInput.value = selectedPointLength().toFixed(3);
-        safeHeightInput.value = pointGeometry.safe_height.toFixed(3);
+        setNumericInput(totalLengthInput, selectedPointLength());
+        setNumericInput(safeHeightInput, pointGeometry.safe_height);
       }
       for (const element of document.querySelectorAll('[data-line-method]')) {
         const active = element.dataset.lineMethod === method;
@@ -189,16 +209,16 @@
       if (!totalLengthInput || !incrementInput || !measurementCountInput) return;
       const length = lineMethod.value === 'point_to_point'
         ? selectedPointLength()
-        : Number.parseFloat(totalLengthInput.value);
-      const increment = Number.parseFloat(incrementInput.value);
+        : inputNumber(totalLengthInput);
+      const increment = inputNumber(incrementInput);
       if (length > 0 && increment > 0) {
         const ratio = length / increment;
         const nearestInteger = Math.round(ratio);
-        const exactDivision = Math.abs(ratio - nearestInteger) < 1e-9;
+        const exactDivision = Math.abs(nearestInteger * increment - length) <= 1e-9;
         const intervals = exactDivision
           ? nearestInteger
           : Math.floor(ratio);
-        measurementCountInput.value = String(Math.max(2, intervals + 1));
+        measurementCountInput.value = String(intervals + 1);
       }
     }
 
@@ -207,10 +227,10 @@
       if (!totalLengthInput || !incrementInput || !measurementCountInput) return;
       const length = lineMethod.value === 'point_to_point'
         ? selectedPointLength()
-        : Number.parseFloat(totalLengthInput.value);
-      const count = Number(measurementCountInput.value);
+        : inputNumber(totalLengthInput);
+      const count = inputNumber(measurementCountInput);
       if (length > 0 && Number.isInteger(count) && count >= 2) {
-        incrementInput.value = String(length / (count - 1));
+        setNumericInput(incrementInput, length / (count - 1));
       }
     }
 
@@ -226,27 +246,28 @@
       synchronizeFields();
       synchronizeSpacingFromSource();
       const translation = lineMethod.value === 'translation';
-      const requestedCount = Number(measurementCountInput?.value || '2');
-      const count = Number.isInteger(requestedCount) && requestedCount >= 2 ? requestedCount : 2;
+      const requestedCount = Number(measurementCountInput?.value || '1');
+      const count = Number.isInteger(requestedCount) && requestedCount >= 1 ? requestedCount : 1;
       const length = translation
         ? numberValue('line.parameters.line_length')
         : selectedPointLength();
       const requestedIncrement = numberValue('line.parameters.increment');
-      const increment = autoFit.checked && !translation && spacingSourceInput.value === 'count' && length > 0
+      const increment = autoFit.checked && !translation && spacingSourceInput.value === 'count' && count >= 2 && length > 0
         ? length / (count - 1)
         : requestedIncrement;
-      const obstacleStart = numberValue('obstacle.start');
-      const obstacleEnd = numberValue('obstacle.end');
-      const hasObstacle = obstacleEnabled.checked && obstacleStart >= 0 && obstacleEnd >= obstacleStart;
+      const origin = translation ? 0 : numberValue('line.parameters.x_start');
+      const obstacleStart = numberValue('obstacle.start') - origin;
+      const obstacleEnd = numberValue('obstacle.end') - origin;
+      const hasObstacle = obstacleEnabled.checked && obstacleStart + origin >= 0 && obstacleEnd >= obstacleStart;
       const left = 55, right = 585, lowY = 170;
       const obstacleHeight = 62, obstacleBottomY = lowY - 3;
       const width = right - left;
       const scale = value => left + (length > 0 ? value / length : 0) * width;
 
       svg.replaceChildren();
-      addSvg('line', {x1:left, y1:lowY, x2:right, y2:lowY, stroke:'#17212b', 'stroke-width':5});
+      addSvg('line', {x1:left, y1:lowY, x2:length > 0 ? right : left, y2:lowY, stroke:'#17212b', 'stroke-width':5});
 
-      if (hasObstacle && length > 0) {
+      if (hasObstacle && length > 0 && obstacleEnd >= 0 && obstacleStart <= length) {
         const start = Math.max(0, Math.min(length, obstacleStart));
         const end = Math.max(start, Math.min(length, obstacleEnd));
         addSvg('rect', {x:scale(start), y:obstacleBottomY-obstacleHeight, width:Math.max(2, scale(end)-scale(start)), height:obstacleHeight, rx:5, fill:'#e05252', opacity:.72});
@@ -273,8 +294,10 @@
         if (!response.ok) throw new Error(result.detail || `HTTP ${response.status}`);
         pointGeometry = result;
         pointMethodNote.textContent = 'Fixed: p_start_l → p_end_l';
-        if (resetLineEnd && lineMethod.value === 'point_to_point' && xEndInput) {
-          xEndInput.value = pointGeometry.line_length.toFixed(3);
+        if (resetLineEnd && autoFit.checked && lineMethod.value === 'point_to_point' && xEndInput) {
+          setNumericInput(xStartInput, 0);
+          setNumericInput(xEndInput, pointGeometry.line_length);
+          spacingSourceInput.value = 'increment';
         }
         synchronizeSpacingFromSource();
         drawVisualization();
@@ -306,14 +329,18 @@
     }
 
     function shownValue(key, value) {
-      if (typeof value === 'number') return value.toFixed(3);
+      if (typeof value === 'number') {
+        return formatNumber(value);
+      }
       if (Array.isArray(value)) return value.join(', ');
       return String(value);
     }
 
     function setNamedValue(name, key, value) {
       const input = form.elements.namedItem(name);
-      if (input) input.value = shownValue(key, value);
+      if (!input) return;
+      if (typeof value === 'number') setNumericInput(input, value);
+      else input.value = shownValue(key, value);
     }
 
     function selectedServerProfile() {
@@ -333,12 +360,13 @@
           setNamedValue('line.parameters.direction_start_end', 'direction_start_end', parameters.direction_start_end);
           setNamedValue('line.parameters.direction_high_low', 'direction_high_low', parameters.direction_high_low);
         } else {
-          setNamedValue('line.parameters.x_start', 'x_start', parameters.x_start || parameters.offset_x || 0);
-          setNamedValue('line.parameters.x_end', 'x_end', autoFit.checked ? (pointGeometry?.line_length || 0) : parameters.x_end);
+          setNamedValue('line.parameters.x_start', 'x_start', autoFit.checked ? 0 : (parameters.x_start || parameters.offset_x || 0));
+          if (autoFit.checked) setNumericInput(xEndInput, pointGeometry?.line_length || 0);
+          else setNamedValue('line.parameters.x_end', 'x_end', parameters.x_end);
           setNamedValue('line.parameters.offset_y', 'offset_y', parameters.offset_y || 0);
         }
         setNamedValue('line.parameters.increment', 'increment', parameters.increment);
-        spacingSourceInput.value = parameters.spacing_source || 'increment';
+        spacingSourceInput.value = 'increment';
         measurementCountInput.value = method === 'point_to_point'
           ? String(parameters.number_of_measurements)
           : String(Math.max(2, Math.round(parameters.line_length / parameters.increment) + 1));
@@ -362,7 +390,9 @@
       const fields = {};
       for (const [name, value] of new FormData(form).entries()) {
         if (!fields[name]) fields[name] = [];
-        fields[name].push(String(value));
+        const input = form.elements.namedItem(name);
+        const raw = input?.dataset.rawValue;
+        fields[name].push(raw !== undefined && input.value === input.dataset.displayValue ? raw : String(value));
       }
       fields['acquisition.server_profile'] = [selectedServerProfile()];
       fields['line.parameters.auto_fit'] = [String(autoFit.checked)];
@@ -386,6 +416,20 @@
       if (!response.ok) throw new Error(result.detail || `HTTP ${response.status}`);
       formDirty = false;
       return result;
+    }
+
+    function confirmLineScope(message) {
+      if (window.parent !== window && typeof window.parent.confirmWaypointSafety === 'function') {
+        return window.parent.confirmWaypointSafety(message, 'Measurement outside the taught line');
+      }
+      const dialog = document.getElementById('line-scope-dialog');
+      document.getElementById('line-scope-message').textContent = message;
+      dialog.returnValue = 'no';
+      return new Promise(resolve => {
+        dialog.addEventListener('close', () => resolve(dialog.returnValue === 'yes'), {once:true});
+        dialog.showModal();
+        document.getElementById('line-scope-no').focus();
+      });
     }
 
     saveDefaultButton.addEventListener('click', async () => {
@@ -445,12 +489,26 @@
       formDirty = true;
       drawVisualization();
     });
-    form.addEventListener('input', () => {
+    form.addEventListener('input', event => {
+      delete event.target.dataset.rawValue;
+      delete event.target.dataset.displayValue;
       formDirty = true;
       lastImportantMessage = '';
       drawVisualization();
     });
-    form.addEventListener('reset', () => setTimeout(drawVisualization, 0));
+    form.addEventListener('focusout', event => {
+      const input = event.target;
+      if (input.matches('input:not([type="hidden"])') && input.value.trim() && Number.isFinite(Number(input.value))) {
+        setNumericInput(input, inputNumber(input));
+        drawVisualization();
+      }
+    });
+    form.addEventListener('reset', () => setTimeout(() => {
+      for (const input of form.querySelectorAll('input[data-initial-raw-value]')) {
+        setNumericInput(input, Number(input.dataset.initialRawValue));
+      }
+      drawVisualization();
+    }, 0));
     totalLengthInput?.addEventListener('input', updateMeasurementCount);
     for (const input of [xStartInput, xEndInput]) {
       input?.addEventListener('input', () => {
@@ -479,7 +537,7 @@
       if (point.data?.force_reached === true) return 'complete';
       if (point.data?.force_reached === false) return 'failed';
       const mode = programState.mode || '';
-      const current = programState.measurement_index;
+      const current = programState.active_point ?? programState.measurement_index;
       if (['measurements_done', 'end_routine', 'idle'].includes(mode)) return 'complete';
       if (typeof current !== 'number') return 'pending';
       if (point.measurement_index < current) return 'complete';
@@ -487,6 +545,7 @@
       if (programState.last_measurement_success === false) return 'failed';
       if (
         programState.last_measurement_success === true
+        && programState.point_completed === true
         && !points.some(nextPoint =>
           nextPoint.measured !== false && nextPoint.measurement_index > current
         )
@@ -506,7 +565,7 @@
 
     function activePlanPoint(points, programState) {
       const mode = programState.mode || '';
-      const current = programState.measurement_index;
+      const current = programState.active_point ?? programState.measurement_index;
       if (['measurements_done', 'end_routine', 'idle'].includes(mode)) return null;
       if (typeof current !== 'number') return null;
       return points.find(point =>
@@ -520,22 +579,25 @@
       const programState = data.program_state || {};
       const points = plan?.points || [];
       const parameters = config?.line?.parameters || {};
-      const configuredLength = parameters.line_length;
+      const pointToPoint = config?.line?.method === 'point_to_point';
+      const origin = pointToPoint ? (parameters.x_start || 0) : 0;
+      const configuredLength = pointToPoint ? parameters.x_end - origin : parameters.line_length;
       const lastPosition = points.length ? Math.max(...points.map(point => point.line_position)) : 0;
-      const length = configuredLength || lastPosition || 1;
+      const length = Number.isFinite(configuredLength) && configuredLength >= 0 ? configuredLength : lastPosition;
       const reachedPosition = typeof programState.line_position === 'number' ? programState.line_position : null;
       const activePoint = activePlanPoint(points, programState);
       const currentPosition = activePoint ? activePoint.line_position : reachedPosition;
       const obstacle = config?.obstacle;
       const left = 55, right = 585, lowY = 170;
       const obstacleHeight = 62, obstacleBottomY = lowY - 3;
-      const scale = value => left + Math.max(0, Math.min(1, value / length)) * (right - left);
+      const scale = value => left + (length > 0 ? Math.max(0, Math.min(1, value / length)) : 0) * (right - left);
 
       svg.replaceChildren();
-      addSvg('line', {x1:left, y1:lowY, x2:right, y2:lowY, stroke:'#17212b', 'stroke-width':5});
-      if (obstacle && obstacle.end >= obstacle.start) {
-        addSvg('rect', {x:scale(obstacle.start), y:obstacleBottomY-obstacleHeight, width:Math.max(2, scale(obstacle.end)-scale(obstacle.start)), height:obstacleHeight, rx:5, fill:'#e05252', opacity:.72});
-        addSvg('text', {x:(scale(obstacle.start)+scale(obstacle.end))/2, y:obstacleBottomY-32, 'text-anchor':'middle', fill:'white', 'font-size':14}, 'Obstacle');
+      addSvg('line', {x1:left, y1:lowY, x2:length > 0 ? right : left, y2:lowY, stroke:'#17212b', 'stroke-width':5});
+      if (obstacle && obstacle.end >= obstacle.start && obstacle.end >= origin && obstacle.start <= origin + length) {
+        const start = obstacle.start - origin, end = obstacle.end - origin;
+        addSvg('rect', {x:scale(start), y:obstacleBottomY-obstacleHeight, width:Math.max(2, scale(end)-scale(start)), height:obstacleHeight, rx:5, fill:'#e05252', opacity:.72});
+        addSvg('text', {x:(scale(start)+scale(end))/2, y:obstacleBottomY-32, 'text-anchor':'middle', fill:'white', 'font-size':14}, 'Obstacle');
       }
 
       let complete = 0;
@@ -548,13 +610,13 @@
         addSvg('text', {x:scale(point.line_position), y:lowY+25, 'text-anchor':'middle', fill:'#334e60', 'font-size':12}, String(point.measurement_index));
       }
       if (currentPosition !== null) {
-        addSvg('text', {x:scale(currentPosition), y:lowY-20, 'text-anchor':'middle', fill:'#1769aa', 'font-size':14, 'font-weight':700}, `Current: ${formatMillimetres(currentPosition)}`);
+        addSvg('text', {x:scale(currentPosition), y:lowY-20, 'text-anchor':'middle', fill:'#1769aa', 'font-size':14, 'font-weight':700}, `Current: ${formatMillimetres(origin + currentPosition)}`);
       }
-      addSvg('text', {x:left, y:285, fill:'#334e60', 'font-size':14}, 'Start');
-      addSvg('text', {x:right, y:285, 'text-anchor':'end', fill:'#334e60', 'font-size':14}, 'End');
+      addSvg('text', {x:left, y:285, fill:'#334e60', 'font-size':14}, `X Start: ${formatMillimetres(origin)}`);
+      addSvg('text', {x:right, y:285, 'text-anchor':'end', fill:'#334e60', 'font-size':14}, `X End: ${formatMillimetres(origin + length)}`);
 
       document.getElementById('ongoing-mode').textContent = humanizePhase(programState.mode);
-      document.getElementById('ongoing-current').textContent = currentPosition === null ? '—' : currentPosition.toFixed(3);
+      document.getElementById('ongoing-current').textContent = currentPosition === null ? '—' : formatNumber(origin + currentPosition);
       document.getElementById('ongoing-progress').textContent = `${complete} / ${measuredTotal}`;
     }
 
@@ -634,7 +696,12 @@
           const result = await response.json();
           if (!response.ok) throw new Error(result.detail || `HTTP ${response.status}`);
         } else {
-          await checkConfiguration('/api/configuration/validate');
+          const validated = await checkConfiguration('/api/configuration/validate');
+          let outsideLineConfirmed = false;
+          if (validated.scope_warning) {
+            outsideLineConfirmed = await confirmLineScope(validated.scope_warning);
+            if (!outsideLineConfirmed) return;
+          }
           const response = await fetch('/api/measurement/start', {
             method:'POST',
             headers:{'Content-Type':'application/json'},
@@ -643,6 +710,7 @@
               show_terminal:showTerminal.checked,
               create_session_folder:createSessionFolder.checked,
               operator_confirmed:false,
+              outside_line_confirmed:outsideLineConfirmed,
             }),
           });
           const result = await response.json();
@@ -663,6 +731,7 @@
       else if (!response.ok) showImportant(result.detail || 'Folder picker failed.');
     });
 
+    spacingSourceInput.value = 'increment';
     loadDefaultConfigs();
     loadRoutineFiles().catch(error => showImportant(error.message));
     drawVisualization();
