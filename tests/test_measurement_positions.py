@@ -13,7 +13,7 @@ sys.path.insert(0, str(ROOT))
 
 from src.program.webapp2 import server
 from line_planner import line_geometry, line_scope_warning, point_pose, is_obstacle, crosses_obstacle, start_entry_crosses_obstacle
-from measurement_config import validate_measurement_config
+from measurement_config import validate_measurement_config, canonical_config
 from measurement_plan import create_measurement_plan
 from webapp.config_form import edited_config, display_field_value, form_html
 
@@ -35,9 +35,10 @@ class MeasurementPositionTests(unittest.TestCase):
             "motion": {"type": "l", "speed": 50., "acceleration": 100.},
             "measurement": {"program_path": "test.urp", "contact_threshold": 140.,
                             "holding_force": 160., "max_displacement": 10.,
-                            "simulation": False, "data_server": False},
+                            "simulation": False, "stop_method": "timer"},
         }
-        self.parameters = self.config["line"]["parameters"]
+        self.config = canonical_config(self.config)
+        self.parameters = self.config["line"]
 
     def plan(self):
         validate_measurement_config(self.config, self.data)
@@ -206,18 +207,18 @@ class MeasurementPositionTests(unittest.TestCase):
 
     def test_decimal_fields_are_not_constrained_by_integer_defaults(self):
         defaults = deepcopy(self.config)
-        defaults["line"]["parameters"].update(increment=100, x_start=0, x_end=1000, offset_y=0)
+        defaults["line"].update(increment=100, x_start=0, x_end=1000, offset_y=0)
         fields = {"line.method": ["point_to_point"]}
-        for key, value in defaults["line"]["parameters"].items():
-            fields[f"line.parameters.{key}"] = [str(value).lower()]
+        for key, value in defaults["line"].items():
+            fields[f"line.{key}"] = [str(value).lower()]
         for section in ("motion", "measurement"):
             for key, value in defaults[section].items():
                 fields[f"{section}.{key}"] = [str(value).lower()]
-        fields.update({"line.parameters.increment": ["12.3456789"],
-                       "line.parameters.x_start": ["20.25"], "line.parameters.offset_y": ["-2.75"]})
+        fields.update({"line.increment": ["12.3456789"],
+                       "line.x_start": ["20.25"], "line.offset_y": ["-2.75"]})
         config = edited_config(defaults, fields, self.data)
-        self.assertEqual(config["line"]["parameters"]["increment"], 12.3456789)
-        self.assertEqual(config["line"]["parameters"]["x_start"], 20.25)
+        self.assertEqual(config["line"]["increment"], 12.3456789)
+        self.assertEqual(config["line"]["x_start"], 20.25)
         self.assertEqual(display_field_value("increment", 12.3456789), "12.35")
 
     def test_numeric_display_uses_at_most_two_decimals_without_trailing_zeros(self):

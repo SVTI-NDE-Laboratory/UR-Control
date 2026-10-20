@@ -38,6 +38,7 @@ from measurement_movement import (
     translate_along_line,
 )
 from measurement_state import write_state
+from measurement_config import measurement_stop_method
 from measurement_plan import record_measurement_result
 from apply_force import apply_force
 from robot_connection import assert_robot_running, stop_robot
@@ -271,8 +272,9 @@ def _run_measurements(
                 "line_position": position,
                 "x_coordinate": geometry.get("x_start", 0.0) + position,
             },
-            acknowledge_force_hold=measurement.get("data_server", True),
+            stop_method=measurement_stop_method(config),
             on_force_success=publish_force_success,
+            hold_duration=measurement.get("hold_duration", 0.5),
         )
         if measurement_plan_path is not None:
             record_measurement_result(

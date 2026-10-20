@@ -28,7 +28,7 @@ def millimetres_to_metres(value: float) -> float:
 def line_method(config: dict) -> str:
     """Return and validate the configured line-planning method."""
 
-    method = config["line"].get("method", TRANSLATION)
+    method = config["line"].get("method", POINT_TO_POINT)
     if method not in {TRANSLATION, POINT_TO_POINT}:
         raise ValueError(
             "Line method must be 'translation' or 'point_to_point'."
@@ -37,7 +37,7 @@ def line_method(config: dict) -> str:
 
 
 def line_parameters(config: dict) -> dict:
-    """Return method parameters, accepting the old flat translation schema."""
+    """Return flat line settings, accepting archived nested configurations."""
 
     line = config["line"]
     if "parameters" in line:
@@ -77,7 +77,7 @@ def obstacle_interval(config: dict) -> tuple[float, float] | None:
     if start > end:
         raise ValueError("Obstacle start must not be greater than obstacle end.")
     origin = 0.0
-    if config.get("line", {}).get("method", TRANSLATION) == POINT_TO_POINT:
+    if "line" in config and line_method(config) == POINT_TO_POINT:
         parameters = line_parameters(config)
         origin = float(parameters.get("x_start", parameters.get("offset_x", 0.0)))
     return start - origin, end - origin

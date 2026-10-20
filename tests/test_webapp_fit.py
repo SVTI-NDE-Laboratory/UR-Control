@@ -24,15 +24,15 @@ class FitTests(unittest.TestCase):
         self.defaults = server.legacy.load_default_config("point_to_point", "server")
         self.config = deepcopy(self.defaults)
         self.config.pop("obstacle", None)
-        self.config["line"]["parameters"].update(
+        self.config["line"].update(
             auto_fit=False, x_start=23.5, x_end=1, increment=12.25,
             number_of_measurements=7, offset_y=-20,
         )
 
     def fields(self):
         result = {"line.method": ["point_to_point"]}
-        for key, value in self.config["line"]["parameters"].items():
-            result[f"line.parameters.{key}"] = [str(value).lower()]
+        for key, value in self.config["line"].items():
+            result[f"line.{key}"] = [str(value).lower()]
         for section, values in self.config.items():
             if section == "line":
                 continue
@@ -43,9 +43,9 @@ class FitTests(unittest.TestCase):
 
     def test_independent_spacing_ignores_end_and_spacing_source(self):
         for source in ("increment", "count"):
-            self.config["line"]["parameters"]["spacing_source"] = source
+            self.config["line"]["spacing_source"] = source
             config = edited_config(self.defaults, self.fields(), self.data)
-            parameters = config["line"]["parameters"]
+            parameters = config["line"]
             self.assertEqual(parameters["x_start"], 23.5)
             self.assertEqual(parameters["x_end"], 97)
             self.assertEqual(parameters["increment"], 12.25)
@@ -55,18 +55,18 @@ class FitTests(unittest.TestCase):
                              [i * 12.25 for i in range(7)])
 
     def test_independent_start_change_preserves_spacing_and_count(self):
-        self.config["line"]["parameters"]["x_start"] = 50
+        self.config["line"]["x_start"] = 50
         geometry = line_geometry(self.config, self.data)
         self.assertEqual((geometry["x_end"], geometry["increment"], geometry["number_of_measurements"]),
                          (123.5, 12.25, 7))
 
     def test_independent_end_cannot_exceed_taught_range(self):
-        self.config["line"]["parameters"]["increment"] = 100000
+        self.config["line"]["increment"] = 100000
         with self.assertRaisesRegex(ValueError, "taught"):
             edited_config(self.defaults, self.fields(), self.data)
 
     def test_auto_fit_still_derives_spacing_or_count(self):
-        parameters = self.config["line"]["parameters"]
+        parameters = self.config["line"]
         parameters.update(auto_fit=True, x_start=0, x_end=100, increment=30,
                           number_of_measurements=6, spacing_source="increment")
         geometry = line_geometry(self.config, self.data)

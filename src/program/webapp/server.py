@@ -50,6 +50,7 @@ else:
 
 from measurement_plan import create_measurement_plan
 from line_planner import line_geometry, line_scope_warning
+from measurement_config import canonical_config, read_default_program_path
 from read_routines import get_waypoint, read_routines_file
 
 
@@ -119,7 +120,9 @@ def default_config_path(method: str, server_profile: str = "server") -> Path:
 
 
 def load_default_config(method: str, server_profile: str = "server") -> dict[str, Any]:
-    return json.loads(default_config_path(method, server_profile).read_text(encoding="utf-8"))
+    config = canonical_config(json.loads(default_config_path(method, server_profile).read_text(encoding="utf-8")))
+    config["measurement"]["program_path"] = read_default_program_path()
+    return config
 
 
 def submitted_method(submission: ConfigurationSubmission) -> str:
@@ -346,6 +349,9 @@ def start_measurement(request: MeasurementStartRequest) -> dict[str, Any]:
     base_output_directory = request.output_directory.resolve()
     routine_file = state.get_routine_file()
     try:
+        # A validated snapshot or old browser tab must not override a changed
+        # installed URP path. The running worker still owns its own snapshot.
+        config["measurement"]["program_path"] = read_default_program_path()
         warning = line_scope_warning(line_geometry(config, read_routines_file(routine_file)))
         if warning and not request.outside_line_confirmed:
             raise HTTPException(status_code=409, detail=warning)

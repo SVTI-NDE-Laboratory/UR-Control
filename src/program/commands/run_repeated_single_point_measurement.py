@@ -22,7 +22,7 @@ for folder in [MEASUREMENT_DIR, ROBOT_DIR, ROUTINES_DIR]:
 
 from apply_force import apply_force
 from line_planner import line_geometry, point_pose
-from measurement_config import validate_measurement_config
+from measurement_config import validate_measurement_config, measurement_stop_method
 from measurement_movement import motion_parameters
 from read_routines import get_waypoint, read_routines_file
 from robot_connection import (
@@ -46,7 +46,7 @@ ROUTINES_FILE = ROUTINES_DIR / "routine_files" / "routines_pk-03-prism-a.json"
 # Distance from p_start_l along the p_start_l -> p_end_l measurement line [mm].
 TARGET_LINE_POSITION = 310.0
 
-FORCE_PROGRAM_PATH = "Inspection/Programs/apply_force_mira.urp"
+FORCE_PROGRAM_PATH = "Inspection/Programs/apply_force.urp"
 CONTACT_THRESHOLD = 140.0
 HOLDING_FORCE = 160.0
 MAX_DISPLACEMENT = 50.0
@@ -61,14 +61,11 @@ WAIT_TIMEOUT = 30.0
 
 MEASUREMENT_CONFIG = {
     "line": {
-        "method": "point_to_point",
-        "parameters": {
-            "start_point": "p_start_l",
-            "end_point": "p_end_l",
-            "spacing_source": "count",
-            "number_of_measurements": 2,
-            "increment": 100.0,
-        },
+        "start_point": "p_start_l",
+        "end_point": "p_end_l",
+        "spacing_source": "count",
+        "number_of_measurements": 2,
+        "increment": 100.0,
     },
     "motion": {
         "type": "l",
@@ -81,7 +78,7 @@ MEASUREMENT_CONFIG = {
         "holding_force": HOLDING_FORCE,
         "max_displacement": MAX_DISPLACEMENT,
         "simulation": SIMULATION,
-        "data_server": False,
+        "stop_method": "timer",
     },
 }
 
@@ -206,7 +203,8 @@ def run() -> None:
                 measurement["contact_threshold"],
                 measurement["holding_force"],
                 measurement["simulation"],
-                acknowledge_force_hold=measurement["data_server"],
+                stop_method=measurement_stop_method(MEASUREMENT_CONFIG),
+                hold_duration=measurement.get("hold_duration", 0.5),
             )
             print(f"force_reached = {force_reached}, timestamp = {timestamp}")
 

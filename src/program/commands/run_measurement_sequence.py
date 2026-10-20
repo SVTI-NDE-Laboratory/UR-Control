@@ -32,7 +32,7 @@ for folder in [PROGRAM_DIR, MEASUREMENT_DIR, ROBOT_DIR, ROUTINES_DIR]:
     if str(folder) not in sys.path:
         sys.path.insert(0, str(folder))
 
-from measurement_config import read_measurement_config
+from measurement_config import read_measurement_config, measurement_stop_method
 from measurement_plan import first_measurable_index, write_measurement_plan
 from measurement_state import write_state
 from read_routines import get_waypoint, read_routines_file
@@ -44,7 +44,7 @@ from robot_connection import (
 )
 from run_measurements import MeasurementUnavailableError, run_measurements
 from run_routine import run_routine
-from line_planner import is_obstacle, line_positions, line_geometry, start_entry_crosses_obstacle
+from line_planner import is_obstacle, line_positions, line_geometry, line_parameters, start_entry_crosses_obstacle
 from data_acquisition.server_control import (
     AcquisitionControlServer,
     read_server_config,
@@ -55,7 +55,7 @@ from data_acquisition.server_logging import install_timestamped_tee
 # Connection and configuration locations.
 ROBOT_IP = "192.168.3.10"
 ROUTINES_FILE = ROUTINES_DIR / "routine_files" / "routines_block.json"
-CONFIG_FILE = CONFIG_DIR / "config_mira.json"
+CONFIG_FILE = CONFIG_DIR / "config_default.json"
 
 # A joint move counts as complete when every joint is within this many radians.
 JOINT_TOLERANCE = 0.01
@@ -89,7 +89,7 @@ def parse_args() -> argparse.Namespace:
         "--config",
         type=Path,
         default=CONFIG_FILE,
-        help="Measurement configuration file (defaults to config/config_mira.json).",
+        help="Measurement configuration file (defaults to config/config_default.json).",
     )
     parser.add_argument(
         "--operator-confirmed",
@@ -161,7 +161,7 @@ def read_state_snapshot(state_file: Path) -> dict[str, Any]:
 def configured_y_offset(measurement_config: dict[str, Any]) -> float:
     """Return the configured STATE Y offset in millimetres."""
 
-    parameters = measurement_config.get("line", {}).get("parameters", {})
+    parameters = line_parameters(measurement_config) if "line" in measurement_config else {}
     return float(parameters.get("offset_y", 0.0))
 
 
@@ -201,8 +201,8 @@ def start_acquisition_if_enabled(
 ) -> AcquisitionResources:
     """Start data acquisition communication when the run configuration needs it."""
 
-    if not measurement_config["measurement"].get("data_server", True):
-        print("Data acquisition control server disabled by measurement.data_server=false.")
+    if measurement_stop_method(measurement_config) == "timer":
+        print("Data acquisition control server disabled by measurement.stop_method=timer.")
         return None, None
 
     def state_provider() -> dict[str, Any]:
@@ -323,7 +323,7 @@ def wait_for_start_permission(
 ) -> None:
     """Gate the first robot routine according to the acquisition mode."""
 
-    if measurement_config["measurement"].get("data_server", True):
+    if measurement_stop_method(measurement_config) == "client_feedback":
         if control_server is None:
             raise RuntimeError(
                 "Measurement with server is enabled, but no acquisition server is running."
@@ -423,7 +423,7 @@ def run_robot_sequence(
     """Run the start routine, measurement traversal, and end routine."""
 
     if (
-        measurement_config["measurement"].get("data_server", True)
+        measurement_stop_method(measurement_config) == "client_feedback"
         and acquire_measurement is None
     ):
         raise RuntimeError(

@@ -38,7 +38,7 @@ def translated_script():
 
 class RobotStub:
     def __init__(self, mode=0, simulation=False, ack_after=3, norm=10, z_force=10,
-                 max_distance=1, travel_per_call=0, initial_ack=0):
+                 max_distance=1, travel_per_call=0, initial_ack=0, duration=0.5):
         self.mode = mode
         self.simulation = simulation
         self.ack_after = ack_after
@@ -47,6 +47,7 @@ class RobotStub:
         self.max_distance = max_distance
         self.travel_per_call = travel_per_call
         self.initial_ack = initial_ack
+        self.duration = duration
         self.status = None
         self.hold_ticks = 0
         self.ticks = 0
@@ -55,8 +56,6 @@ class RobotStub:
         self.events = []
 
     def input_integer(self, register):
-        if register == 47:
-            return self.mode
         if register == 46:
             return int(self.simulation)
         if register == 42:
@@ -120,63 +119,48 @@ class RobotStub:
 
 
 class ApplyForceScriptTests(unittest.TestCase):
-    def test_time_mode_pulses_for_duration_and_ignores_acknowledgement(self):
-        robot = RobotStub(mode=1, ack_after=None, initial_ack=1, z_force=0)
-        result = robot.run()
-        self.assertEqual(robot.statuses, [0, 1, 0])
-        self.assertEqual([e for e in robot.events if e[0] == "voltage"],
-                         [("voltage", 0), ("voltage", 12), ("voltage", 0), ("voltage", 0)])
-        self.assertAlmostEqual(result["elapsed_time"], 0.5)
-        self.assertIn(("return",), robot.events)
-
-    def test_feedback_uses_absolute_z_and_waits_for_ack_without_voltage_changes(self):
-        robot = RobotStub(norm=0, z_force=-10, ack_after=7)
+    def test_real_hold_ends_only_on_python_acknowledgement(self):
+        robot = RobotStub(z_force=-10, ack_after=7)
         robot.run()
         self.assertEqual(robot.statuses, [0, 1, 0])
         self.assertEqual(robot.hold_ticks, 8)
+        self.assertIn(("return",), robot.events)
         self.assertFalse(any(e[0] == "voltage" for e in robot.events))
 
-    def test_feedback_times_out_then_returns(self):
-        robot = RobotStub(ack_after=None)
+    def test_hold_can_exceed_old_ten_second_limit(self):
+        robot = RobotStub(ack_after=150)
         robot.run()
-        self.assertEqual(robot.statuses, [0, 1, 3, 0])
-        self.assertIn(("return",), robot.events)
+        self.assertEqual(robot.statuses, [0, 1, 0])
+        self.assertEqual(robot.hold_ticks, 151)
 
-    def test_approach_failure_does_not_trigger_acquisition(self):
-        for mode in (0, 1):
-            for distance_limited in (False, True):
-                with self.subTest(mode=mode, distance_limited=distance_limited):
-                    robot = RobotStub(mode=mode, norm=0, z_force=0,
-                                      max_distance=0.01 if distance_limited else 1,
-                                      travel_per_call=0.01 if distance_limited else 0)
-                    robot.run()
-                    self.assertEqual(robot.statuses, [0, 2, 0])
-                    self.assertNotIn(("voltage", 12), robot.events)
-                    self.assertIn(("return",), robot.events)
+    def test_without_acknowledgement_robot_keeps_holding(self):
+        robot = RobotStub(ack_after=None)
+        with self.assertRaisesRegex(AssertionError, "test budget"):
+            robot.run()
+        self.assertEqual(robot.statuses, [0, 1])
+        self.assertNotIn(("return",), robot.events)
 
-    def test_simulation_stops_force_before_acquisition_in_both_modes(self):
-        for mode in (0, 1):
-            for distance_limited in (False, True):
-                with self.subTest(mode=mode, distance_limited=distance_limited):
-                    robot = RobotStub(mode=mode, simulation=True, norm=0, z_force=0,
-                                      max_distance=0.01 if distance_limited else 1,
-                                      travel_per_call=0.01 if distance_limited else 0)
-                    result = robot.run()
-                    self.assertEqual(robot.statuses, [0, 1, 0])
-                    stop = robot.events.index(("end_force",))
-                    reached = robot.events.index(("status", 1))
-                    self.assertLess(stop, reached)
-                    self.assertNotIn(("force",), robot.events[stop + 1:])
-                    self.assertFalse(result["contact_detected"])
-                    if mode == 1:
-                        self.assertIn(("voltage", 12), robot.events[reached + 1:])
+    def test_failed_approach_returns_without_waiting_for_acknowledgement(self):
+        for limited in (False, True):
+            robot = RobotStub(norm=0, z_force=0, ack_after=None,
+                              max_distance=.01 if limited else 1,
+                              travel_per_call=.01 if limited else 0)
+            robot.run()
+            self.assertEqual(robot.statuses, [0, 2, 0])
+            self.assertIn(("return",), robot.events)
 
-    def test_invalid_modes_have_no_motion_or_voltage_side_effects(self):
-        for mode in (-1, 2):
-            with self.subTest(mode=mode):
-                robot = RobotStub(mode=mode)
-                robot.run()
-                self.assertEqual(robot.events, [("status", 4)])
+    def test_simulation_stops_force_then_waits_for_same_release(self):
+        for limited in (False, True):
+            robot = RobotStub(simulation=True, ack_after=7,
+                              max_distance=.01 if limited else 1,
+                              travel_per_call=.01 if limited else 0)
+            result = robot.run()
+            self.assertEqual(robot.statuses, [0, 1, 0])
+            stop = robot.events.index(("end_force",))
+            self.assertLess(stop, robot.events.index(("status", 1)))
+            self.assertNotIn(("force",), robot.events[stop + 1:])
+            self.assertFalse(result["contact_detected"])
+            self.assertEqual(robot.hold_ticks, 8)
 
 
 if __name__ == "__main__":

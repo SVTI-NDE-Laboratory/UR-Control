@@ -76,18 +76,18 @@
     const saveDefaultButton = document.getElementById('save-default');
     const svg = document.getElementById('line-visualization');
     const svgNS = 'http://www.w3.org/2000/svg';
-    const lineMethod = document.getElementById('line.method');
+    const lineMethod = {value:'point_to_point'};
     const obstacleEnabled = document.getElementById('obstacle-enabled');
-    const totalLengthInput = document.getElementById('line.parameters.line_length');
-    const safeHeightInput = document.getElementById('line.parameters.high_low_distance');
+    const totalLengthInput = document.getElementById('line.line_length');
+    const safeHeightInput = document.getElementById('line.high_low_distance');
     const safeHeightRow = document.getElementById('safe-height-row');
-    const incrementInput = document.getElementById('line.parameters.increment');
+    const incrementInput = document.getElementById('line.increment');
     const measurementCountInput = document.getElementById('measurement-count');
     const spacingSourceInput = document.getElementById('spacing-source');
     const autoFit = document.getElementById('auto-fit');
     const simulationEnabled = document.getElementById('simulation-enabled');
-    const xStartInput = document.getElementById('line.parameters.x_start');
-    const xEndInput = document.getElementById('line.parameters.x_end');
+    const xStartInput = document.getElementById('line.x_start');
+    const xEndInput = document.getElementById('line.x_end');
     const pointMethodNote = document.getElementById('point-method-note');
     const routineFileSelect = document.getElementById('routine-file');
     const acquisitionServerEnabled = document.getElementById('acquisition-server-enabled');
@@ -174,6 +174,9 @@
         input.readOnly = simulationEnabled.checked;
         input.classList.toggle('simulation-force', simulationEnabled.checked);
       }
+      const holdDuration = document.getElementById('measurement.hold_duration');
+      holdDuration.readOnly = acquisitionServerEnabled.checked;
+      holdDuration.classList.toggle('simulation-force', acquisitionServerEnabled.checked);
       const method = lineMethod.value;
       const pointToPoint = method === 'point_to_point';
       pointMethodNote.classList.toggle('hidden', method !== 'point_to_point');
@@ -249,13 +252,13 @@
       const requestedCount = Number(measurementCountInput?.value || '1');
       const count = Number.isInteger(requestedCount) && requestedCount >= 1 ? requestedCount : 1;
       const length = translation
-        ? numberValue('line.parameters.line_length')
+        ? numberValue('line.line_length')
         : selectedPointLength();
-      const requestedIncrement = numberValue('line.parameters.increment');
+      const requestedIncrement = numberValue('line.increment');
       const increment = autoFit.checked && !translation && spacingSourceInput.value === 'count' && count >= 2 && length > 0
         ? length / (count - 1)
         : requestedIncrement;
-      const origin = translation ? 0 : numberValue('line.parameters.x_start');
+      const origin = translation ? 0 : numberValue('line.x_start');
       const obstacleStart = numberValue('obstacle.start') - origin;
       const obstacleEnd = numberValue('obstacle.end') - origin;
       const hasObstacle = obstacleEnabled.checked && obstacleStart + origin >= 0 && obstacleEnd >= obstacleStart;
@@ -281,9 +284,9 @@
         addSvg('circle', {cx:scale(position), cy:lowY, r:6, fill:blocked ? '#b85b5b' : '#2474a9', stroke:'white', 'stroke-width':2});
         addSvg('text', {x:scale(position), y:lowY+25, 'text-anchor':'middle', fill:'#334e60', 'font-size':12}, String(index + 1));
       }
-      addSvg('text', {x:left, y:285, fill:'#334e60', 'font-size':14}, translation ? '0 mm' : `X Start: ${formatMillimetres(numberValue('line.parameters.x_start'))}`);
-      addSvg('text', {x:right, y:285, 'text-anchor':'end', fill:'#334e60', 'font-size':14}, translation ? formatMillimetres(length) : `X End: ${formatMillimetres(numberValue('line.parameters.x_end'))}`);
-      if (!translation) addSvg('text', {x:(left+right)/2, y:55, 'text-anchor':'middle', fill:'#334e60', 'font-size':14}, `Y Offset: ${formatMillimetres(numberValue('line.parameters.offset_y'))}`);
+      addSvg('text', {x:left, y:285, fill:'#334e60', 'font-size':14}, translation ? '0 mm' : `X Start: ${formatMillimetres(numberValue('line.x_start'))}`);
+      addSvg('text', {x:right, y:285, 'text-anchor':'end', fill:'#334e60', 'font-size':14}, translation ? formatMillimetres(length) : `X End: ${formatMillimetres(numberValue('line.x_end'))}`);
+      if (!translation) addSvg('text', {x:(left+right)/2, y:55, 'text-anchor':'middle', fill:'#334e60', 'font-size':14}, `Y Offset: ${formatMillimetres(numberValue('line.offset_y'))}`);
 
     }
 
@@ -351,21 +354,21 @@
       const config = defaultConfigs?.[profile];
       if (!config) return;
       if (!preserveLine) {
-        const parameters = config.line.parameters;
+        const parameters = config.line;
         const method = lineMethod.value;
         autoFit.checked = parameters.auto_fit !== false;
         if (method === 'translation') {
-          setNamedValue('line.parameters.line_length', 'line_length', parameters.line_length);
-          setNamedValue('line.parameters.high_low_distance', 'high_low_distance', parameters.high_low_distance);
-          setNamedValue('line.parameters.direction_start_end', 'direction_start_end', parameters.direction_start_end);
-          setNamedValue('line.parameters.direction_high_low', 'direction_high_low', parameters.direction_high_low);
+          setNamedValue('line.line_length', 'line_length', parameters.line_length);
+          setNamedValue('line.high_low_distance', 'high_low_distance', parameters.high_low_distance);
+          setNamedValue('line.direction_start_end', 'direction_start_end', parameters.direction_start_end);
+          setNamedValue('line.direction_high_low', 'direction_high_low', parameters.direction_high_low);
         } else {
-          setNamedValue('line.parameters.x_start', 'x_start', autoFit.checked ? 0 : (parameters.x_start || parameters.offset_x || 0));
+          setNamedValue('line.x_start', 'x_start', autoFit.checked ? 0 : (parameters.x_start || parameters.offset_x || 0));
           if (autoFit.checked) setNumericInput(xEndInput, pointGeometry?.line_length || 0);
-          else setNamedValue('line.parameters.x_end', 'x_end', parameters.x_end);
-          setNamedValue('line.parameters.offset_y', 'offset_y', parameters.offset_y || 0);
+          else setNamedValue('line.x_end', 'x_end', parameters.x_end);
+          setNamedValue('line.offset_y', 'offset_y', parameters.offset_y || 0);
         }
-        setNamedValue('line.parameters.increment', 'increment', parameters.increment);
+        setNamedValue('line.increment', 'increment', parameters.increment);
         spacingSourceInput.value = 'increment';
         measurementCountInput.value = method === 'point_to_point'
           ? String(parameters.number_of_measurements)
@@ -377,7 +380,7 @@
           setNamedValue('obstacle.end', 'end', config.obstacle.end);
         }
       }
-      simulationEnabled.checked = Boolean(config.measurement.simulation);
+      if (!preserveLine) simulationEnabled.checked = Boolean(config.measurement.simulation);
       for (const [section, values] of Object.entries({motion:config.motion, measurement:config.measurement})) {
         for (const [key, value] of Object.entries(values)) setNamedValue(`${section}.${key}`, key, value);
       }
@@ -395,8 +398,9 @@
         fields[name].push(raw !== undefined && input.value === input.dataset.displayValue ? raw : String(value));
       }
       fields['acquisition.server_profile'] = [selectedServerProfile()];
-      fields['line.parameters.auto_fit'] = [String(autoFit.checked)];
+      fields['line.auto_fit'] = [String(autoFit.checked)];
       fields['measurement.simulation'] = [String(simulationEnabled.checked)];
+      fields['measurement.stop_method'] = [acquisitionServerEnabled.checked ? 'client_feedback' : 'timer'];
       return fields;
     }
 
@@ -446,17 +450,9 @@
     });
     document.getElementById('reset-default').addEventListener('click', async () => {
       await fetch('/api/configuration/reset', {method:'POST'});
-      window.location.href = `/configuration?defaults=true&method=${encodeURIComponent(lineMethod.value)}&server_profile=${encodeURIComponent(selectedServerProfile())}`;
+      window.location.href = `/configuration?defaults=true&server_profile=${encodeURIComponent(selectedServerProfile())}`;
     });
 
-    lineMethod.addEventListener('change', () => {
-      formDirty = true;
-      spacingSourceInput.value = 'increment';
-      applyProfileDefaults();
-      if (pointGeometry) synchronizeSpacingFromSource();
-      synchronizeFields();
-      drawVisualization();
-    });
     acquisitionServerEnabled?.addEventListener('change', () => {
       formDirty = true;
       applyProfileDefaults(selectedServerProfile(), true);
@@ -578,8 +574,8 @@
       const plan = data.plan;
       const programState = data.program_state || {};
       const points = plan?.points || [];
-      const parameters = config?.line?.parameters || {};
-      const pointToPoint = config?.line?.method === 'point_to_point';
+      const parameters = config?.line || {};
+      const pointToPoint = true;
       const origin = pointToPoint ? (parameters.x_start || 0) : 0;
       const configuredLength = pointToPoint ? parameters.x_end - origin : parameters.line_length;
       const lastPosition = points.length ? Math.max(...points.map(point => point.line_position)) : 0;

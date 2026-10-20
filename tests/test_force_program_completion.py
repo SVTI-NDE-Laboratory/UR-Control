@@ -25,7 +25,7 @@ class Clock:
 
 class ForceProgramCompletionTests(unittest.TestCase):
     def run_cycle(self, feedback=False, completion_delay=3.5, terminal_status=0,
-                  safety_error=False):
+                  safety_error=False, hold_duration=0.5):
         clock = Clock()
         io = Mock()
         receiver = Mock()
@@ -38,14 +38,17 @@ class ForceProgramCompletionTests(unittest.TestCase):
             self.assertEqual(register, 42)
             if clock.now < reached_at:
                 return 0
-            release_start = acknowledged_at if feedback else reached_at
+            release_start = acknowledged_at
             if release_start is not None and clock.now >= release_start + completion_delay:
                 return terminal_status
             return 1
 
         def write_integer(register, value):
             nonlocal acknowledged_at
+            self.assertTrue(42 <= register <= 46, "RTDE upper integer range exceeded")
             if register == 42 and value == 1:
+                if not feedback:
+                    self.assertGreaterEqual(clock.now + 1e-9, reached_at + hold_duration)
                 acknowledged_at = clock.now
             return True
 
@@ -69,8 +72,9 @@ class ForceProgramCompletionTests(unittest.TestCase):
             try:
                 result = force.apply_force(
                     "test", "test.urp", 50, 140, 160, simulation=True,
-                    acknowledge_force_hold=feedback,
+                    stop_method="client_feedback" if feedback else "timer",
                     acquire_data=(lambda context: {}) if feedback else None,
+                    hold_duration=hold_duration,
                 )
             except Exception:
                 stop.assert_called_once_with("test")
@@ -83,14 +87,23 @@ class ForceProgramCompletionTests(unittest.TestCase):
                 verify.assert_called_once()
                 self.assertEqual(verify.call_args.args[2], [0.] * 6)
             finally:
+                self.assertEqual({call.args[0] for call in io.setInputDoubleRegister.call_args_list}, {43, 44, 45})
+                self.assertTrue(all(42 <= call.args[0] <= 46 for call in io.setInputIntRegister.call_args_list))
                 receiver.disconnect.assert_called_once()
                 io.disconnect.assert_called_once()
                 self.assertEqual(io.setInputIntRegister.call_args_list[-2].args, (42, 0))
                 self.assertEqual(io.setInputIntRegister.call_args_list[-1].args, (46, 0))
         return clock
 
-    def test_time_mode_can_remain_stationary_longer_than_two_seconds(self):
+    def test_timer_mode_completes_without_observable_return_motion(self):
         self.run_cycle()
+
+    def test_python_timer_can_exceed_return_allowance_before_release(self):
+        self.run_cycle(hold_duration=10, completion_delay=0.5)
+
+    def test_controller_rejecting_settings_aborts_immediately(self):
+        with self.assertRaisesRegex(ValueError, "settings"):
+            self.run_cycle(terminal_status=4)
 
     def test_feedback_release_can_complete_without_observable_return_motion(self):
         self.run_cycle(feedback=True)

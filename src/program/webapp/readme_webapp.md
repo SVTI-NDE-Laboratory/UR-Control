@@ -22,8 +22,10 @@ selector is part of the Measurement Line box.
 
 **Start program** first checks the displayed values, creates the measurement
 plan, and writes `../config/config_tmp.json`. An invalid value is reported and
-the robot program is not launched. In **Force Measurement**, **Measurement with
-server** selects `config_server.json`; clearing it selects `config_mira.json`.
+the robot program is not launched. In **Force Measurement**, **With RTM Program**
+selects client-feedback mode from `config_default.json`; clearing it selects timer mode
+from `config_mira.json`. Saved configs use flat `line` settings and
+`measurement.stop_method` (`client_feedback` or `timer`).
 **Save as default** performs the same checks and explicitly replaces the
 currently selected default file. **Reset default** reloads that selected saved
 default. Configuration values are locked while the program is running.

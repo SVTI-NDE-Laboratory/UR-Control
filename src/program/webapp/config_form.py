@@ -17,7 +17,7 @@ else:
         ROUTINES_FILE,
     )
 
-from measurement_config import validate_measurement_config
+from measurement_config import validate_measurement_config, canonical_config
 from line_planner import POINT_TO_POINT, line_geometry
 from read_routines import read_routines_file
 
@@ -78,6 +78,8 @@ def parse_value(text: str, template: Any) -> Any:
 def parse_field_value(key: str, text: str, template: Any) -> Any:
     """Parse a form field in the same units used by the config file."""
 
+    if key == "hold_duration":
+        return float(text)
     return parse_value(text, template)
 
 
@@ -88,10 +90,9 @@ def edited_config(
 ) -> dict[str, Any]:
     """Build a typed configuration from submitted form fields."""
 
+    defaults = canonical_config(defaults)
     config = deepcopy(defaults)
-    method = fields.get("line.method", ["point_to_point"])[0]
-    if method != "point_to_point":
-        raise ValueError("Measurement line method must be point to point.")
+    method = POINT_TO_POINT
     parameter_templates = {
         "increment": 100.0,
         "number_of_measurements": 5,
@@ -102,7 +103,7 @@ def edited_config(
 
     parameters = {}
     for key, fallback in parameter_templates.items():
-        field_name = f"line.parameters.{key}"
+        field_name = f"line.{key}"
         if field_name not in fields:
             raise ValueError(f"Missing field: {FIELD_LABELS.get(key, key)}")
         template = fallback
@@ -110,17 +111,17 @@ def edited_config(
             parameters[key] = parse_field_value(key, fields[field_name][0], template)
         except ValueError as error:
             raise ValueError(f"{FIELD_LABELS.get(key, key)}: {error}") from error
-    config["line"] = {"method": method, "parameters": parameters}
-    parameters["auto_fit"] = parse_value(fields.get("line.parameters.auto_fit", ["true"])[0], True)
+    config["line"] = parameters
+    parameters["auto_fit"] = parse_value(fields.get("line.auto_fit", ["true"])[0], True)
     if parameters["auto_fit"] and parameters["x_end"] <= parameters["x_start"]:
         raise ValueError("X End must be larger than X Start when Automatic Fit is enabled.")
     if method == "point_to_point":
         spacing_source = fields.get(
-            "line.parameters.spacing_source", ["increment"]
+            "line.spacing_source", ["increment"]
         )[0]
         if spacing_source not in {"increment", "count"}:
             raise ValueError("Point-to-point spacing source is invalid.")
-        config["line"]["parameters"].update(
+        config["line"].update(
             {
                 "start_point": "p_start_l",
                 "end_point": "p_end_l",
@@ -132,6 +133,11 @@ def edited_config(
         if section in {"line", "obstacle"}:
             continue
         for key, template in values.items():
+            if section == "measurement" and key == "program_path":
+                # This hidden deployment setting comes from current defaults,
+                # never from a stale value submitted by an open browser tab.
+                config[section][key] = template
+                continue
             field_name = f"{section}.{key}"
             if field_name not in fields:
                 raise ValueError(f"Missing field: {FIELD_LABELS.get(key, key)}")
@@ -172,11 +178,11 @@ def edited_config(
         if routines_data is None:
             routines_data = read_routines_file(ROUTINES_FILE)
         geometry = line_geometry(config, routines_data)
-        config["line"]["parameters"]["number_of_measurements"] = geometry[
+        config["line"]["number_of_measurements"] = geometry[
             "number_of_measurements"
         ]
-        config["line"]["parameters"]["increment"] = geometry["increment"]
-        config["line"]["parameters"]["x_end"] = geometry["x_end"]
+        config["line"]["increment"] = geometry["increment"]
+        config["line"]["x_end"] = geometry["x_end"]
     validate_config(config, routines_data)
     return config
 
@@ -197,8 +203,11 @@ def form_html(
 ) -> str:
     """Return the complete launcher page."""
 
+    config = canonical_config(config)
     if defaults is None:
         defaults = config
+    else:
+        defaults = canonical_config(defaults)
     optional_defaults = {
         "obstacle": {
             "start": 0.0,
@@ -228,7 +237,7 @@ def form_html(
 
     hidden_controls = []
     for section, keys in {
-        "measurement": ("program_path", "simulation", "force_direction", "data_server"),
+        "measurement": ("program_path", "simulation", "force_direction", "stop_method"),
     }.items():
         for key in keys:
             if key not in defaults.get(section, {}):
@@ -239,10 +248,10 @@ def form_html(
             )
 
     method = "point_to_point"
-    parameters = config["line"].get("parameters", config["line"])
+    parameters = config["line"]
 
     def line_input(key: str, value: Any, attributes: str = "required") -> str:
-        name = f"line.parameters.{key}"
+        name = f"line.{key}"
         label = html.escape(FIELD_LABELS.get(key, key.replace("_", " ").title()))
         shown = html.escape(display_field_value(key, value), quote=True)
         return (
@@ -259,20 +268,16 @@ def form_html(
         "offset_y": parameters.get("offset_y", 0.0),
     }
     hidden_controls.append(
-        '<input id="line.method" type="hidden" name="line.method" '
-        'value="point_to_point">'
+        '<input id="line.line_length" type="hidden" value="0.000">'
     )
     hidden_controls.append(
-        '<input id="line.parameters.line_length" type="hidden" value="0.000">'
-    )
-    hidden_controls.append(
-        '<input id="line.parameters.high_low_distance" type="hidden" value="0.000">'
+        '<input id="line.high_low_distance" type="hidden" value="0.000">'
     )
     increment = line_input("increment", point_values["increment"])
     measurement_count = point_values["number_of_measurements"]
     hidden_controls.append(
         '<input id="spacing-source" type="hidden" '
-        'name="line.parameters.spacing_source" '
+        'name="line.spacing_source" '
         f'value="{html.escape(point_values["spacing_source"], quote=True)}">'
     )
     point_offset_attributes = "required"
@@ -286,13 +291,13 @@ def form_html(
         f'<input id="auto-fit" type="checkbox"{auto_fit_checked}>Automatic Fit</label></div>'
         '<div class="parameter-row double line-spacing-row">'
         f'<span>Step Size [mm] / Nb. Points</span>{increment}'
-        f'<input id="measurement-count" name="line.parameters.number_of_measurements" type="number" min="1" step="1" value="{measurement_count}" aria-label="Nb. Points" required>'
+        f'<input id="measurement-count" name="line.number_of_measurements" type="number" min="1" step="1" value="{measurement_count}" aria-label="Nb. Points" required>'
         '</div>'
         '<div class="parameter-row double">'
         f'<span>X Start / X End [mm]</span>{line_input("x_start", point_values["x_start"], point_offset_attributes)}'
         f'{line_input("x_end", point_values["x_end"], point_offset_attributes)}</div>'
         '<div class="parameter-row single">'
-        f'<label for="line.parameters.offset_y">Y Offset [mm]</label>{line_input("offset_y", point_values["offset_y"], point_offset_attributes)}</div>'
+        f'<label for="line.offset_y">Y Offset [mm]</label>{line_input("offset_y", point_values["offset_y"], point_offset_attributes)}</div>'
         '</fieldset>'
     ]
 
@@ -320,7 +325,7 @@ def form_html(
     contact = input_html("measurement", "contact_threshold")
     holding = input_html("measurement", "holding_force")
     maximum = input_html("measurement", "max_displacement")
-    server_checked = " checked" if current_value("measurement", "data_server") else ""
+    server_checked = " checked" if current_value("measurement", "stop_method") == "client_feedback" else ""
     simulation_checked = " checked" if current_value("measurement", "simulation") else ""
     measurement_controls = (
         '<div class="toggle-row">'
@@ -338,7 +343,7 @@ def form_html(
             "program_path",
             "simulation",
             "force_direction",
-            "data_server",
+            "stop_method",
             "contact_threshold",
             "holding_force",
             "max_displacement",

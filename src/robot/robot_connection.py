@@ -44,9 +44,30 @@ def load_and_play_urp(robot_ip: str, program_path: str) -> None:
     ``Benoit/apply_force.urp``.
     """
 
+    if not isinstance(program_path, str) or not program_path.strip():
+        raise ValueError("Robot program path must be a nonempty string.")
+    program_path = program_path.strip()
+    if any(character in program_path for character in ('\r', '\n', '\x00', '"')):
+        raise ValueError("Robot program path must not contain quotes or control characters.")
+
     load_response = dashboard_command(robot_ip, f"load {program_path}")
+    first_response = load_response
+    # Preserve the usual raw filename command. If the controller explicitly
+    # rejects its syntax, try quoting whitespace-containing paths once. Never
+    # send play after a rejected/ambiguous load or substitute another filename.
+    if "could not understand" in load_response.lower() and any(c.isspace() for c in program_path):
+        load_response = dashboard_command(robot_ip, f'load "{program_path}"')
     if not load_response.lower().startswith("loading program"):
-        raise RuntimeError(f"Could not load URP '{program_path}': {load_response}")
+        detail = load_response
+        if first_response != load_response:
+            detail = f"Unquoted path: {first_response}. Quoted path: {load_response}"
+        if "could not understand" in detail.lower():
+            detail += (
+                ". The controller rejected the load syntax. Verify the controller-side "
+                "path; if it cannot accept spaces, save the URP in a folder without "
+                "spaces and update measurement.program_path in config_default.json."
+            )
+        raise RuntimeError(f"Could not load URP '{program_path}': {detail}")
 
     play_response = dashboard_command(robot_ip, "play")
     if "starting program" not in play_response.lower():

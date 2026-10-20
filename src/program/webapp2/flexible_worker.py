@@ -97,7 +97,11 @@ def perform_action(action, receiver, data, geometry, state_file):
             return {"acquisition_time": time.monotonic() - started}
 
         success, _ = flexible.apply_force(ROBOT_IP, measurement["program_path"], measurement["max_displacement"],
-            measurement["contact_threshold"], measurement["holding_force"], action.get("simulation", False), acquire_data=hold,
+            measurement["contact_threshold"], measurement["holding_force"], action.get("simulation", False),
+            acquire_data=hold if measurement["stop_method"] == "client_feedback" else None,
+            stop_method=measurement["stop_method"],
+            hold_duration=measurement["hold_duration"],
+            on_force_success=lambda timestamp: write_json_atomic(state_file, {"mode": "force_hold"}),
             acquisition_context={"measurement_index": "manual", "x_coordinate": position["measurement_xy"]["X"],
                                  "y_coordinate": position["measurement_xy"]["Y"], "acquisition_label": "local force hold"})
         assert_in_plane(receiver, data)

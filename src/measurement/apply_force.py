@@ -1,6 +1,7 @@
 """Configure and run one robot-side force application cycle."""
 
 import sys
+import math
 import time
 from collections.abc import Callable
 from datetime import datetime
@@ -91,6 +92,8 @@ def wait_for_status(
     while True:
         assert_robot_safe(rtde_receive)
         last_status = rtde_receive.getOutputIntRegister(42)
+        if last_status == 4:
+            raise ValueError("Force program rejected its settings (status 4).")
         if last_status in accepted_statuses:
             return last_status
         now = time.monotonic()
@@ -159,8 +162,9 @@ def apply_force(
     simulation: bool = False,
     acquire_data: Callable[[dict], dict] | None = None,
     acquisition_context: dict | None = None,
-    acknowledge_force_hold: bool = True,
+    stop_method: str = "timer",
     on_force_success: Callable[[str], None] | None = None,
+    hold_duration: float = 0.5,
 ) -> tuple[bool, str]:
     """Run a force cycle and return its result plus measurement timestamp.
 
@@ -168,20 +172,23 @@ def apply_force(
     only when written to the robot input register.
     """
 
-    # Integer registers: status/ack 42 and simulation 46.
-    # Double registers: max distance 43, contact threshold 44, holding force 45.
+    # Integers: status/ack 42 and simulation 46.
+    # Doubles: distance 43, contact 44, holding force 45.
+    # The robot always waits for Python; stop_method and duration stay on the host.
     # Force-program motion values remain hardcoded in the controller-side URP.
     status_register = 42
     max_distance_register, contact_threshold_register = 43, 44
     holding_force_register = 45
     simulation_register = 46
 
-    # Retain a bounded standalone fallback for examples that do not launch the
-    # acquisition control listener. Main supplies ``acquire_data`` instead.
-    fallback_hold_duration = 3.0
-
     # Validate values before connecting.
+    from measurement_config import measurement_stop_method
+    stop_method = measurement_stop_method({"measurement": {"stop_method": stop_method}})
+    if stop_method == "client_feedback" and acquire_data is None:
+        raise ValueError("client_feedback requires an acquisition callback to release the hold.")
     if max_distance <= 0: raise ValueError("max_distance must be positive.")
+    if isinstance(hold_duration, bool) or not isinstance(hold_duration, (int, float)) or not math.isfinite(hold_duration) or hold_duration <= 0:
+        raise ValueError("hold_duration must be positive and finite (seconds).")
     simulation = effective_simulation_mode(
         contact_threshold, holding_force, simulation
     )
@@ -228,12 +235,9 @@ def apply_force(
         if not rtde_io.setInputIntRegister(status_register, 0): raise RuntimeError(f"Could not reset input integer register {status_register}.")
 
         # Start the robot-side force sequence.
-        if acknowledge_force_hold:
-            print_force_contact_log(
-                "The cobot starts its procedure to apply force.",
-                simulation,
-                acquisition_context,
-            )
+        print_force_contact_log(
+            "The cobot starts its procedure to apply force.", simulation, acquisition_context,
+        )
         load_and_play_urp(robot_ip, program_path)
 
         # Wait for the URP to clear any stale status.
@@ -267,83 +271,47 @@ def apply_force(
             force_reached = True
             if on_force_success is not None:
                 on_force_success(measurement_timestamp)
-            if acknowledge_force_hold:
-                print_force_contact_log(
-                    "The cobot is in contact with the wall (force reached).",
-                    simulation,
-                    acquisition_context,
-                )
-            if acquire_data is not None:
-                controller = acquisition_control_label(acquisition_context)
-                if controller == "client":
-                    ready_message = "Indicated to client that force has been reached."
-                else:
-                    ready_message = f"Starting {controller}."
-                print_force_contact_log(
-                    ready_message,
-                    simulation,
-                    acquisition_context,
-                )
+            print_force_contact_log(
+                "The cobot is in contact with the wall (force reached).",
+                simulation, acquisition_context,
+            )
+            if stop_method == "client_feedback":
                 acquisition_result = acquire_data(dict(acquisition_context or {}))
-                completed_at = acquisition_result.get("completed_at")
-                if completed_at:
-                    measurement_timestamp = str(completed_at)
-                acquisition_time = acquisition_result.get("acquisition_time")
-                duration_text = (
-                    f" in {float(acquisition_time):.3f} s"
-                    if acquisition_time is not None
-                    else ""
-                )
-                if controller == "client":
-                    done_message = (
-                        f"End of contact (received GO from client{duration_text})."
-                    )
-                else:
-                    done_message = (
-                        f"End of contact ({controller} completed{duration_text})."
-                    )
-                print_force_contact_log(
-                    done_message,
-                    simulation,
-                    acquisition_context,
-                )
-            elif acknowledge_force_hold:
-                print(
-                    "Data acquisition callback unavailable; using standalone "
-                    f"{fallback_hold_duration:.1f} s hold."
-                )
-                hold_deadline = time.monotonic() + fallback_hold_duration
-                while True:
-                    remaining = hold_deadline - time.monotonic()
-                    if remaining <= 0:
-                        break
-                    assert_robot_safe(rtde_receive)
-                    time.sleep(min(0.05, remaining))
+                if acquisition_result.get("completed_at"):
+                    measurement_timestamp = str(acquisition_result["completed_at"])
             else:
-                print(
-                    "Data acquisition control disabled; robot program owns "
-                    "acquisition and return."
-                )
+                # Timer starts only after real/simulated force success. Check
+                # safety and the hold status throughout; never time the URScript.
+                hold_deadline = time.monotonic() + hold_duration
+                while True:
+                    assert_robot_safe(rtde_receive)
+                    current_status = rtde_receive.getOutputIntRegister(status_register)
+                    if current_status != 1:
+                        raise TimeoutError(
+                            f"Force hold ended before the Python timer completed; robot status is {current_status}."
+                        )
+                    remaining = hold_deadline - time.monotonic()
+                    if remaining <= 1e-9:
+                        break
+                    time.sleep(min(0.05, remaining))
 
-            if acknowledge_force_hold:
-                # Do not acknowledge a controller that has already left its hold
-                # because its own acknowledgement deadline expired.
-                assert_robot_safe(rtde_receive)
-                current_status = rtde_receive.getOutputIntRegister(status_register)
-                if current_status != 1:
-                    raise TimeoutError(
-                        "Force hold ended before data acquisition acknowledgement "
-                        f"could be sent; robot status is {current_status}."
-                    )
-                if not rtde_io.setInputIntRegister(status_register, 1):
-                    raise RuntimeError("Could not send return acknowledgement.")
-                print("Force program: acquisition acknowledged; releasing force hold.")
+            # Both timer and client completion use the same release handshake.
+            assert_robot_safe(rtde_receive)
+            current_status = rtde_receive.getOutputIntRegister(status_register)
+            if current_status != 1:
+                raise TimeoutError(
+                    "Force hold ended before acknowledgement could be sent; "
+                    f"robot status is {current_status}."
+                )
+            if not rtde_io.setInputIntRegister(status_register, 1):
+                raise RuntimeError("Could not send return acknowledgement.")
+            print("Force program: acquisition acknowledged; releasing force hold.")
         elif status == 3:
             raise TimeoutError("Robot timed out while waiting for acknowledgement.")
 
         # Status 1 covers acquisition AND return; it does not mark the start of
-        # return motion. In time mode the robot may still be intentionally
-        # holding, and simulation/contact at the initial pose may need no return
+        # return motion. A controller may take time to release force, and
+        # simulation/contact at the initial pose may need no return
         # displacement. Require bounded program completion, not visible motion.
         print("Force program: waiting for return to the measurement pose.")
         return_status = wait_for_status(

@@ -19,7 +19,7 @@
     "speed": 50.0
   },
   "measurement": {
-    "program_path": "Inspection/Programs/apply_force_mira.urp",
+    "program_path": "Inspection/Programs/apply_force.urp",
     "contact_threshold": 30.0,
     "holding_force": 30.0,
     "max_displacement": 50.0,

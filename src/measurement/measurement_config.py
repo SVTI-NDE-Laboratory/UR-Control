@@ -1,6 +1,7 @@
 """Read and validate measurement configuration."""
 
 import json
+import math
 from pathlib import Path
 
 from line_planner import (
@@ -8,16 +9,66 @@ from line_planner import (
     high_low_movement,
     line_geometry,
     line_parameters,
+    line_method,
     normalize,
     obstacle_interval,
 )
+
+
+DEFAULT_CONFIG_FILE = Path(__file__).resolve().parents[1] / "program/config/config_default.json"
+
+
+def read_default_program_path() -> str:
+    """Read the installed force URP path afresh, shared by every stop mode."""
+
+    config = json.loads(DEFAULT_CONFIG_FILE.read_text(encoding="utf-8"))
+    value = config.get("measurement", {}).get("program_path")
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError("config_default.json must contain a nonempty measurement.program_path.")
+    return value.strip()
+
+
+def measurement_stop_method(config: dict) -> str:
+    """Resolve timer/client_feedback, accepting former mode names and boolean."""
+
+    measurement = config["measurement"]
+    if "stop_method" in measurement:
+        method = measurement["stop_method"]
+    else:
+        legacy = measurement.get("data_server", True)
+        if not isinstance(legacy, bool):
+            raise ValueError("Legacy data_server must be true or false.")
+        method = "client_feedback" if legacy else "timer"
+    if isinstance(method, str):
+        method = {"time": "timer", "feedback": "client_feedback"}.get(method, method)
+    if method not in ("timer", "client_feedback"):
+        raise ValueError("Measurement stop_method must be 'timer' or 'client_feedback'.")
+    return method
+
+
+def canonical_config(config: dict) -> dict:
+    """Return a copy using the current line and stop-method schema."""
+
+    from copy import deepcopy
+    config = deepcopy(config)
+    if line_method(config) == POINT_TO_POINT:
+        config["line"] = dict(line_parameters(config))
+        config["line"].pop("method", None)
+    config["measurement"]["stop_method"] = measurement_stop_method(config)
+    config["measurement"].setdefault("hold_duration", 0.5)
+    config["measurement"].pop("data_server", None)
+    return config
 
 
 def validate_force_config(config: dict) -> None:
     """Validate force settings before any routine can move the robot."""
 
     measurement = config["measurement"]
-    measurement.setdefault("data_server", True)
+    measurement["stop_method"] = measurement_stop_method(config)
+    measurement.pop("data_server", None)
+    duration = measurement.setdefault("hold_duration", 0.5)
+    if isinstance(duration, bool) or not isinstance(duration, (int, float)) or not math.isfinite(duration) or duration <= 0:
+        raise ValueError("Measurement hold_duration must be positive and finite (seconds).")
     contact = measurement["contact_threshold"]
     holding = measurement["holding_force"]
     if contact < 0 or holding < 0:
@@ -33,8 +84,6 @@ def validate_force_config(config: dict) -> None:
         raise ValueError("Maximum displacement must be positive.")
     if not measurement["program_path"].strip():
         raise ValueError("Robot program path cannot be empty.")
-    if not isinstance(measurement["data_server"], bool):
-        raise ValueError("Data server must be true or false.")
     if "force_step_distance" in measurement and measurement["force_step_distance"] <= 0:
         raise ValueError("Force step distance must be positive.")
     if "force_direction" in measurement:
@@ -120,7 +169,7 @@ def print_measurement_config_summary(
     print(
         f"  measurement: program_path={measurement['program_path']}, "
         f"simulation={measurement['simulation']}, "
-        f"data_server={measurement['data_server']}"
+        f"stop_method={measurement['stop_method']}"
     )
     print(
         f"  motion: type={motion['type']}, acceleration={motion['acceleration']}, "
@@ -135,7 +184,7 @@ def read_measurement_config(
 ) -> dict:
     """Read and validate a measurement configuration file."""
 
-    config = json.loads(Path(path).read_text(encoding="utf-8"))
+    config = canonical_config(json.loads(Path(path).read_text(encoding="utf-8")))
     validate_measurement_config(config, routines_data)
     if verbose:
         print_measurement_config_summary(config, routines_data)

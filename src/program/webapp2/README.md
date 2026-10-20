@@ -63,8 +63,9 @@ The **Flexible measurement** tab reuses the geometry and entry/exit routines in
    100 mm/s² limits apply.
 3. **Apply force** uses the entered threshold, contact force, and local hold
    duration, then returns to the same pose. It never opens an acquisition server.
-   The hold defaults to three seconds and is limited to eight seconds because
-   the shipped controller program times out its acknowledgement after ten.
+   The hold defaults to three seconds; the existing 0-to-8-second form range is
+   retained. Python runs the hold timer and then releases the feedback-only
+   robot script through integer register 42. A zero duration releases immediately.
    Select **Simulation** beside the force settings to run the controller's
    simulation mode with the same Apply force button. The force values are
    blurred and read-only while selected, and their values are preserved.
@@ -95,6 +96,18 @@ retain their existing acquisition-server behavior.
 Automatic measurements also provide a **Simulation** toggle, beside **With RTM
 Program**, so forces do not need to be set to zero. Changing With RTM Program
 preserves the measurement line settings. **Automatic Fit** defaults to on.
+Configurations store line settings directly in `line`, without `method` or
+`parameters`. `measurement.stop_method` selects `client_feedback` (With RTM Program on)
+or `timer` (off), replacing `data_server`. `src/program/config/config_default.json`
+is the shared initial default for automatic commands and the feedback preset.
+Existing nested point-to-point configurations and their boolean `data_server`
+are converted when loaded; saved configurations use the new schema. Optional
+top-level obstacle settings remain unchanged.
+Timer exposes **Hold Duration [s]** (`measurement.hold_duration`, default
+0.5 seconds). Python handles this timer and always releases the robot through
+input integer register 42. Client feedback uses the acquisition callback instead.
+The script reads no mode/duration register, and register 47 is never written.
+Integer 46 independently selects simulation.
 At initialization and whenever re-enabled, it resets X Start to zero, X End
 to the exact taught length and the lead variable to Step Size. Step Size lead
 keeps the step and calculates `Count = floor((End - Start) / Increment) + 1`;
@@ -176,6 +189,12 @@ when present, followed by the other waypoints in routine-file order.
 There is no browser API to select a different file. The flexible CLI's force
 settings supply the force program path and maximum displacement; the threshold,
 holding force and duration are set in the flexible form.
+Flexible reads `measurement.program_path` from `config_default.json` before
+each force command; automatic modes use that same path. This URP must contain the
+updated feedback-only Script node. The flexible CLI uses a Python timer for numeric
+positive durations (`force 3`, `force 140 160 3`) and client-feedback mode for
+`force manual`, released by typing `stop`. The script waits for Python's acknowledgement without its own hold timeout. Both paths use the shared force wrapper,
+including its simulation flag, mode/duration registers and return verification.
 Holding force must be positive and at least the threshold.
 
 ## Implementation and verification

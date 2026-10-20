@@ -1,16 +1,14 @@
 {
   "line": {
-    "method": "point_to_point",
-    "parameters": {
-      "increment": 175.0,
-      "number_of_measurements": 7,
-      "x_start": 0.0,
-      "x_end": 0.0,
-      "offset_y": 0.0,
-      "start_point": "p_start_l",
-      "end_point": "p_end_l",
-      "spacing_source": "increment"
-    }
+    "increment": 175.0,
+    "number_of_measurements": 7,
+    "x_start": 0.0,
+    "x_end": 0.0,
+    "offset_y": 0.0,
+    "start_point": "p_start_l",
+    "end_point": "p_end_l",
+    "spacing_source": "increment",
+    "auto_fit": true
   },
   "motion": {
     "type": "l",
@@ -18,11 +16,12 @@
     "speed": 100.0
   },
   "measurement": {
-    "program_path": "Inspection/Programs/apply_force_mira.urp",
+    "program_path": "Inspection/Programs/apply_force.urp",
     "contact_threshold": 140.0,
     "holding_force": 160.0,
     "max_displacement": 50.0,
     "simulation": false,
-    "data_server": false
+    "stop_method": "timer",
+    "hold_duration": 0.5
   }
 }

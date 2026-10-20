@@ -12,11 +12,12 @@ then waits for operator commands:
     pose                  print the current measurement-frame XY estimate
     end                   return to the entry endpoint and run the home routine
 
-All setup values are intentionally hard-coded near the top of the file so this
-command can be opened, reviewed, edited, and run directly.
+The force URP path comes from config_default.json and is refreshed for each
+force command. Other setup values are defined below for direct CLI use.
 """
 
 import sys
+import math
 import time
 from pathlib import Path
 from typing import Any
@@ -35,7 +36,7 @@ for folder in [PROGRAM_DIR, MEASUREMENT_DIR, ROBOT_DIR, ROUTINES_DIR]:
 
 from apply_force import apply_force
 from line_planner import cross, line_geometry, millimetres_to_metres, normalize
-from measurement_config import validate_force_config, validate_measurement_config
+from measurement_config import validate_force_config, validate_measurement_config, read_default_program_path
 from measurement_movement import motion_parameters
 from measurement_state import write_state
 from read_routines import get_waypoint, read_routines_file
@@ -63,7 +64,7 @@ OUTPUT_DIR = CONFIG_DIR
 ENTRY_SIDE = "start"
 
 # Force parameters
-FORCE_PROGRAM_PATH = "Inspection/Programs/apply_force_with_server.urp"
+FORCE_PROGRAM_PATH = read_default_program_path()
 CONTACT_THRESHOLD = 140.0
 HOLDING_FORCE = 160.0
 MAX_DISPLACEMENT = 50.0
@@ -88,14 +89,11 @@ LEGACY_END_ROUTINE = "end"
 
 MEASUREMENT_CONFIG = {
     "line": {
-        "method": "point_to_point",
-        "parameters": {
-            "start_point": "p_start_l",
-            "end_point": "p_end_l",
-            "spacing_source": "count",
-            "number_of_measurements": 2,
-            "offset_y": 0.0,
-        },
+        "start_point": "p_start_l",
+        "end_point": "p_end_l",
+        "spacing_source": "count",
+        "number_of_measurements": 2,
+        "offset_y": 0.0,
     },
     "motion": {
         "type": "l",
@@ -108,7 +106,8 @@ MEASUREMENT_CONFIG = {
         "holding_force": HOLDING_FORCE,
         "max_displacement": MAX_DISPLACEMENT,
         "simulation": SIMULATION,
-        "data_server": False,
+        "stop_method": "timer",
+        "hold_duration": 3.0,
     },
 }
 
@@ -263,8 +262,8 @@ def force_hold_callback(args: list[str]):
         raise ValueError(
             "Force duration must be a number of seconds or 'manual'."
         ) from error
-    if duration < 0:
-        raise ValueError("Force duration must not be negative.")
+    if not math.isfinite(duration) or duration < 0:
+        raise ValueError("Force duration must be finite and not negative.")
     return timed_force_hold(duration)
 
 
@@ -272,6 +271,7 @@ def force_measurement_settings(args: list[str]) -> tuple[dict[str, Any], Any]:
     """Return measurement settings and hold callback for one force command."""
 
     measurement = dict(MEASUREMENT_CONFIG["measurement"])
+    measurement["program_path"] = read_default_program_path()
     if len(args) == 1:
         callback = force_hold_callback(args)
     elif len(args) == 2:
@@ -304,6 +304,17 @@ def force_measurement_settings(args: list[str]) -> tuple[dict[str, Any], Any]:
             "force <contact_n> <holding_n> <seconds|manual>"
         )
 
+    if args[-1].lower() == "manual":
+        measurement["stop_method"] = "client_feedback"
+    else:
+        duration = float(args[-1])
+        if duration > 0:
+            measurement["stop_method"] = "timer"
+            measurement["hold_duration"] = duration
+            callback = None
+        else:
+            # Preserve the existing zero-hold command as immediate feedback.
+            measurement["stop_method"] = "client_feedback"
     validate_force_config({"measurement": measurement})
     return measurement, callback
 
@@ -535,7 +546,8 @@ def run_interactive_loop(
                     "y_coordinate": current_y,
                     "acquisition_label": "local force hold",
                 },
-                acknowledge_force_hold=True,
+                stop_method=force_measurement["stop_method"],
+                hold_duration=force_measurement["hold_duration"],
             )
             print(f"force_reached={force_reached}, timestamp={timestamp}")
             continue
@@ -552,6 +564,7 @@ def run_interactive_loop(
 def run() -> None:
     """Run the flexible interactive measurement command."""
 
+    MEASUREMENT_CONFIG["measurement"]["program_path"] = read_default_program_path()
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     state_file = OUTPUT_DIR / "state.json"
     routines_data = read_routines_file(ROUTINES_FILE)

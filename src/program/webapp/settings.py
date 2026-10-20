@@ -9,7 +9,8 @@ PROGRAM_DIR = WEBAPP_DIR.parent
 PROJECT_ROOT = PROGRAM_DIR.parent.parent
 CONFIG_DIR = PROGRAM_DIR / "config"
 MIRA_CONFIG_FILE = CONFIG_DIR / "config_mira.json"
-SERVER_CONFIG_FILE = CONFIG_DIR / "config_server.json"
+DEFAULT_CONFIG_FILE = CONFIG_DIR / "config_default.json"
+SERVER_CONFIG_FILE = DEFAULT_CONFIG_FILE
 HTML_TEMPLATE_FILE = WEBAPP_DIR / "pages" / "configuration.html"
 STATIC_DIR = WEBAPP_DIR / "static"
 TEMP_CONFIG_FILE = CONFIG_DIR / "config_tmp.json"
@@ -31,6 +32,7 @@ for folder in [MEASUREMENT_DIR, ROBOT_DIR, ROUTINES_DIR]:
 
 
 FIELD_LABELS = {
+    "hold_duration": "Hold Duration [s]",
     "line_length": "Total Length [mm]",
     "increment": "Step Size [mm]",
     "direction_start_end": "Start-to-End Direction [x, y, z]",

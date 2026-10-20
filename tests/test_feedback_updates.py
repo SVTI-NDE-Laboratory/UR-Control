@@ -133,7 +133,8 @@ class AutomaticFailureRegressionTests(unittest.TestCase):
         import run_measurements as automatic
         data = read_routines_file(ROUTINE_FILE)
         config = deepcopy(worker.flexible.MEASUREMENT_CONFIG)
-        config["line"]["parameters"].update(auto_fit=False, x_start=0, increment=100, number_of_measurements=3)
+        config["line"].update(auto_fit=False, x_start=0, increment=100, number_of_measurements=3)
+        config["measurement"]["hold_duration"] = 2.75
         config["obstacle"] = {"start": 40, "end": 60}
         receiver = Mock()
         receiver.getActualTCPPose.return_value = data["waypoints"]["p_start_h"]["p"]
@@ -144,6 +145,7 @@ class AutomaticFailureRegressionTests(unittest.TestCase):
             states.append(deepcopy(state))
 
         def force(*args, **kwargs):
+            self.assertEqual(kwargs["hold_duration"], 2.75)
             before = deepcopy(states[-1])
             kwargs["on_force_success"]("test")
             after = states[-1]

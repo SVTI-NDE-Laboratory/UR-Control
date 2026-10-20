@@ -171,7 +171,7 @@ class FlexibleRequest(BaseModel):
     y: float | None = None
     threshold: float = Field(140, gt=0)
     force: float = Field(160, gt=0)
-    # The shipped controller program has a ten-second acknowledgement timeout.
+    # Preserve the existing operator-facing local hold range.
     duration: float = Field(3, ge=0, le=8)
     simulation: bool = False
     outside_range_confirmed: bool = False

@@ -278,7 +278,10 @@ class SessionTests(unittest.TestCase):
                 self.assertEqual(kwargs["acquisition_context"]["acquisition_label"], "local force hold")
                 if force_attempts == 1:
                     return False, "first-attempt"
-                kwargs["acquire_data"]({})
+                self.assertEqual(kwargs["stop_method"], "timer")
+                self.assertEqual(kwargs["hold_duration"], .01)
+                self.assertIsNone(kwargs["acquire_data"])
+                kwargs["on_force_success"]("test-time")
                 return True, "test-time"
 
             with patch.object(worker, "assert_robot_running"), patch.object(worker, "get_rtde_receive", side_effect=self.connect), patch.object(worker, "stop_robot") as stop, patch.object(worker.flexible, "run_entry_sequence", side_effect=self.entry) as entry, patch.object(worker.flexible, "run_exit_sequence", side_effect=self.exit) as exit, patch.object(worker.flexible, "movel_pose", side_effect=self.move), patch.object(worker.flexible, "apply_force", side_effect=apply_force) as force:
