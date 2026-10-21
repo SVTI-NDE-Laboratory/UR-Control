@@ -6,10 +6,11 @@ import shutil
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from tempfile import NamedTemporaryFile
+from tempfile import NamedTemporaryFile, TemporaryDirectory
 
 
 ROOT = Path(__file__).resolve().parents[3]
+APP_NAME = "RTM Cobot Studio"
 
 
 def read_object(path):
@@ -45,12 +46,16 @@ def resolve_path(value, base):
     return (path if path.is_absolute() else base / path).resolve()
 
 
+def appdata_directory():
+    local = os.environ.get("LOCALAPPDATA")
+    return (Path(local) if local else Path.home() / "AppData/Local").resolve()
+
+
 def default_directory():
     override = os.environ.get("UR15_WEBAPP_DATA_DIR")
     if override:
         return Path(override).expanduser().resolve()
-    local = os.environ.get("LOCALAPPDATA")
-    return (Path(local) if local else Path.home() / "AppData/Local") / "UR15 WebApp"
+    return appdata_directory() / APP_NAME
 
 
 def location_file():
@@ -75,6 +80,7 @@ def existing_profile(data_dir):
 
 def prepare_startup(interactive=True):
     """Locate user data before settings imports; never silently replace lost data."""
+    migrate_legacy_directory()
     locator = location_file()
     os.environ["UR15_WEBAPP_LOCATION_FILE"] = str(locator)
     data_dir = application_directory()
@@ -82,7 +88,7 @@ def prepare_startup(interactive=True):
         from .dialogs import choose_local_data
         selected = choose_local_data(missing=True)
         if selected is None:
-            raise ValueError("Local data selection cancelled. WebApp2 was not started.")
+            raise ValueError("Local data selection cancelled. RTM Cobot Studio was not started.")
         if not (selected / "preferences.json").exists():
             if selected.exists() and any(selected.iterdir()):
                 raise ValueError("Select a WebApp local data folder or an empty folder.")
@@ -103,27 +109,64 @@ def change_data_directory(profile, destination):
     if not (destination / "preferences.json").exists():
         if destination.exists() and any(destination.iterdir()):
             raise ValueError("Select a WebApp local data folder or an empty folder.")
-        shutil.copytree(source, destination, dirs_exist_ok=True,
-                        ignore=shutil.ignore_patterns("location.json"))
-        preferences_path = destination / "preferences.json"
-        preferences = read_object(preferences_path)
-        selected = resolve_path(preferences["configuration_path"], source)
-        if selected.is_relative_to(source):
-            copied_config = destination / selected.relative_to(source)
-            preferences["configuration_path"] = str(copied_config.relative_to(destination))
-            values = read_object(copied_config)
-            for key in ("routine_file", "measurement_defaults", "acquisition_config",
-                        "robot_programs_directory", "results_directory", "routine_scripts_directory"):
-                if key not in values:
-                    continue
-                original = resolve_path(values[key], selected.parent)
-                if original.is_relative_to(source):
-                    values[key] = os.path.relpath(destination / original.relative_to(source), copied_config.parent)
-            write_object(copied_config, values)
-            write_object(preferences_path, preferences)
+        copy_local_data(profile, destination)
     candidate = existing_profile(destination)
     write_object(location_file(), {"data_directory": str(destination)})
     return candidate
+
+
+def copy_local_data(profile, destination):
+    """Copy data and rebase internal absolute paths without changing the locator."""
+    source = profile.data_dir.resolve()
+    destination = Path(destination).resolve()
+    shutil.copytree(source, destination, dirs_exist_ok=True,
+                    ignore=shutil.ignore_patterns("location.json"))
+    preferences_path = destination / "preferences.json"
+    preferences = read_object(preferences_path)
+    selected = resolve_path(preferences["configuration_path"], source)
+    if selected.is_relative_to(source):
+        copied_config = destination / selected.relative_to(source)
+        preferences["configuration_path"] = str(copied_config.relative_to(destination))
+        values = read_object(copied_config)
+        for key in ("routine_file", "measurement_defaults", "acquisition_config",
+                    "robot_programs_directory", "results_directory", "routine_scripts_directory"):
+            if key not in values:
+                continue
+            original = resolve_path(values[key], selected.parent)
+            if original.is_relative_to(source):
+                values[key] = os.path.relpath(destination / original.relative_to(source), copied_config.parent)
+        write_object(copied_config, values)
+        write_object(preferences_path, preferences)
+    return existing_profile(destination)
+
+
+def migrate_legacy_directory():
+    """Adopt the app's new default name once; preserve originals and custom paths."""
+    if os.environ.get("UR15_WEBAPP_DATA_DIR") or os.environ.get("UR15_WEBAPP_LOCATION_FILE"):
+        return
+    destination = default_directory()
+    if destination.exists():
+        return
+    old = appdata_directory() / "UR15 WebApp"
+    old_locator = old / "location.json"
+    if not old.exists():
+        return
+    selected = resolve_path(read_object(old_locator)["data_directory"], old) if old_locator.is_file() else old
+    if selected.resolve() != old.resolve() or not (selected / "preferences.json").is_file():
+        # Keep a custom selection, even when missing, so startup asks to locate it.
+        write_object(destination / "location.json", {"data_directory": str(selected)})
+        return
+    profile = existing_profile(selected)
+    # Stage and validate the entire copy before publishing it under the new name.
+    # Rebasing uses relative paths, so the validated copy can then be renamed.
+    with TemporaryDirectory(prefix=".rtm-cobot-studio-", dir=destination.parent) as temporary:
+        staged = Path(temporary) / "data"
+        copy_local_data(profile, staged)
+        try:
+            staged.rename(destination)
+        except FileExistsError:
+            # Another startup completed migration first; never merge/overwrite.
+            existing_profile(destination)
 
 
 def display_path(path, base):
@@ -252,6 +295,8 @@ def load_profile(data_dir=None):
         active = json.loads(snapshot)
         return Profile(Path(active["data_dir"]), Path(active["path"]), active["values"],
                        {key: Path(value) for key, value in active["paths"].items()})
+    if data_dir is None:
+        migrate_legacy_directory()
     data_dir = (Path(data_dir) if data_dir is not None else application_directory()).resolve()
     preferences = initialize(data_dir)
     values = read_object(preferences)

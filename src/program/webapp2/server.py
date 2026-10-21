@@ -1,6 +1,7 @@
-"""WebApp 2.0 routes; reuse original configuration/measurement routes unchanged."""
+"""RTM Cobot Studio routes; reuse original configuration/measurement routes unchanged."""
 
 import asyncio
+import re
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Literal
@@ -10,13 +11,13 @@ from .profile import read_object, resolve_path, select_profile, change_data_dire
 from .dialogs import choose_local_data, choose_routine_script
 from .routine_setup import RoutineSelection, RoutineCreation, routine_directory, selected_routine, select_routine, create_routine, creation_defaults
 from .control import ControlWorkers
+from .sessions import FolderSelection, MeasurementStartRequest, measurement_folder
 from .waypoint_routes import routine_transitions, waypoint_motion_options
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from webapp import server as legacy
-from webapp.models import MeasurementStartRequest
 from read_routines import read_routines_file, get_waypoint, get_routine
 
 DIRECTORY = Path(__file__).parent
@@ -36,12 +37,12 @@ async def lifespan(app):
     yield
     if workers.snapshot()["running"]:
         try:
-            workers.stop("WebApp 2.0 shutdown")
+            workers.stop("RTM Cobot Studio shutdown")
         except RuntimeError:
             pass
 
 
-api = FastAPI(title="UR15 WebApp 2.0", lifespan=lifespan)
+api = FastAPI(title="RTM Cobot Studio", lifespan=lifespan)
 mutation_lock = asyncio.Lock()
 
 
@@ -74,16 +75,20 @@ def shell(request: Request):
 @api.get("/configuration", response_class=HTMLResponse)
 def configuration(defaults: bool = False, method: str = "point_to_point", server_profile: str | None = None):
     page = legacy.configuration_page(defaults, method, server_profile)
+    page = page.replace("<title>UR15 Control</title>", "<title>RTM Cobot Studio</title>")
+    # Adapt only WebApp2's copy of the shared form; the original app keeps its UI.
+    page = page.replace("</head>", '<link rel="stylesheet" href="/v2-static/dialogs.css">'
+                        '<script src="/v2-static/dialogs.js" defer></script></head>')
+    page = re.sub(r'<fieldset class="run-measurement-fieldset">.*?</fieldset>',
+                  lambda _: (DIRECTORY / "automatic_run.html").read_text(encoding="utf-8"), page, count=1, flags=re.S)
+    page = re.sub(r'<script>.*?</script>', '<script src="/v2-static/automatic.js" defer></script>',
+                  page, count=1, flags=re.S)
     # Retain the tested original form/visualization, embedded in the new shell.
     routine_row = ('<div class="parameter-row routine-file-row"><label for="routine-file">Routine File</label>'
                    '<select id="routine-file" aria-label="Routine file used by the measurement"></select></div>')
     page = page.replace(routine_row, "")
-    # The original form still uses this object to load fixed geometry. Keep it
-    # detached from the DOM rather than displaying a redundant selector.
-    page = page.replace("const routineFileSelect = document.getElementById('routine-file');",
-                        "const routineFileSelect = document.createElement('select');")
-    return page.replace("routineFileSelect.disabled = controlsLocked;", "routineFileSelect.disabled = true;").replace(
-        "</head>", '<style>.app-header,#point-method-note{display:none} html{overflow:hidden} body{min-height:0;padding:0;background:transparent;display:flow-root} main{width:100%;min-height:0;margin:0;padding:0;box-shadow:none;background:transparent}</style></head>')
+    return page.replace(
+        "</head>", '<link rel="stylesheet" href="/v2-static/automatic.css"><style>.app-header,#point-method-note{display:none} html{overflow:hidden} body{min-height:0;padding:0;background:transparent;display:flow-root} main{width:100%;min-height:0;margin:0;padding:0;box-shadow:none;background:transparent}</style></head>')
 
 
 @api.get("/api/configuration/routine-files")
@@ -93,16 +98,64 @@ def routine_files():
 
 @api.post("/api/configuration/routine-file")
 def routine_file():
-    raise HTTPException(403, "The installation routine file is fixed in WebApp 2.0.")
+    raise HTTPException(403, "The installation routine file is fixed in RTM Cobot Studio.")
 
 
 @api.post("/api/measurement/start")
 def start_measurement(request: MeasurementStartRequest):
     if workers.snapshot()["running"]:
         raise HTTPException(409, "Wait for the current robot action to finish.")
-    if legacy.state.get_config() is None:
+    config = legacy.state.get_config()
+    if config is None:
         raise HTTPException(409, "Validate the configuration before starting a measurement.")
-    return legacy.start_measurement(request)
+    results = PROFILE.paths["results_directory"].resolve()
+    session_id, started_at = legacy.create_session_identity()
+    name = session_id if request.automatic_folder_name else request.folder_name
+    try:
+        # Check before robot preflight, then reserve atomically before any writes.
+        folder = measurement_folder(results, name)
+        config["measurement"]["program_path"] = legacy.read_default_program_path()
+        warning = legacy.line_scope_warning(legacy.line_geometry(config, read_routines_file(ROUTINE_FILE)))
+        if warning and not request.outside_line_confirmed:
+            raise HTTPException(409, warning)
+        legacy.assert_safe_start_position(ROUTINE_FILE)
+        results.mkdir(parents=True, exist_ok=True)
+        folder.mkdir(exist_ok=False)
+        legacy.write_json_atomic(folder / "session.json", {
+            "session_id": session_id, "started_at": started_at,
+            "automatic_session_folder": request.automatic_folder_name,
+            "folder_name": name, "base_output_directory": str(results), "output_directory": str(folder)})
+        worker = workers.start_measurement(config, folder, request.show_terminal, ROUTINE_FILE)
+    except FileExistsError as error:
+        raise HTTPException(409, f'The measurements folder "{name}" already exists. Choose a different name; existing results will not be overwritten.') from error
+    except (OSError, RuntimeError, ValueError) as error:
+        raise legacy.worker_error(error) from error
+    legacy.state.set_session(session_id, started_at)
+    return {"started": True, "worker": worker, "session_id": session_id,
+            "folder_name": name, "output_directory": str(folder)}
+
+
+@api.post("/api/measurement/folder")
+def check_measurement_folder(request: FolderSelection):
+    if request.automatic_folder_name:
+        return {"available": True}
+    try:
+        measurement_folder(PROFILE.paths["results_directory"], request.folder_name)
+    except FileExistsError as error:
+        raise HTTPException(409, str(error)) from error
+    except ValueError as error:
+        raise HTTPException(422, str(error)) from error
+    return {"available": True, "folder_name": request.folder_name}
+
+
+@api.get("/api/measurement")
+def measurement_status():
+    data = legacy.measurement_status()
+    worker = data["worker"]
+    data["measurement_folder_name"] = (Path(worker["state_file"]).parent.name
+                                       if worker["kind"] == "measurement" and worker["state_file"] else None)
+    data["default_output_directory"] = str(PROFILE.paths["results_directory"])
+    return data
 
 
 class ProfileSelection(BaseModel):
@@ -147,7 +200,7 @@ def settings_select_routine(request: RoutineSelection):
         raise HTTPException(400, str(error)) from error
     legacy.state.clear_config()
     return {"filename": path.name, "restart_required": path != ROUTINE_FILE,
-            "message": "Routine file saved. Close and relaunch WebApp2 to use it." if path != ROUTINE_FILE else "This routine file is already in use."}
+            "message": "Routine file saved. Close and relaunch RTM Cobot Studio to use it." if path != ROUTINE_FILE else "This routine file is already in use."}
 
 
 @api.post("/api/settings/routines/create")
@@ -191,7 +244,7 @@ def select_local_data():
         raise HTTPException(400, str(error)) from error
     return {"cancelled": False, "data_directory": str(candidate.data_dir),
             "restart_required": candidate.data_dir != PROFILE.data_dir,
-            "message": "Local data folder saved. Close and relaunch WebApp2 to use it."
+            "message": "Local data folder saved. Close and relaunch RTM Cobot Studio to use it."
                        if candidate.data_dir != PROFILE.data_dir else "This local data folder is already in use."}
 
 
@@ -204,7 +257,7 @@ def save_installation_settings(request: ProfileSelection):
     except (OSError, ValueError, TypeError) as error:
         raise HTTPException(400, str(error)) from error
     return {"configuration_path": str(candidate.path), "restart_required": True,
-            "message": "Configuration validated and saved. Close and relaunch WebApp2 to apply it."}
+            "message": "Configuration validated and saved. Close and relaunch RTM Cobot Studio to apply it."}
 
 
 class ManualRequest(BaseModel):
@@ -349,7 +402,7 @@ def stop_worker():
 @api.post("/api/close")
 def close_app():
     if workers.snapshot()["running"]:
-        workers.stop("WebApp 2.0 close")
+        workers.stop("RTM Cobot Studio close")
     server = getattr(api.state, "uvicorn_server", None)
     if server is not None:
         server.should_exit = True

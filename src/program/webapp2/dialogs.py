@@ -8,7 +8,7 @@ import subprocess
 def choose_local_data(missing=False):
     if os.name != "nt":
         raise OSError("Select a local data folder using --data-dir on this platform.")
-    description = ("WebApp local data was not found. Select its folder, or an empty folder to create it."
+    description = ("RTM Cobot Studio local data was not found. Select its folder, or an empty folder to create it."
                    if missing else "Select a local data folder, or an empty folder to copy the current data into.")
     script = (
         "Add-Type -AssemblyName System.Windows.Forms; "

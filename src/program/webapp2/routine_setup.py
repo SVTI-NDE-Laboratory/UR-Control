@@ -37,7 +37,7 @@ def creation_defaults(profile):
     routines = {item["name"]: [step["waypoint"] for step in item["steps"]] for item in data["routines"]}
     line = read_object(profile.paths["measurement_defaults"])["line"]
     return {"home_to_start": routines.get("home_to_start", ["Home", "home_to_start1", "home_to_start2", "p_start_h"]),
-            "end_to_home": routines.get("end_to_home", ["p_end_h", "end_to_home1", "end_to_home2", "end_to_home3", "Home"]),
+            "end_to_home": routines.get("end_to_home", list(reversed(routines.get("home_to_end", ["Home", "end_to_home3", "end_to_home2", "end_to_home1", "p_end_h"])))),
             "measurement_waypoints": [line["start_point"], line["end_point"]]}
 
 
@@ -130,9 +130,9 @@ def create_routine(profile, request):
     if any(not name for name in home + end + extra):
         raise ValueError("Waypoint names cannot be empty.")
     if home[0] != "Home" or end[-1] != "Home":
-        raise ValueError("Home to start must begin at Home; end to Home must finish at Home.")
+        raise ValueError("Home to start must begin at Home; End to Home must finish at Home.")
     if home[-1] != "p_start_h" or end[0] != "p_end_h":
-        raise ValueError("Home to start must finish at p_start_h; end to Home must begin at p_end_h.")
+        raise ValueError("Home to start must finish at p_start_h; End to Home must begin at p_end_h.")
     motion = {"type": "j", "speed": request.speed, "acceleration": request.acceleration,
               "blend_radius": request.blend_radius}
 

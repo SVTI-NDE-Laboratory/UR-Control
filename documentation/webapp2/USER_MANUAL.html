@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RTM Cobot Studio user guide</title>
+<style>
+body{font:16px/1.5 system-ui,Segoe UI,sans-serif;color:#243447;background:#f0f3f6;margin:0}main{max-width:950px;margin:28px auto;background:#fff;padding:36px 44px}
+h1,h2,h3{line-height:1.2;color:#183b56}h1{font-size:2rem}h2{margin-top:30px;border-bottom:1px solid #cbd5df;padding-bottom:7px}h3{margin-top:20px}
+table{border-collapse:collapse;width:100%;margin:14px 0}th,td{border:1px solid #cbd5df;padding:8px 10px;text-align:left;vertical-align:top}th{background:#eaf0f5}
+a{color:#1769aa}code{font-family:Consolas,monospace;overflow-wrap:anywhere}.notice{border-left:5px solid #bf7d14;background:#fff5df;padding:8px 14px}.meta{color:#52606d;font-size:.9rem}
+nav{background:#edf3f8;padding:12px 18px}nav a{display:block;margin:3px 0}.worksheet{border:2px dashed #a9b7c5;padding:16px;margin:16px 0;min-height:240px}.worksheet p{margin:9px 0}
+@media print{body{background:white;font-size:10pt}main{margin:0;padding:0;max-width:none}h2,h3{break-after:avoid}tr,.notice{break-inside:avoid}.site-section{break-before:page}.worksheet{min-height:85mm}a{color:inherit}}
+@page{size:A4;margin:18mm}
+</style>
+</head>
+<body><main>
+<h1>RTM Cobot Studio user guide</h1>
+<p class="meta">21 October 2026 • Complete the installation examples before operator handover.</p>
+
+<h2 id="safety">1. Safety and conditions for use</h2>
+<p>Use the cobot only if you are trained and authorized, and the complete installation has an approved risk assessment and operating procedure. These checks do not replace the robot manual or the installation's safeguards.</p>
+<table><tr><th>Check before use</th><th>Required condition</th></tr>
+<tr><td>Ambient temperature</td><td>UR15 specification: 0–50 °C. Performance is reduced from 35 °C upward. Apply any stricter limits for the tool, other equipment or approved installation.</td></tr>
+<tr><td>Humidity and condensation</td><td>UR15 limit: 90% relative humidity, non-condensing. Keep humidity below this limit and do not operate if condensation is present.</td></tr>
+<tr><td>Personal protection</td><td>Wear the safety shoes required for the workstation. Use eye protection and task-appropriate gloves where required by the risk assessment. Confirm the PPE requirements with the setup owner; PPE does not replace guarding. Secure long hair and avoid loose clothing or jewellery.</td></tr>
+<tr><td>Installation and work area</td><td>Correct tool/TCP, payload, fixture and routine; secure mountings; no damaged equipment; approved paths and clear work area. Know the actual robot position before moving.</td></tr>
+<tr><td>Control and stopping</td><td>Know the physical emergency-stop locations. Run only one robot-control application. Keep the PC awake, running and connected during a cycle.</td></tr></table>
+<p class="meta">Manufacturer references: <a href="https://www.universal-robots.com/manuals/EN/HTML/SW10_10/Content/prod-usr-man/complianceUR15/H_g5_sections/appendix_g5/tech_spec_datasheet_UR15.htm">UR15 technical specifications</a>, <a href="https://www.universal-robots.com/manuals/EN/HTML/SW10_10/Content/prod-usr-man/complianceUR15/H_g5_sections/safety_g5/risk_assessment.htm">application risk assessment</a> and <a href="https://www.universal-robots.com/manuals/EN/HTML/SW5_22/Content/prod-usr-man/complianceUR15/assembly_arm_en.htm">handling and PPE guidance</a>. Use the manual matching the installed robot/controller. Safety footwear and other task-specific PPE are workplace requirements to be confirmed, not a blanket UR requirement for every task.</p>
+<div class="notice"><p><strong>Simulation is not an offline test.</strong> The current script still moves the robot and can apply force during approach. <strong>Stop current action</strong> aborts without returning Home; it is not the installation's emergency-stop system.</p></div>
+
+<nav aria-label="Contents"><strong>Quick navigation</strong>
+<a href="#first-use">2. First launch</a><a href="#controls">3. App overview and controls</a><a href="#settings">4. Settings and routines</a><a href="#files">5. Results, errors and updates</a>
+<a href="#robot-start">6. Robot startup example</a><a href="#force-update">7. Apply Force update example</a><a href="#winscp">8. WinSCP example</a></nav>
+
+<h2 id="first-use">2. First launch</h2>
+<ol><li>Extract the release package into a normal folder on a 64-bit Windows PC. Python is included; do not run the exe inside a zip.</li>
+<li>For a new installation, extract <code>UR15WebApp2-default-data.zip</code>. Put its <code>RTM Cobot Studio</code> folder in a writable location, for example <code>%LOCALAPPDATA%</code>. Do not overwrite existing working data.</li>
+<li>Start <code>RTM Cobot Studio.exe</code>. If prompted, select the folder containing <code>preferences.json</code>; alternatively, select an empty folder to create defaults. An existing saved location is reused.</li>
+<li>In Settings, check the active data folder and routine. The supplied IP is <code>192.168.3.10</code> and the routine is <code>routine_bam_at_svti.json</code>. These are for the existing installation, not generic safe coordinates for another robot.</li>
+<li>Complete the safety checks and approved robot startup before commanding motion. The matching Apply Force URP must already be installed on the controller; the exe does not install it.</li></ol>
+<p>The browser opens automatically. If it does not, copy the local URL from the console. Opening the app alone does not move the robot. Use <strong>Close app</strong> to shut down; closing only the tab can leave it running.</p>
+
+<h2 id="controls">3. App overview and controls</h2>
+<p>RTM Cobot Studio is a local control panel for moving the cobot and applying force at measurement positions. It opens in a browser on the control PC and sends commands to the physical robot. Choose a tab according to the work you want to do.</p>
+<table><tr><th>Tab</th><th>What it is for</th></tr>
+<tr><td>Manual Mode</td><td>Choose one saved position or movement sequence and run it when needed.</td></tr>
+<tr><td>Flexible measurement</td><td>Choose measurement positions yourself and apply force one position at a time.</td></tr>
+<tr><td>Automatic measurements</td><td>Define a line of measurement points and let the app carry out the sequence.</td></tr>
+<tr><td>Settings</td><td>Manage the installation's data folder and routine files, including creating new routine files.</td></tr></table>
+<p>A <strong>waypoint</strong> is a saved robot position. A <strong>routine</strong> is an ordered sequence of waypoint moves. The header provides Settings and Close app. The selected routine file is shown in Settings. The status panel stays visible beside the tabs so you can follow the current action.</p>
+<h3>Status panel</h3>
+<p>Use this panel to see what the app is doing and the robot's last reported position. TCP means the tool's working point. Plane coordinates give its X/Y position relative to the taught measurement area. Idle coordinates can be stale; “—” means unavailable.</p>
+<table><tr><th>Indicator</th><th>What it tells you</th></tr>
+<tr><td>Moving</td><td>Green during reported movement or an active force program, including a stationary force hold.</td></tr>
+<tr><td>Force mode</td><td>Green when the force program is active; it does not confirm a particular measured force.</td></tr>
+<tr><td>Acquisition</td><td>Green when the external acquisition client is connected.</td></tr>
+<tr><td>Error</td><td>Red when an error needs acknowledgement. Closing the message clears the indicator, not the cause.</td></tr></table>
+<p>Grey activity indicators mean inactive or unavailable. Their colours are operating feedback, not a safety clearance. Stop current action aborts the current action or session. During Flexible or automatic work, other tabs are locked until the session ends or is stopped.</p>
+
+<h3>Manual Mode</h3>
+<p>Use this tab when you want to choose each movement yourself: go to a known saved position or run a taught movement sequence. It does not automatically carry out a measurement line.</p>
+<ol><li>Select a waypoint, review its motion type, speed and acceleration, then choose <strong>Go to waypoint</strong>.</li>
+<li>Assess any direct-path confirmation. Choose No if clearance is uncertain; confirmation does not plan a collision-free path.</li>
+<li>For <strong>Perform routine</strong>, first establish its displayed starting waypoint using the approved procedure. The routine uses its own stored motion values, not the manual fields.</li></ol>
+<p>Linear units are mm/s and mm/s²; joint units are rad/s and rad/s². Current manual caps are 150 for linear speed/acceleration and 0.5 for joint speed/acceleration. Those caps do not establish a safe value for every setup.</p>
+
+<h3>Flexible measurement</h3>
+<p>Use this tab to work at positions you choose within the taught measurement plane. You move to a position, apply force there, and repeat as needed before returning Home. This suits individual checks or a small set of manually chosen measurements.</p>
+<ol><li>Establish Home using the approved procedure. Click <strong>Start program</strong> and wait for Ready after entry to the measurement plane.</li>
+<li>Enter X/Y in millimetres and click <strong>Move</strong>. X follows the taught low start-to-end line; Y follows the taught plane, not base Y.</li>
+<li>Review contact threshold [N], holding force [N] and Hold [s], then click <strong>Apply force</strong>. Holding force must be positive and at least the threshold. Hold is 0–8 seconds; zero releases immediately after contact/simulated success. The cycle returns to its pre-force pose.</li>
+<li>Use <strong>End and return Home</strong> for normal exit. Stop current action aborts the session instead.</li></ol>
+<p>The normal range is X from zero to the taught length and Y from −400 to 0 mm. Out-of-range moves need confirmation; force application still requires the configured range. Flexible does not start the acquisition server. A Ready session still reserves the robot controls.</p>
+
+<h3>Automatic measurements</h3>
+<p>Use this tab for a repeatable series of measurements along a line. You define the positions and force settings first; the app then visits the points and performs each force cycle, using either a timer or signals from the acquisition program to continue.</p>
+<table><tr><th>Control</th><th>Meaning</th></tr>
+<tr><td>Automatic Fit</td><td>On: fits the taught span. Editing Step Size preserves the step and calculates whole samples; editing Nb. Points calculates spacing including both ends.</td></tr>
+<tr><td>X Start / X End</td><td>Positions relative to the taught start. With fit off, Start + Step × (Count − 1) calculates the grey End field.</td></tr>
+<tr><td>Y Offset / Obstacle</td><td>Y shifts the line. Obstacle skips samples in an X interval and uses the configured detour; it does not detect obstacles or certify clearance.</td></tr>
+<tr><td>With RTM Program</td><td>On: acquisition-client feedback controls continuation. Off: RTM Cobot Studio's timer uses Hold Duration. Both modes require the PC's release acknowledgement.</td></tr>
+<tr><td>Maximum Displacement</td><td>Approach travel limit while attempting contact, not proof of clearance.</td></tr></table>
+<ol><li>Confirm Home; review the line preview, obstacle settings and force parameters.</li>
+<li>Results are saved under the <strong>Results</strong> directory in Settings. <strong>Measurements folder name</strong> identifies a new folder for this run. With <strong>Automatic date and time name</strong> checked, a template is shown until Start program creates the dated folder. Uncheck it to edit the initial name <code>Measurements_01</code>; an existing folder or file is rejected, so results are never overwritten.</li>
+<li>Click <strong>Start program</strong>, review confirmations and provide any required acquisition-client signals. Waiting for a client is not necessarily a fault.</li>
+<li>Monitor phase, point and progress. Verify normal completion/return; stopping a run does not guarantee Home.</li></ol>
+<p><strong>Save as default</strong> replaces shared measurement defaults. <strong>Reset default</strong> reloads them and can discard edits. With a 1000 mm span and 300 mm step, samples stop at 900 mm; choosing four points with fit on instead includes both 0 and 1000 mm.</p>
+
+<h2 id="settings">4. Settings and routines</h2>
+<p>Use Settings to choose which installation files the app uses. It is for managing folders and taught routes, rather than moving the robot. File selections generally take effect after restarting the app.</p>
+<p><strong>Local data:</strong> the base path is shown in full; useful file/directory paths are relative. Change folder selects existing data or copies current data to an empty folder, keeping the original. Restart after changing location.</p>
+<p><strong>Routine file:</strong> Change file lists routine JSON files and checks compatibility before saving. Restart to apply the choice. The selected routine filename is shown here in Settings.</p>
+<ol><li>To create a file, choose a PolyScope <code>.script</code> export. The chooser starts in the library set by <code>routine_scripts_directory</code> in app_config.</li>
+<li>Review the prefilled Home-to-start and End-to-Home waypoint lists. Names must match the export. Measurement waypoints are fixed and grey.</li>
+<li>Review joint speed [rad/s], acceleration [rad/s²] and intermediate blend [mm]. Click <strong>Create file</strong> with a new filename.</li>
+<li>The app creates four entry/exit routines with reversed return routes and zero blend at each route's endpoints. Review the result, select it with Change file, then restart. Extraction success does not prove path clearance.</li></ol>
+<p>Do not edit configuration or taught files during an action. The setup owner must keep the robot IP, tool, routine and controller program path consistent.</p>
+
+<h2 id="files">5. Results, errors and updates</h2>
+<table><tr><th>Situation</th><th>Action</th></tr>
+<tr><td>Results and backup</td><td>Automatic state, feedback, configuration, plan and logs are in the selected session folder. Raw RTM data may be stored separately. Back up local data with the app closed.</td></tr>
+<tr><td>Wrong initial position</td><td>Establish Home or the required routine start using the approved procedure. Check the actual position rather than relying on idle feedback.</td></tr>
+<tr><td>Contact not reached</td><td>Check the tool/workpiece, force and approach settings. Retry only after confirming the return result; Flexible can remain Ready after a verified return.</td></tr>
+<tr><td>Safety, connection or return failure</td><td>Inspect the robot/pendant, retain the error and logs, and follow approved recovery. Do not repeatedly restart without finding the cause.</td></tr>
+<tr><td>App update</td><td>Close the app, replace the exe and retain local data. Existing user files and controller programs are not replaced automatically.</td></tr></table>
+<p>The default-data archive contains initial files, not a backup of your taught changes or results. Save your completed installation manual under a separate filename so package regeneration does not replace your additions.</p>
+
+<section class="site-section"><h2 id="robot-start">6. Installation example — starting the robot</h2>
+<p>Complete with approved pendant steps, operating mode, tool/TCP/payload, safe Home approach and shutdown. Use the instructions for the actual controller version.</p>
+<div class="worksheet"><p><strong>Installation / controller / required PPE:</strong> _________________________________</p><p><strong>Approved startup and Home procedure:</strong></p><p>1. ___________________________________________________________________</p><p>2. ___________________________________________________________________</p><p>3. ___________________________________________________________________</p><p><strong>Screenshot and shutdown notes:</strong></p><p>&nbsp;</p><p>&nbsp;</p><p>&nbsp;</p><p><strong>Approved by / date:</strong> __________________________________________________</p></div></section>
+
+<section class="site-section"><h2 id="force-update">7. Installation example — updating Apply Force</h2>
+<p>Local source: <code>profiles/default/robot_programs/apply_force.script</code>. Seeded controller path: <code>Inspection/Programs/Apply_Force/apply_force.urp</code>. Copying the local script alone does not update the URP. Preserve the feedback/release handshake used by both timer and client-feedback modes.</p>
+<div class="worksheet"><p><strong>Source revision / controller URP / backup location:</strong> ________________________</p><p><strong>Approved transfer, Script-node update and save procedure:</strong></p><p>1. ___________________________________________________________________</p><p>2. ___________________________________________________________________</p><p>3. ___________________________________________________________________</p><p><strong>Screenshot / verification / rollback:</strong></p><p>&nbsp;</p><p>&nbsp;</p><p>&nbsp;</p><p><strong>Approved by / date:</strong> __________________________________________________</p></div></section>
+
+<section class="site-section"><h2 id="winscp">8. Installation example — connecting with WinSCP</h2>
+<p>WinSCP is separate from RTM Cobot Studio. Obtain the approved protocol, port, account and authentication method from the setup owner; do not assume a default password. See the <a href="https://winscp.net/eng/docs/guide_connect">official connection guide</a>.</p>
+<div class="worksheet"><p><strong>Host / protocol / port:</strong> __________________________________________________</p><p><strong>Account / credential-storage reference / verified host identity:</strong> ______________</p><p><strong>Remote program folder / local backup folder:</strong> ______________________________</p><p><strong>Approved transfer steps and screenshot:</strong></p><p>1. ___________________________________________________________________</p><p>2. ___________________________________________________________________</p><p>3. ___________________________________________________________________</p><p>&nbsp;</p><p>&nbsp;</p><p><strong>Setup owner / contact / date:</strong> _____________________________________________</p></div></section>
+</main></body></html>

@@ -115,7 +115,7 @@ class MeasurementPositionTests(unittest.TestCase):
 
     def test_unconfirmed_extended_start_is_rejected_before_robot_or_worker(self):
         self.parameters.update(x_start=-50.)
-        request = server.MeasurementStartRequest(output_directory=ROOT)
+        request = server.legacy.MeasurementStartRequest(output_directory=ROOT)
         with patch.object(server.legacy, "state") as state, patch.object(server.legacy, "read_routines_file", return_value=self.data), patch.object(server.legacy, "assert_safe_start_position") as robot:
             state.get_config.return_value = self.config
             state.get_routine_file.return_value = ROOT / "test-routines.json"
@@ -130,7 +130,7 @@ class MeasurementPositionTests(unittest.TestCase):
         for start, confirmed in [(-50., True), (0., False)]:
             with self.subTest(start=start), tempfile.TemporaryDirectory() as folder:
                 self.parameters["x_start"] = start
-                request = server.MeasurementStartRequest(output_directory=Path(folder), outside_line_confirmed=confirmed)
+                request = server.legacy.MeasurementStartRequest(output_directory=Path(folder), outside_line_confirmed=confirmed)
                 with patch.object(server.legacy, "state") as state, patch.object(server.legacy, "read_routines_file", return_value=self.data), patch.object(server.legacy, "assert_safe_start_position") as robot:
                     state.get_config.return_value = self.config
                     state.get_routine_file.return_value = ROOT / "test-routines.json"

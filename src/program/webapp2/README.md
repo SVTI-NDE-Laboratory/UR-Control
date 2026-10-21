@@ -1,4 +1,4 @@
-# UR15 WebApp 2.0
+# RTM Cobot Studio
 
 Run from the project root using the existing virtual environment:
 
@@ -14,7 +14,7 @@ commanding the same robot.
 
 ## Installation profiles and local testing
 
-WebApp2 uses `%LOCALAPPDATA%\UR15 WebApp\` by default. If the local data cannot
+RTM Cobot Studio uses `%LOCALAPPDATA%\RTM Cobot Studio\` by default. If the local data cannot
 be found at startup, a native folder chooser asks the user to locate it. An
 empty selected folder is initialized with the bundled defaults. Cancelling
 leaves the data unchanged and exits. Startup then reads
@@ -23,8 +23,15 @@ its referenced files, and only then loads the server. An invalid selected file
 stops startup with an error instead of silently loading another installation.
 Initialization and the configuration check do not contact the robot.
 
+On upgrade, an existing default `UR15 WebApp` folder is copied and validated under
+the new name before use; the original remains untouched as a backup. Internal
+absolute paths are rebased to the new copy. Existing data under the new name is
+never overwritten. A custom location previously selected in Settings is retained,
+including a missing location that must be located again at startup. Explicit
+`--data-dir` and locator overrides retain their supplied paths.
+
 ```text
-UR15 WebApp/
+RTM Cobot Studio/
   preferences.json
   profiles/default/
     app_config.json
@@ -67,7 +74,7 @@ startup prompts to locate it rather than silently creating replacement data.
 The **Routine** panel shows the selected routine filename. **Change file** opens
 a list of JSON files in the routine directory. The selected file is checked for
 valid motion targets and compatibility with the measurement defaults, then saved
-to app_config. Close and relaunch WebApp2 to apply it; the running installation
+to app_config. Close and relaunch RTM Cobot Studio to apply it; the running installation
 and worker snapshots keep their current routine until then.
 
 **Create a routine file** imports a PolyScope `.script` export using the existing
@@ -76,9 +83,9 @@ in `routine_scripts_directory`, a path in app_config relative to its own folder.
 The initial `routine_scripts` folder contains bundled waypoint script exports;
 older profiles acquire this setting on startup without replacing their other
 values. A custom script directory is used without copying bundled files into it.
-The Home-to-start and end-to-Home lists are prefilled from the active routine.
+The Home-to-start and End-to-Home lists are prefilled from the active routine.
 Edit the Home-to-start sequence (Home through
-p_start_h), the end-to-Home sequence (p_end_h through Home), and joint speed,
+p_start_h), the End-to-Home sequence (p_end_h through Home), and joint speed,
 acceleration and intermediate blend. The form creates home_to_start,
 start_to_home, home_to_end and end_to_home, automatically reversing the two
 sequences for the complementary routes. Each first/last step has zero blend.
@@ -96,8 +103,8 @@ do not edit these files while operating the robot.
 To test the same startup flow entirely within the repository:
 
 ```powershell
-.\.venv\Scripts\python.exe tools\webapp2.py --data-dir temporary_data\webapp2-local --check-config
-.\.venv\Scripts\python.exe tools\webapp2.py --data-dir temporary_data\webapp2-local
+.\.venv\Scripts\python.exe tools\webapp2.py --data-dir "temporary_data\RTM Cobot Studio" --check-config
+.\.venv\Scripts\python.exe tools\webapp2.py --data-dir "temporary_data\RTM Cobot Studio"
 ```
 
 The first command initializes and validates the files, then exits. The second
@@ -114,13 +121,89 @@ installation files required by the controller separately.
 
 Manual and flexible files go into `runtime/<session-id>/`. Automatic state,
 feedback, logs and measurement files remain in the selected results/session
-folder. `results_directory` sets the initial output folder; operators can still
-select another output folder for a run.
+folder. `results_directory` in the active app configuration is the base Results
+folder. Automatic runs always create a new child folder: either a date/time name
+generated on Start program, or an operator-entered name. The automatic field
+shows a template until the run starts. Existing folders/files, paths and Windows
+reserved names are rejected. Creation is atomic to prevent concurrent overwrites.
 
-No executable is built by this change. Packaging must include UI assets, default
-JSON and scripts, Python modules and native RTDE dependencies. The launcher
-supports `--worker` dispatch for frozen executables; a clean-Windows packaging
-test is still required before distributing an executable.
+## Building and updating the Windows executable
+
+Build utilities and their dependencies are grouped in `tools/build_webapp2/`:
+`build.py` builds, checks and packages the release; `check_exe.py` checks an exe;
+`package.py` refreshes release archives and manuals; `prepare_icon.py` regenerates
+the icon. The same folder holds the PyInstaller spec and Windows version metadata.
+Finished distribution files remain in `dist/`, while intermediate build files
+remain in `temporary_data/webapp2-build/`. The local launcher is `tools/webapp2.py`.
+
+Install the build dependencies into the existing project virtual environment once:
+
+```powershell
+.\.venv\Scripts\python.exe -m pip install -r tools/build_webapp2/requirements.txt
+```
+
+Build and verify the executable after code or UI changes:
+
+```powershell
+.\.venv\Scripts\python.exe tools\build_webapp2\build.py
+```
+
+If the normal exe is running, verify a separate build without replacing it:
+
+```powershell
+.\.venv\Scripts\python.exe tools\build_webapp2\build.py --dist-dir temporary_data\webapp2-build\check-dist
+```
+
+The result is `dist/RTM Cobot Studio.exe`. Copy that single file to the target Windows
+64-bit computer and launch it. Python and the robot communication libraries are
+included. The app retains its console window for diagnostics and opens the
+interface in the default browser. A first launch asks where to create or locate
+local data; the normal AppData folder is the default search location.
+
+The displayed product name is RTM Cobot Studio; internal script and archive names
+remain unchanged. The default AppData folder is also named RTM Cobot Studio. The supplied SVTI logo is used in the header,
+browser tab and Windows executable. Its checked-in icon can be regenerated from
+the SVG with `python tools/build_webapp2/prepare_icon.py` after installing the build
+dependencies. Windows product metadata is defined in `tools/build_webapp2/version_info.txt`.
+
+The build also packages `dist/UR15WebApp2-release.zip`, containing the exe,
+`README_FIRST.txt`, HTML and editable Word manuals, a clean default-data zip,
+build metadata and checksums. The manual templates live in
+`documentation/webapp2/`. They reserve space for approved robot startup,
+Apply Force updates and WinSCP transfer examples. Save completed installation
+manuals under a separate filename to preserve additions across package rebuilds.
+The default archive is seeded from bundled source defaults, not from an operator's
+working data, and contains no session logs or results. Its top-level folder is
+`RTM Cobot Studio`; select that folder, which contains preferences.json, at first launch.
+
+To regenerate documentation and release archives without rebuilding the exe:
+
+```powershell
+.\.venv\Scripts\python.exe tools\build_webapp2\package.py
+```
+
+Close the running app before replacing its exe with a newer build. Settings,
+taught routines and results remain in the external local data folder. Editing
+those user files does not require rebuilding. Changes to bundled initial defaults
+do not overwrite existing user files on upgrade; update the selected local files
+when changing an already-configured installation.
+
+The build uses `tools/build_webapp2/webapp2.spec` and caches intermediates under
+`temporary_data/webapp2-build/`. Local modules are bundled in their original
+directory structure so reused modules can locate adjacent assets without edits
+to the original webapp. `dist/UR15WebApp2-build.json` records build/check duration,
+file size and SHA-256. Build output is excluded from Git.
+
+Each build checks native RTDE imports, all three worker entry points, default
+provisioning, HTTP pages, static assets and clean shutdown from a separate working
+directory. It opens no browser or robot connection. To check an exe separately:
+
+```powershell
+.\.venv\Scripts\python.exe tools\build_webapp2\check_exe.py "dist\RTM Cobot Studio.exe"
+```
+
+These checks run on the build computer. A target-computer check is still needed
+to verify the actual Windows environment, robot network and controller programs.
 
 ## Operator workflow
 
@@ -335,7 +418,7 @@ Run the hardware-free tests with:
 
 The HTTP tests use `httpx`, which is already installed in this workspace's
 virtual environment. On a new environment install it separately for testing;
-WebApp 2.0 itself uses only the project's existing runtime dependencies.
+RTM Cobot Studio itself uses only the project's existing runtime dependencies.
 
 The tests exercise the HTTP routes, fixed-file enforcement, motion units,
 routine start and plane checks, a complete simulated flexible session, command

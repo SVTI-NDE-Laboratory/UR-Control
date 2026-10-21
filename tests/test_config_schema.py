@@ -102,7 +102,7 @@ class ConfigSchemaTests(unittest.TestCase):
         self.assertNotIn('name="line.parameters.', html)
 
     def test_flat_schema_obstacle_skips_points_without_changing_grid(self):
-        self.config["line"].update(x_start=100, x_end=1000, increment=100)
+        self.config["line"].update(x_start=100, x_end=1000, increment=100, spacing_source="increment")
         before = create_measurement_plan(self.config, self.data)["points"]
         self.config["obstacle"] = {"start": 300, "end": 500}
         validate_measurement_config(self.config, self.data)

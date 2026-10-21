@@ -1,4 +1,6 @@
 .venv/
+dist/
+/Logs bug/
 __pycache__/
 *.py[cod]
 src/program/config/config_tmp.json

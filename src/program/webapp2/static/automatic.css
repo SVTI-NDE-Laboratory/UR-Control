@@ -1,0 +1,4 @@
+/* Blur inactive parameter values consistently; keep their labels readable. */
+.inactive-parameter { filter: blur(3px); opacity: .5; }
+#measurement-folder-name { width: 100%; }
+#measurement-folder-name[readonly] { background: #edf2f6; color: #52606d; }

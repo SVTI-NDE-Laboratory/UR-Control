@@ -65,7 +65,7 @@ class ControlWorkers(WorkerManager):
         with self._lock:
             self._assert_available()
             if routine_file.resolve() != ROUTINE_FILE.resolve():
-                raise ValueError("WebApp 2.0 uses the fixed installation routine file.")
+                raise ValueError("RTM Cobot Studio uses the fixed installation routine file.")
             self.directory = output_directory
             self._state_file = output_directory / "state.json"
             self._kind = "measurement"

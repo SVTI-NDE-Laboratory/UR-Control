@@ -16,6 +16,7 @@ from urllib.request import Request, urlopen
 from src.program.webapp2.profile import (
     ROOT, initialize, load_profile, read_object, select_profile, write_object,
     application_directory, prepare_startup, change_data_directory, display_path,
+    default_directory, migrate_legacy_directory,
 )
 
 
@@ -155,7 +156,7 @@ class ProfileTests(unittest.TestCase):
             while True:
                 line = lines.get(timeout=15)
                 self.assertIsNotNone(line, "Launcher exited before publishing its URL.")
-                if line.startswith("UR15 WebApp 2.0: "):
+                if line.startswith("RTM Cobot Studio: "):
                     base = line.split(": ", 1)[1].strip().removesuffix("/manual")
                     break
             with urlopen(base + "/api/settings", timeout=10) as response:
@@ -289,3 +290,89 @@ class LocalDataLocationTests(unittest.TestCase):
     def test_display_paths_are_relative_to_local_data(self):
         self.assertEqual(display_path(self.data / "profiles/default/app_config.json", self.data),
                          str(Path("profiles/default/app_config.json")))
+
+
+class BrandedLocalDataTests(unittest.TestCase):
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.root = Path(temporary.name).resolve()
+        environment = patch.dict(os.environ, {"LOCALAPPDATA": str(self.root)}, clear=True)
+        environment.start()
+        self.addCleanup(environment.stop)
+        self.old = self.root / "UR15 WebApp"
+        self.new = self.root / "RTM Cobot Studio"
+
+    def test_default_directory_uses_the_product_name(self):
+        self.assertEqual(default_directory(), self.new)
+
+    def test_migration_preserves_defaults_results_and_rebases_absolute_internal_paths(self):
+        profile = load_profile(self.old)
+        values = dict(profile.values)
+        for key, path in profile.paths.items():
+            values[key] = str(path)
+        write_object(profile.path, values)
+        write_object(profile.preferences_path, {"schema_version": 1, "configuration_path": str(profile.path)})
+        write_object(self.old / 'location.json', {'data_directory': str(self.old)})
+        (self.old / 'results' / 'sample').mkdir(parents=True)
+        result = self.old / 'results/sample/result.txt'
+        result.write_bytes(b'original measurement data')
+        defaults = profile.paths['measurement_defaults']
+        values = read_object(defaults)
+        values['measurement']['holding_force'] = 250
+        write_object(defaults, values)
+        original_preferences = profile.preferences_path.read_bytes()
+        migrated = load_profile()
+        self.assertEqual(migrated.data_dir, self.new)
+        self.assertEqual(migrated.path, self.new / 'profiles/default/app_config.json')
+        self.assertEqual(migrated.paths['results_directory'], self.new / 'results')
+        self.assertEqual(migrated.paths['measurement_defaults'].read_bytes(), defaults.read_bytes())
+        self.assertEqual((self.new / 'results/sample/result.txt').read_bytes(), result.read_bytes())
+        self.assertEqual(profile.preferences_path.read_bytes(), original_preferences)
+        self.assertEqual(application_directory(), self.new)
+        self.assertEqual(list(self.root.glob('.rtm-cobot-studio-*')), [])
+
+    def test_migration_keeps_an_existing_custom_selection(self):
+        custom = load_profile(self.root / 'custom data')
+        write_object(self.old / 'location.json', {'data_directory': str(custom.data_dir)})
+        migrate_legacy_directory()
+        self.assertEqual(application_directory(), custom.data_dir)
+        self.assertFalse((self.new / 'preferences.json').exists())
+        self.assertEqual(load_profile().data_dir, custom.data_dir)
+
+    def test_missing_custom_selection_is_not_replaced_with_blank_defaults(self):
+        missing = self.root / 'missing data'
+        write_object(self.old / 'location.json', {'data_directory': str(missing)})
+        with patch('src.program.webapp2.dialogs.choose_local_data', return_value=None) as chooser:
+            with self.assertRaisesRegex(ValueError, 'cancelled'):
+                prepare_startup()
+        chooser.assert_called_once_with(missing=True)
+        self.assertEqual(application_directory(), missing)
+        self.assertFalse(missing.exists())
+
+    def test_existing_branded_data_is_never_overwritten(self):
+        old = load_profile(self.old)
+        current = load_profile(self.new)
+        values = read_object(current.paths['measurement_defaults'])
+        values['measurement']['holding_force'] = 260
+        write_object(current.paths['measurement_defaults'], values)
+        expected = current.paths['measurement_defaults'].read_bytes()
+        migrate_legacy_directory()
+        self.assertEqual(load_profile().paths['measurement_defaults'].read_bytes(), expected)
+        self.assertNotEqual(expected, old.paths['measurement_defaults'].read_bytes())
+
+    def test_explicit_data_and_locator_overrides_disable_automatic_migration(self):
+        load_profile(self.old)
+        for key in ('UR15_WEBAPP_DATA_DIR', 'UR15_WEBAPP_LOCATION_FILE'):
+            with patch.dict(os.environ, {key: str(self.root / 'explicit')}):
+                migrate_legacy_directory()
+            self.assertFalse(self.new.exists())
+
+    def test_failed_copy_never_publishes_partial_data(self):
+        load_profile(self.old)
+        with patch('src.program.webapp2.profile.copy_local_data', side_effect=OSError('copy failed')):
+            with self.assertRaisesRegex(OSError, 'copy failed'):
+                migrate_legacy_directory()
+        self.assertFalse(self.new.exists())
+        self.assertTrue((self.old / 'preferences.json').is_file())
+        self.assertEqual(list(self.root.glob('.rtm-cobot-studio-*')), [])

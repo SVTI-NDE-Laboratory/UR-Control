@@ -128,8 +128,29 @@ class ApiTests(unittest.IsolatedAsyncioTestCase):
         page = (await self.client.get("/configuration")).text
         self.assertNotIn('<select id="routine-file"', page)
         self.assertNotIn('<label for="routine-file">', page)
-        self.assertIn("const routineFileSelect = document.createElement('select');", page)
-        self.assertNotIn('routineFileSelect.disabled = controlsLocked;', page)
+        script = (await self.client.get('/v2-static/automatic.js')).text
+        self.assertIn("const routineFileSelect = document.createElement('select');", script)
+        self.assertNotIn('routineFileSelect.disabled = controlsLocked;', script)
+
+    async def test_automatic_confirmations_use_the_shared_dialog(self):
+        page = (await self.client.get("/configuration")).text
+        script = (await self.client.get('/v2-static/automatic.js')).text
+        self.assertNotIn("window.confirm(", page + script)
+        self.assertNotIn("window.alert(", page + script)
+        self.assertIn("if (!await window.confirmAppAction(", script)
+        self.assertIn("const confirmed = await window.confirmAppAction(", script)
+        self.assertIn("'Save measurement defaults', 'Save as default'", script)
+        self.assertIn("'Start robot motion', 'Start program'", script)
+        self.assertIn('src="/v2-static/automatic.js"', page)
+        self.assertIn('Measurements folder name', page)
+        self.assertNotIn('id="output-directory"', page)
+        self.assertNotIn('id="browse-output"', page)
+        self.assertIn('src="/v2-static/dialogs.js"', page)
+        self.assertIn('href="/v2-static/dialogs.css"', page)
+        shell = (await self.client.get("/automatic")).text
+        self.assertLess(shell.index('/v2-static/dialogs.js'), shell.index('/v2-static/app.js'))
+        for asset in ("dialogs.js", "dialogs.css"):
+            self.assertEqual((await self.client.get('/v2-static/' + asset)).status_code, 200)
 
     async def test_request_validation_rejects_invalid_actions(self):
         invalid = [{"action": "waypoint", "waypoint": "missing"},
@@ -149,7 +170,7 @@ class ApiTests(unittest.IsolatedAsyncioTestCase):
         self.workers._kind = "measurement"
         response = await self.client.post("/api/manual/start", json={"action": "routine", "routine": "home_to_start"})
         self.assertEqual(response.status_code, 409)
-        response = await self.client.post("/api/measurement/start", json={"output_directory": str(ROOT)})
+        response = await self.client.post("/api/measurement/start", json={})
         self.assertEqual(response.status_code, 409)
         self.assertEqual((await self.client.post("/api/flexible/start")).status_code, 409)
 

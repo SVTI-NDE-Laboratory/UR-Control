@@ -38,6 +38,7 @@ class RoutineSetupTests(unittest.TestCase):
         self.assertEqual(set(routes), {"home_to_start", "start_to_home", "home_to_end", "end_to_home"})
         self.assertEqual([step["waypoint"] for step in routes["start_to_home"]], ["p_start_h", "approach", "Home"])
         self.assertEqual([step["waypoint"] for step in routes["home_to_end"]], ["Home", "exit", "p_end_h"])
+        self.assertEqual([step["waypoint"] for step in routes["end_to_home"]], ["p_end_h", "exit", "Home"])
         self.assertIn("p_start_l", data["waypoints"])
         self.assertIn("p_end_l", data["waypoints"])
         for steps in routes.values():
@@ -53,6 +54,12 @@ class RoutineSetupTests(unittest.TestCase):
         self.assertEqual(selected, target)
         self.assertEqual(load_profile(self.profile.data_dir).paths["routine_file"], target)
         self.assertNotEqual(self.profile.paths["routine_file"], target)
+
+    def test_end_to_home_input_must_run_from_the_end_high_waypoint_to_home(self):
+        for names in (["Home", "exit", "p_end_h"], ["p_start_h", "exit", "Home"]):
+            with self.subTest(names=names), self.assertRaisesRegex(ValueError, 'Home'):
+                create_routine(self.profile, creation(end_to_home=names))
+        self.assertFalse((self.directory / 'new_routine.json').exists())
 
     def test_missing_waypoint_never_creates_partial_output(self):
         with self.assertRaisesRegex(ValueError, "Missing"):

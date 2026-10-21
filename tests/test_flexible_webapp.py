@@ -196,7 +196,7 @@ class FlexibleApiTests(unittest.IsolatedAsyncioTestCase):
             write_json_atomic(self.workers._state_file, {"mode": "waiting_for_command"})
             response = await self.client.post("/api/manual/start", json={"action": "routine", "routine": "home_to_start"})
             self.assertEqual(response.status_code, 409)
-            response = await self.client.post("/api/measurement/start", json={"output_directory": str(ROOT)})
+            response = await self.client.post("/api/measurement/start", json={})
             self.assertEqual(response.status_code, 409)
             self.assertEqual((await self.client.post("/api/flexible/start")).status_code, 409)
             first = await self.client.post("/api/flexible/command", json={"action": "move", "x": 100, "y": -50})

@@ -222,9 +222,6 @@ async function refresh() {
       ? {flexible:'flexible', measurement:'automatic'}[latest.worker.kind] || null : null);
     const f = latest.feedback, s = latest.program_state;
     renderGeneral();
-    const routineName = latest.routine_file.replace(/\.json$/i, '');
-    $('routine-file').textContent = routineName;
-    $('routine-file').title = routineName;
     $('position').textContent = f.waypoint || '—';
     $('coordinates').textContent = f.tcp_position ? positionTuple(f.tcp_position, ['X','Y','Z']) : '—';
     reportWorkerError(latest);
@@ -260,15 +257,7 @@ async function refresh() {
 }
 
 function confirmWaypointSafety(message, title = 'Check waypoint safety') {
-  const dialog = $('waypoint-safety-dialog');
-  $('waypoint-safety-title').textContent = title;
-  $('waypoint-safety-message').textContent = message;
-  dialog.returnValue = 'no';
-  return new Promise(resolve => {
-    dialog.addEventListener('close', () => resolve(dialog.returnValue === 'yes'), {once:true});
-    dialog.showModal();
-    $('waypoint-safety-no').focus();
-  });
+  return window.confirmAppAction(message, title, 'Yes, move forward', 'No');
 }
 
 async function maybeConfirmWaypoint(data) {
@@ -398,7 +387,7 @@ $('start-flexible').addEventListener('click', () => perform('/api/flexible/start
 $('end-flexible').addEventListener('click', () => perform('/api/flexible/command', {action:'end'}));
 $('stop').addEventListener('click', () => perform('/api/worker/stop', {}));
 $('close').addEventListener('click', async () => {
-  try { await api('/api/close', {}); document.body.textContent = 'WebApp 2.0 closed. You can close this tab.'; }
+  try { await api('/api/close', {}); document.body.textContent = 'RTM Cobot Studio closed. You can close this tab.'; }
   catch(error) { showBlockingError(error.message); }
 });
 async function initialize() {
@@ -415,7 +404,7 @@ async function initialize() {
     $('routine-end-to-home').value = creation.end_to_home.join(', ');
     $('routine-additional-points').value = creation.measurement_waypoints.join(', ');
     if (settings.restart_required) {
-      $('settings-message').textContent = 'Close and relaunch WebApp2 to apply the saved settings.';
+      $('settings-message').textContent = 'Close and relaunch RTM Cobot Studio to apply the saved settings.';
       $('settings-message').hidden = false;
     }
     $('threshold').value = uiDefaults.threshold ?? 140;

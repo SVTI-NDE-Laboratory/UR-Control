@@ -1,0 +1,5 @@
+dialog { width: min(520px, calc(100% - 40px)); border: 1px solid #9aa9b8; border-radius: 10px; padding: 24px; }
+dialog::backdrop { background: rgb(23 33 43 / 45%); }
+dialog h2 { margin-top: 0; }
+#waypoint-safety-message, #blocking-error-message, #line-scope-message { white-space: pre-wrap; overflow-wrap: anywhere; }
+dialog button:focus-visible { outline: 3px solid #2474a9; outline-offset: 3px; }

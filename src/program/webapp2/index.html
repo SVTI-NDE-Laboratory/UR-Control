@@ -3,21 +3,27 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>SVTI UR Cobot Control</title>
+  <title>RTM Cobot Studio</title>
+  <link rel="icon" href="/v2-static/svti-logo.ico" sizes="any">
+  <link rel="icon" href="/v2-static/svti-logo.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/static/styles.css">
   <link rel="stylesheet" href="/v2-static/styles.css">
+  <link rel="stylesheet" href="/v2-static/dialogs.css">
+  <script src="/v2-static/dialogs.js" defer></script>
   <script src="/v2-static/app.js" defer></script>
 </head>
 <body>
   <header class="control-header">
-    <h1>SVTI UR Cobot Control</h1>
+    <div class="app-brand">
+      <img class="app-logo" src="/v2-static/svti-logo.svg" width="44" height="44" alt="SVTI ASIT">
+      <h1>RTM Cobot Studio</h1>
+    </div>
     <nav aria-label="Control mode"><a href="/manual" id="manual-tab">Manual Mode</a><a href="/flexible" id="flexible-tab">Flexible measurement</a><a href="/automatic" id="automatic-tab">Automatic measurements</a></nav>
     <div class="header-tools">
       <a id="settings-tab" class="settings-button" href="/settings" title="Settings">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><path d="m10 2-.5 2.2-1.8.8-1.9-1.2-2.8 2.8 1.2 1.9-.8 1.8L2 10v4l2.2.5.8 1.8-1.2 1.9 2.8 2.8 1.9-1.2 1.8.8.5 2.2h4l.5-2.2 1.8-.8 1.9 1.2 2.8-2.8-1.2-1.9.8-1.8L22 14v-4l-2.2-.5-.8-1.8 1.2-1.9-2.8-2.8-1.9 1.2-1.8-.8L14 2Z"/><circle cx="12" cy="12" r="3"/></svg>
         Settings
       </a>
-      <span class="routine-file-label">Routine file: <span id="routine-file">Loading…</span></span>
       <button id="close">Close app</button>
     </div>
   </header>
@@ -91,31 +97,35 @@
             </fieldset>
           </section>
           <section class="panel">
-            <fieldset><legend>Routine</legend>
-              <label class="settings-section-title" for="settings-routine-file">Routine file</label>
+            <fieldset><legend>Routine file</legend>
               <div class="local-data-location">
-                <input id="settings-routine-file" class="optional-disabled" type="text" readonly>
+                <input id="settings-routine-file" class="optional-disabled" type="text" aria-label="Selected routine file" readonly>
                 <button id="change-routine-file" type="button">Change file</button>
               </div>
               <p id="routine-settings-message" role="status" hidden></p>
+            </fieldset>
               <form id="create-routine-form">
-                <p class="settings-section-title">Create a routine file</p>
+                <fieldset><legend>Create new routine file</legend>
                 <div class="parameter-row settings-path-row"><label for="routine-source-script">PolyScope script</label><div class="routine-script-choice"><input id="routine-source-script" class="optional-disabled" type="text" readonly><button id="choose-routine-script" type="button">Choose script</button></div></div>
                 <div class="parameter-row settings-path-row"><label for="routine-output-name">New file name</label><input id="routine-output-name" type="text" value="routine_new.json" maxlength="120" required></div>
+                <div class="routine-creation-section" role="group" aria-labelledby="routine-waypoints-title">
+                <h3 id="routine-waypoints-title" class="settings-section-title">Waypoints and order</h3>
                 <label for="routine-home-to-start">Home to start — waypoint order</label>
-                <textarea id="routine-home-to-start" rows="3" required>Home, home_to_start1, home_to_start2, p_start_h</textarea>
+                <textarea id="routine-home-to-start" rows="2" required>Home, home_to_start1, home_to_start2, p_start_h</textarea>
                 <label for="routine-end-to-home">End to Home — waypoint order</label>
-                <textarea id="routine-end-to-home" rows="3" required>p_end_h, end_to_home1, end_to_home2, end_to_home3, Home</textarea>
-                <p class="routine-form-note">Separate waypoints with commas or new lines. The reverse routes are created automatically.</p>
-                <div class="parameter-row settings-path-row"><label for="routine-additional-points">Measurement waypoints</label><input id="routine-additional-points" class="optional-disabled" type="text" value="p_start_l, p_end_l" readonly></div>
-                <div class="parameter-row settings-path-row"><label for="routine-joint-speed">Joint speed [rad/s]</label><input id="routine-joint-speed" type="number" value="2" min="0.001" step="any" required></div>
-                <div class="parameter-row settings-path-row"><label for="routine-joint-acceleration">Joint acceleration [rad/s²]</label><input id="routine-joint-acceleration" type="number" value="0.4" min="0.001" step="any" required></div>
-                <div class="parameter-row settings-path-row"><label for="routine-blend-radius">Intermediate blend [mm]</label><input id="routine-blend-radius" type="number" value="5" min="0" step="any" required></div>
-                <p class="routine-form-note">Each route starts and ends with zero blend.</p>
+                <textarea id="routine-end-to-home" rows="2" required>p_end_h, end_to_home1, end_to_home2, end_to_home3, Home</textarea>
+                <div class="parameter-row routine-parameter-row"><label for="routine-additional-points">Measurement waypoints</label><input id="routine-additional-points" class="optional-disabled" type="text" value="p_start_l, p_end_l" readonly></div>
+                </div>
+                <div class="routine-creation-section routine-motion-parameters" role="group" aria-labelledby="routine-motion-title">
+                <h3 id="routine-motion-title" class="settings-section-title">Movement parameters</h3>
+                <div class="parameter-row routine-parameter-row"><label for="routine-joint-speed">Joint speed [rad/s]</label><input id="routine-joint-speed" type="number" value="2" min="0.001" step="any" required></div>
+                <div class="parameter-row routine-parameter-row"><label for="routine-joint-acceleration">Joint acceleration [rad/s²]</label><input id="routine-joint-acceleration" type="number" value="0.4" min="0.001" step="any" required></div>
+                <div class="parameter-row routine-parameter-row"><label for="routine-blend-radius">Blend radius [mm]</label><input id="routine-blend-radius" type="number" value="5" min="0" step="any" required></div>
+                </div>
                 <div class="actions"><button id="create-routine-file" type="submit" class="primary">Create file</button></div>
                 <p id="routine-create-message" role="status" hidden></p>
+                </fieldset>
               </form>
-            </fieldset>
           </section>
         </div>
       </section>

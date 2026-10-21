@@ -80,6 +80,6 @@ class ProgramPathTests(unittest.TestCase):
         with patch.object(server.legacy, "state") as state, patch.object(server.legacy, "read_routines_file", return_value=self.data), patch.object(server.legacy, "assert_safe_start_position"):
             state.get_config.return_value = old
             state.get_routine_file.return_value = ROUTINE_FILE
-            server.legacy.start_measurement(server.MeasurementStartRequest(output_directory=Path(self.folder.name)))
+            server.legacy.start_measurement(server.legacy.MeasurementStartRequest(output_directory=Path(self.folder.name), outside_line_confirmed=True))
             launched = state.workers.start_measurement.call_args.args[0]
             self.assertEqual(launched["measurement"]["program_path"], "Updated/Runtime Program.urp")
