@@ -10,6 +10,7 @@ The robot does not move until the operator confirms in the control panel or term
 
 import argparse
 import json
+import os
 import sys
 import time
 from pathlib import Path
@@ -53,7 +54,7 @@ from data_acquisition.server_logging import install_timestamped_tee
 
 
 # Connection and configuration locations.
-ROBOT_IP = "192.168.3.10"
+ROBOT_IP = os.environ.get("UR15_ROBOT_IP", "192.168.3.10")
 ROUTINES_FILE = ROUTINES_DIR / "routine_files" / "routines_block.json"
 CONFIG_FILE = CONFIG_DIR / "config_default.json"
 

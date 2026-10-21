@@ -25,13 +25,8 @@ class ProgramPathTests(unittest.TestCase):
         self.folder = tempfile.TemporaryDirectory()
         self.addCleanup(self.folder.cleanup)
         self.default = Path(self.folder.name) / "config_default.json"
-        self.mira = Path(self.folder.name) / "config_mira.json"
-        stale = deepcopy(self.config)
-        stale["measurement"]["program_path"] = "Old/obsolete.urp"
-        self.mira.write_text(json.dumps(stale))
         for patcher in (patch.object(measurement_config, "DEFAULT_CONFIG_FILE", self.default),
-                        patch.object(server.legacy, "SERVER_CONFIG_FILE", self.default),
-                        patch.object(server.legacy, "MIRA_CONFIG_FILE", self.mira)):
+                        patch.object(server.legacy, "SERVER_CONFIG_FILE", self.default)):
             patcher.start()
             self.addCleanup(patcher.stop)
         self.write_default("Inspection/Programs/Apply Force/first.urp")
@@ -44,9 +39,20 @@ class ProgramPathTests(unittest.TestCase):
     def test_automatic_profiles_read_the_current_shared_path(self):
         for path in ("Inspection/Programs/Apply Force/first.urp", "Custom/New Path/second.urp"):
             self.write_default(path)
-            for profile in ("server", "mira"):
+            for profile in ("server", "timer"):
                 config = server.legacy.load_default_config("point_to_point", profile)
                 self.assertEqual(config["measurement"]["program_path"], path)
+
+    def test_timer_and_feedback_share_defaults_and_preserve_saved_stop_method(self):
+        defaults = server.legacy.get_configuration_defaults()
+        self.assertEqual(set(defaults), {"server", "timer"})
+        self.assertEqual(defaults["timer"]["measurement"]["stop_method"], "timer")
+        self.assertEqual(defaults["server"]["measurement"]["stop_method"], "client_feedback")
+        for mode in ("server", "timer"):
+            self.assertEqual(server.legacy.default_config_path("point_to_point", mode), self.default)
+            self.assertEqual(defaults[mode]["measurement"]["holding_force"], self.config["measurement"]["holding_force"])
+        self.default.write_text(json.dumps(defaults["timer"]))
+        self.assertEqual(server.legacy.load_default_config("point_to_point")["measurement"]["stop_method"], "timer")
 
     def test_flexible_commands_read_path_again_after_file_edit(self):
         flexible = flexible_worker.flexible
@@ -63,7 +69,7 @@ class ProgramPathTests(unittest.TestCase):
                 fields[f"{section}.{key}"] = [str(value).lower()]
         fields["line.x_end"] = [str(line_geometry(self.config, self.data)["x_end"])]
         fields["measurement.program_path"] = ["Old/browser-cached.urp"]
-        defaults = server.legacy.load_default_config("point_to_point", "mira")
+        defaults = server.legacy.load_default_config("point_to_point", "timer")
         saved = edited_config(defaults, fields, self.data)
         self.assertEqual(saved["measurement"]["program_path"], "Inspection/Programs/Apply Force/first.urp")
 

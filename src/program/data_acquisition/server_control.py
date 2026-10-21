@@ -7,6 +7,7 @@ responses are length-prefixed.
 """
 
 import json
+import os
 import socket
 import struct
 import threading
@@ -25,7 +26,8 @@ except ImportError:
     )
 
 
-CONFIG_SERVER_FILE = Path(__file__).resolve().parent / "config_server.json"
+CONFIG_SERVER_FILE = Path(os.environ.get("UR15_ACQUISITION_CONFIG",
+                          Path(__file__).resolve().parent / "config_server.json"))
 SHORT_RESPONSES = {"ACK", "T", "F"}
 ACCEPT_TIMEOUT = 0.5
 CLIENT_READ_TIMEOUT = 5.0

@@ -8,7 +8,7 @@ import threading
 from pathlib import Path
 from uuid import uuid4
 
-from .settings import ROOT, RUNTIME, ROUTINE_FILE
+from .settings import ROOT, RUNTIME, ROUTINE_FILE, PROFILE
 from webapp.worker_manager import WorkerManager
 from webapp.launcher import write_json_atomic
 
@@ -36,8 +36,10 @@ class ControlWorkers(WorkerManager):
         flags = (subprocess.CREATE_NEW_CONSOLE if terminal else subprocess.CREATE_NO_WINDOW) if os.name == "nt" else 0
         log = (self.directory / "worker.log").open("w", encoding="utf-8")
         try:
-            self._process = subprocess.Popen([str(executable), "-u", "-m", module, *map(str, arguments)],
-                cwd=ROOT, stdin=subprocess.DEVNULL, stdout=None if terminal else log,
+            command = ([str(executable), "--worker", module] if getattr(sys, "frozen", False)
+                       else [str(executable), "-u", "-m", module])
+            self._process = subprocess.Popen([*command, *map(str, arguments)],
+                cwd=ROOT, env=PROFILE.worker_environment(), stdin=subprocess.DEVNULL, stdout=None if terminal else log,
                 stderr=None if terminal else subprocess.STDOUT, creationflags=flags)
         except OSError as error:
             self._process = None

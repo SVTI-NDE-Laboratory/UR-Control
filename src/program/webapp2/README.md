@@ -7,10 +7,120 @@ Run from the project root using the existing virtual environment:
 ```
 
 The launcher opens a local browser tab. The original `tools/webapp.py` and all
-CLI tools remain available; no existing source files were changed. Run only one
+CLI tools remain available. Run only one
 control application at a time: the shared worker lock belongs to this WebApp
 process and cannot prevent a separately launched CLI or original app from
 commanding the same robot.
+
+## Installation profiles and local testing
+
+WebApp2 uses `%LOCALAPPDATA%\UR15 WebApp\` by default. If the local data cannot
+be found at startup, a native folder chooser asks the user to locate it. An
+empty selected folder is initialized with the bundled defaults. Cancelling
+leaves the data unchanged and exits. Startup then reads
+`preferences.json`, resolves its `configuration_path`, validates that profile and
+its referenced files, and only then loads the server. An invalid selected file
+stops startup with an error instead of silently loading another installation.
+Initialization and the configuration check do not contact the robot.
+
+```text
+UR15 WebApp/
+  preferences.json
+  profiles/default/
+    app_config.json
+    measurement_default.json
+    acquisition.json
+    routines/*.json
+    routine_scripts/*.script
+    robot_programs/*.script
+  runtime/
+  logs/
+  results/                     created when automatic measurements are saved
+```
+
+Missing default files are copied from the bundled/source defaults; existing user
+files are preserved. `app_config.json` selects the robot IP, routine file,
+measurement defaults, acquisition settings, local robot-program directory, initial
+results folder and manual/flexible form defaults (`ui_defaults`). Paths inside
+it resolve against its own folder. Relative `configuration_path` values in
+preferences resolve against the application data folder. Both JSON files use
+`schema_version: 1`.
+
+The **Settings** page has two panels: **Local data** and **Routine**. Only the
+local data base folder is shown in full; app_config, measurement defaults,
+results and the routine file use paths relative to that folder (a path on a
+different Windows drive must be shown in full). Internal settings files are
+not listed in the interface.
+
+**Change folder** opens a native folder chooser. Selecting an existing WebApp
+data folder validates and uses that installation on the next launch. Selecting
+an empty folder copies the current data there, preserving the original folder.
+Nonempty unrelated folders and overlapping source/destination folders are
+rejected. Paths within copied configuration files are rebased when they refer
+to files under the original data folder; external paths remain external.
+Finish/stop any running action first, then close and relaunch the app to apply it.
+The launch location is remembered in a small `location.json` at the original
+AppData base (or the `--data-dir` base for local testing); the interface does not
+display this internal file. If that saved data folder is later unavailable,
+startup prompts to locate it rather than silently creating replacement data.
+
+The **Routine** panel shows the selected routine filename. **Change file** opens
+a list of JSON files in the routine directory. The selected file is checked for
+valid motion targets and compatibility with the measurement defaults, then saved
+to app_config. Close and relaunch WebApp2 to apply it; the running installation
+and worker snapshots keep their current routine until then.
+
+**Create a routine file** imports a PolyScope `.script` export using the existing
+`create_routines_file` helper. **Choose script** uses a native file dialog starting
+in `routine_scripts_directory`, a path in app_config relative to its own folder.
+The initial `routine_scripts` folder contains bundled waypoint script exports;
+older profiles acquire this setting on startup without replacing their other
+values. A custom script directory is used without copying bundled files into it.
+The Home-to-start and end-to-Home lists are prefilled from the active routine.
+Edit the Home-to-start sequence (Home through
+p_start_h), the end-to-Home sequence (p_end_h through Home), and joint speed,
+acceleration and intermediate blend. The form creates home_to_start,
+start_to_home, home_to_end and end_to_home, automatically reversing the two
+sequences for the complementary routes. Each first/last step has zero blend.
+Measurement waypoints follow the measurement defaults (p_start_l and p_end_l in
+the seeded profile) and are read-only. Missing coordinates,
+invalid targets and incompatible measurement geometry prevent saving. Creation
+uses a new filename in the routine directory and never overwrites an existing
+file or automatically changes the selected file. Use Change file to select the
+result. Creation and file selection are blocked while a robot action is running.
+Edit profile JSON files with a text editor and relaunch after editing. Workers
+inherit the parent's active installation settings even after another profile is
+selected. Some measurement/routine files are read afresh during operation;
+do not edit these files while operating the robot.
+
+To test the same startup flow entirely within the repository:
+
+```powershell
+.\.venv\Scripts\python.exe tools\webapp2.py --data-dir temporary_data\webapp2-local --check-config
+.\.venv\Scripts\python.exe tools\webapp2.py --data-dir temporary_data\webapp2-local
+```
+
+The first command initializes and validates the files, then exits. The second
+starts the interface using those files. `--no-browser` starts the server without
+opening a tab. `UR15_WEBAPP_DATA_DIR` provides the same override through an
+environment variable. Without an override, Python and a future executable use
+the normal AppData location.
+
+Local robot programs are reference/deployment copies. They are not uploaded to
+the controller automatically. `measurement.program_path` in the measurement
+defaults remains the path **on the robot**, separately from the local program
+directory. This repository supplies `.script` files; add any `.urp` or
+installation files required by the controller separately.
+
+Manual and flexible files go into `runtime/<session-id>/`. Automatic state,
+feedback, logs and measurement files remain in the selected results/session
+folder. `results_directory` sets the initial output folder; operators can still
+select another output folder for a run.
+
+No executable is built by this change. Packaging must include UI assets, default
+JSON and scripts, Python modules and native RTDE dependencies. The launcher
+supports `--worker` dispatch for frozen executables; a clean-Windows packaging
+test is still required before distributing an executable.
 
 ## Operator workflow
 
@@ -159,7 +269,7 @@ while idle. The Feedback row is omitted. At first launch position is unknown.
 The routine name appears without its .json suffix on one line to the left of
 Close app in the header. Position rows omit unit labels and use — for unknown
 or unavailable values.
-The gear-shaped Settings button above Close app opens an empty Settings page.
+The gear-shaped Settings button above Close app opens installation settings.
 While a flexible session (including Ready) or automatic program is running,
 navigation stays on its page. Other mode links and Settings are greyed out;
 browser history and direct page URLs also return to the running program.
@@ -183,14 +293,15 @@ TCP and plane coordinates appear as `(X, Y, Z)` and `(X, Y)` in millimetres.
 The waypoint selector lists Home, p_start_h, p_start_l, p_end_h and p_end_l first
 when present, followed by the other waypoints in routine-file order.
 
-## Fixed installation settings
+## Active installation settings
 
-`settings.py` hardcodes `routine_bam_at_svti.json` and robot IP `192.168.3.10`.
-There is no browser API to select a different file. The flexible CLI's force
-settings supply the force program path and maximum displacement; the threshold,
+The seeded profile selects `routine_bam_at_svti.json` and robot IP `192.168.3.10`.
+The routine selector within measurements stays locked to the active profile.
+Use Settings to select another installation for the next launch. The threshold,
 holding force and duration are set in the flexible form.
-Flexible reads `measurement.program_path` from `config_default.json` before
-each force command; automatic modes use that same path. This URP must contain the
+Flexible reads `measurement.program_path` and `max_displacement` from the active
+measurement defaults before each force command; automatic modes use that same
+program path. This URP must contain the
 updated feedback-only Script node. The flexible CLI uses a Python timer for numeric
 positive durations (`force 3`, `force 140 160 3`) and client-feedback mode for
 `force manual`, released by typing `stop`. The script waits for Python's acknowledgement without its own hold timeout. Both paths use the shared force wrapper,
@@ -199,7 +310,7 @@ Holding force must be positive and at least the threshold.
 
 ## Implementation and verification
 
-- `server.py` adds the shell, manual/status APIs, fixed-file enforcement and
+- `server.py` adds the shell, manual/status/settings APIs, active-file enforcement and
   serialization of requests that change state. Original measurement routes are
   reused from `webapp.server`.
 - `control.py` owns a single worker process, shared across all three modes,
@@ -214,7 +325,7 @@ Holding force must be positive and at least the threshold.
   monitoring connection.
 - `feedback.py` samples position/movement while the action owns RTDE and tracks
   acquisition clients. JSON state and worker logs are written under the manual
-  runtime directory `temporary_data/webapp2/` or the automatic run's output folder.
+  runtime directory in the application data folder or the automatic run's output folder.
 
 Run the hardware-free tests with:
 

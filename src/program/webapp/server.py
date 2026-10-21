@@ -22,7 +22,6 @@ if __package__:
     from .settings import (
         DEFAULT_OUTPUT_DIR,
         DEFAULT_SELECTED_ROUTINES_FILE,
-        MIRA_CONFIG_FILE,
         ROUTINE_FILES_DIR,
         SERVER_CONFIG_FILE,
         STATIC_DIR,
@@ -40,7 +39,6 @@ else:
     from settings import (
         DEFAULT_OUTPUT_DIR,
         DEFAULT_SELECTED_ROUTINES_FILE,
-        MIRA_CONFIG_FILE,
         ROUTINE_FILES_DIR,
         SERVER_CONFIG_FILE,
         STATIC_DIR,
@@ -110,18 +108,17 @@ def read_json_if_available(path: Path, fallback: dict[str, Any]) -> dict[str, An
         return fallback
 
 
-def default_config_path(method: str, server_profile: str = "server") -> Path:
+def default_config_path(method: str, server_profile: str | None = None) -> Path:
     if method == "point_to_point":
-        if server_profile == "mira":
-            return MIRA_CONFIG_FILE
-        if server_profile == "server":
-            return SERVER_CONFIG_FILE
+        return SERVER_CONFIG_FILE
     raise HTTPException(status_code=422, detail="Measurement line method must be point to point.")
 
 
-def load_default_config(method: str, server_profile: str = "server") -> dict[str, Any]:
+def load_default_config(method: str, server_profile: str | None = None) -> dict[str, Any]:
     config = canonical_config(json.loads(default_config_path(method, server_profile).read_text(encoding="utf-8")))
     config["measurement"]["program_path"] = read_default_program_path()
+    if server_profile is not None:
+        config["measurement"]["stop_method"] = "client_feedback" if server_profile == "server" else "timer"
     return config
 
 
@@ -132,7 +129,10 @@ def submitted_method(submission: ConfigurationSubmission) -> str:
 def submitted_server_profile(submission: ConfigurationSubmission) -> str:
     values = submission.fields.get("acquisition.server_profile", ["server"])
     profile = values[-1]
-    if profile not in {"server", "mira"}:
+    # Accept an older open browser's name as an alias for Python timer mode.
+    if profile == "mira":
+        profile = "timer"
+    if profile not in {"server", "timer"}:
         raise HTTPException(status_code=422, detail="Invalid acquisition server profile.")
     return profile
 
@@ -169,10 +169,12 @@ def root() -> RedirectResponse:
 def configuration_page(
     show_defaults: bool = Query(False, alias="defaults"),
     method: str = "point_to_point",
-    server_profile: str = "server",
+    server_profile: str | None = None,
 ) -> str:
-    if server_profile not in {"server", "mira"}:
-        server_profile = "server"
+    if server_profile == "mira":
+        server_profile = "timer"
+    if server_profile not in {None, "server", "timer"}:
+        server_profile = None
     if show_defaults:
         config = load_default_config("point_to_point", server_profile)
     else:
@@ -195,7 +197,7 @@ def get_configuration() -> dict[str, Any]:
 def get_configuration_defaults() -> dict[str, Any]:
     return {
         "server": load_default_config("point_to_point", "server"),
-        "mira": load_default_config("point_to_point", "mira"),
+        "timer": load_default_config("point_to_point", "timer"),
     }
 
 

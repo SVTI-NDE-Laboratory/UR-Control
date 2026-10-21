@@ -2,6 +2,7 @@
 
 import json
 import math
+import os
 from pathlib import Path
 
 from line_planner import (
@@ -15,7 +16,8 @@ from line_planner import (
 )
 
 
-DEFAULT_CONFIG_FILE = Path(__file__).resolve().parents[1] / "program/config/config_default.json"
+DEFAULT_CONFIG_FILE = Path(os.environ.get("UR15_MEASUREMENT_DEFAULTS",
+                         Path(__file__).resolve().parents[1] / "program/config/config_default.json"))
 
 
 def read_default_program_path() -> str:

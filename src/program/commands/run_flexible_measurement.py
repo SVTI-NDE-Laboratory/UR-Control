@@ -17,6 +17,7 @@ force command. Other setup values are defined below for direct CLI use.
 """
 
 import sys
+import os
 import math
 import time
 from pathlib import Path
@@ -55,7 +56,7 @@ from run_routine import run_routine
 # Review these hard-coded parameters before running the command.
 # ---------------------------------------------------------------------------
 
-ROBOT_IP = "192.168.3.10"
+ROBOT_IP = os.environ.get("UR15_ROBOT_IP", "192.168.3.10")
 ROUTINES_FILE = ROUTINES_DIR / "routine_files" / "routine_bam_at_svti.json"
 OUTPUT_DIR = CONFIG_DIR
 

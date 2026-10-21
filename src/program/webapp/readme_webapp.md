@@ -14,7 +14,7 @@ the robot modules; the complete measurement sequence is the command in
 ## Single-page workflow
 
 The Configuration page contains the complete operator workflow. It selects the
-routine file, selects server or MIRA force measurement, edits and visualizes
+routine file, selects client feedback or timer force measurement, edits and visualizes
 measurement parameters, starts or stops the measurement program, and shows live
 progress in the same visualization used while editing. A fresh app starts with
 server measurement selected and `routines_block_diagonal.json`; the routine
@@ -23,11 +23,12 @@ selector is part of the Measurement Line box.
 **Start program** first checks the displayed values, creates the measurement
 plan, and writes `../config/config_tmp.json`. An invalid value is reported and
 the robot program is not launched. In **Force Measurement**, **With RTM Program**
-selects client-feedback mode from `config_default.json`; clearing it selects timer mode
-from `config_mira.json`. Saved configs use flat `line` settings and
+selects client-feedback mode; clearing it selects timer mode. Both use the shared
+`config_default.json` (the active profile's measurement defaults in WebApp2).
+Changing this option preserves the current force and line values. Saved configs use flat `line` settings and
 `measurement.stop_method` (`client_feedback` or `timer`).
 **Save as default** performs the same checks and explicitly replaces the
-currently selected default file. **Reset default** reloads that selected saved
+shared default file. **Reset default** reloads that shared saved
 default. Configuration values are locked while the program is running.
 
 Point-to-point geometry is fixed to `p_start_l → p_end_l`; safe clearance is
@@ -47,7 +48,7 @@ the control panel.
 Starting creates the run and launches `commands/run_measurement_sequence.py` as
 a separate worker process. In server mode, the worker first waits for the
 acquisition client to send `ALIVE`, verifies Home, then waits for client
-`START_FIRST` before robot motion starts. MIRA mode keeps the explicit browser
+`START_FIRST` before robot motion starts. Timer mode keeps the explicit browser
 safety confirmation. A read-only Home-position preflight still runs before
 movement. The selected output folder receives `config_used.json`,
 `state.json`, `measurement_plan.json`, and `program.log`. The log is updated in

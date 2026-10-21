@@ -1,6 +1,7 @@
 """Paths and constants shared by the web control panel."""
 
 import sys
+import os
 from pathlib import Path
 
 
@@ -8,22 +9,23 @@ WEBAPP_DIR = Path(__file__).resolve().parent
 PROGRAM_DIR = WEBAPP_DIR.parent
 PROJECT_ROOT = PROGRAM_DIR.parent.parent
 CONFIG_DIR = PROGRAM_DIR / "config"
-MIRA_CONFIG_FILE = CONFIG_DIR / "config_mira.json"
-DEFAULT_CONFIG_FILE = CONFIG_DIR / "config_default.json"
+DEFAULT_CONFIG_FILE = Path(os.environ.get("UR15_MEASUREMENT_DEFAULTS", CONFIG_DIR / "config_default.json"))
 SERVER_CONFIG_FILE = DEFAULT_CONFIG_FILE
 HTML_TEMPLATE_FILE = WEBAPP_DIR / "pages" / "configuration.html"
 STATIC_DIR = WEBAPP_DIR / "static"
-TEMP_CONFIG_FILE = CONFIG_DIR / "config_tmp.json"
+TEMP_CONFIG_FILE = (Path(os.environ["UR15_WEBAPP_DATA_DIR"]) / "runtime/config_tmp.json"
+                    if "UR15_WEBAPP_DATA_DIR" in os.environ else CONFIG_DIR / "config_tmp.json")
 COMMANDS_DIR = PROGRAM_DIR / "commands"
 MAIN_FILE = COMMANDS_DIR / "run_measurement_sequence.py"
-DEFAULT_OUTPUT_DIR = PROJECT_ROOT / "temporary_data"
+DEFAULT_OUTPUT_DIR = Path(os.environ.get("UR15_RESULTS_DIR", PROJECT_ROOT / "temporary_data"))
 ROBOT_DIR = PROJECT_ROOT / "src" / "robot"
 ROUTINES_DIR = PROJECT_ROOT / "src" / "routines"
 ROUTINE_FILES_DIR = ROUTINES_DIR / "routine_files"
 MEASUREMENT_DIR = PROJECT_ROOT / "src" / "measurement"
-ROBOT_IP = "192.168.3.10"
+ROBOT_IP = os.environ.get("UR15_ROBOT_IP", "192.168.3.10")
 ROUTINES_FILE = ROUTINE_FILES_DIR / "routine_bam_at_svti.json"
 DEFAULT_SELECTED_ROUTINES_FILE = ROUTINE_FILES_DIR / "routine_bam_at_svti.json"
+DEFAULT_SELECTED_ROUTINES_FILE = Path(os.environ.get("UR15_ROUTINE_FILE", DEFAULT_SELECTED_ROUTINES_FILE))
 HOME_JOINT_TOLERANCE = 0.005
 
 for folder in [MEASUREMENT_DIR, ROBOT_DIR, ROUTINES_DIR]:

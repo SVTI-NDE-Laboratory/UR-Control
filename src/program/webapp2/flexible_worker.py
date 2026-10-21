@@ -10,7 +10,8 @@ import time
 from pathlib import Path
 from uuid import uuid4
 
-from .settings import ROBOT_IP, ROUTINE_FILE, POSITION_TOLERANCE, ROTATION_TOLERANCE
+from .settings import ROBOT_IP, ROUTINE_FILE, POSITION_TOLERANCE, ROTATION_TOLERANCE, PROFILE
+from .profile import read_object
 from .feedback import Feedback, classify_position
 from .control import read_json
 from webapp.launcher import write_json_atomic
@@ -18,6 +19,8 @@ from src.program.commands import run_flexible_measurement as flexible
 from robot_connection import assert_at_home, assert_robot_running, assert_robot_safe, get_rtde_receive, stop_robot
 from robot_move import tcp_target_errors, wait_until_tcp_stops
 from read_routines import read_routines_file
+
+flexible.ROBOT_IP = ROBOT_IP
 
 
 def plane_geometry(data):
@@ -86,6 +89,9 @@ def perform_action(action, receiver, data, geometry, state_file):
             raise ValueError("Use positive forces, contact force at least the threshold, and a hold from 0 to 8 seconds.")
         # Reuse force parameter validation and the controller-side return cycle.
         measurement, _ = flexible.force_measurement_settings([str(action["threshold"]), str(action["force"]), str(action["duration"])])
+        measurement["max_displacement"] = read_object(PROFILE.paths["measurement_defaults"])["measurement"]["max_displacement"]
+        if not math.isfinite(measurement["max_displacement"]) or measurement["max_displacement"] <= 0:
+            raise ValueError("Maximum displacement must be positive and finite.")
 
         def hold(context):
             write_json_atomic(state_file, {"mode": "force_hold"})

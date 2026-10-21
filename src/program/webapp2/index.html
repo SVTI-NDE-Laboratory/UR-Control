@@ -73,7 +73,52 @@
         </div>
       </section>
       <section id="automatic-page" hidden><iframe title="Automatic measurement parameters and progress" id="configuration-frame"></iframe></section>
-      <section id="settings-page" aria-label="Settings" hidden></section>
+      <section id="settings-page" aria-label="Settings" hidden>
+        <div class="cards settings-cards">
+          <section class="panel">
+            <fieldset><legend>Local data</legend>
+              <label class="settings-section-title" for="local-data-path">Local data directory</label>
+              <div class="local-data-location">
+                <input id="local-data-path" class="optional-disabled" type="text" readonly>
+                <button id="change-local-data" type="button">Change folder</button>
+              </div>
+              <p class="settings-section-title">Useful files and directories</p>
+              <div class="parameter-row settings-path-row"><label for="settings-app-config">App configuration</label><input id="settings-app-config" class="optional-disabled" type="text" readonly></div>
+              <div class="parameter-row settings-path-row"><label for="settings-measurement-defaults">Meas. defaults</label><input id="settings-measurement-defaults" class="optional-disabled" type="text" readonly></div>
+              <div class="parameter-row settings-path-row"><label for="settings-results-directory">Results</label><input id="settings-results-directory" class="optional-disabled" type="text" readonly></div>
+              <div class="parameter-row settings-path-row"><label for="settings-routine-directory">Routine directory</label><input id="settings-routine-directory" class="optional-disabled" type="text" readonly></div>
+              <p id="settings-message" role="status" hidden></p>
+            </fieldset>
+          </section>
+          <section class="panel">
+            <fieldset><legend>Routine</legend>
+              <label class="settings-section-title" for="settings-routine-file">Routine file</label>
+              <div class="local-data-location">
+                <input id="settings-routine-file" class="optional-disabled" type="text" readonly>
+                <button id="change-routine-file" type="button">Change file</button>
+              </div>
+              <p id="routine-settings-message" role="status" hidden></p>
+              <form id="create-routine-form">
+                <p class="settings-section-title">Create a routine file</p>
+                <div class="parameter-row settings-path-row"><label for="routine-source-script">PolyScope script</label><div class="routine-script-choice"><input id="routine-source-script" class="optional-disabled" type="text" readonly><button id="choose-routine-script" type="button">Choose script</button></div></div>
+                <div class="parameter-row settings-path-row"><label for="routine-output-name">New file name</label><input id="routine-output-name" type="text" value="routine_new.json" maxlength="120" required></div>
+                <label for="routine-home-to-start">Home to start — waypoint order</label>
+                <textarea id="routine-home-to-start" rows="3" required>Home, home_to_start1, home_to_start2, p_start_h</textarea>
+                <label for="routine-end-to-home">End to Home — waypoint order</label>
+                <textarea id="routine-end-to-home" rows="3" required>p_end_h, end_to_home1, end_to_home2, end_to_home3, Home</textarea>
+                <p class="routine-form-note">Separate waypoints with commas or new lines. The reverse routes are created automatically.</p>
+                <div class="parameter-row settings-path-row"><label for="routine-additional-points">Measurement waypoints</label><input id="routine-additional-points" class="optional-disabled" type="text" value="p_start_l, p_end_l" readonly></div>
+                <div class="parameter-row settings-path-row"><label for="routine-joint-speed">Joint speed [rad/s]</label><input id="routine-joint-speed" type="number" value="2" min="0.001" step="any" required></div>
+                <div class="parameter-row settings-path-row"><label for="routine-joint-acceleration">Joint acceleration [rad/s²]</label><input id="routine-joint-acceleration" type="number" value="0.4" min="0.001" step="any" required></div>
+                <div class="parameter-row settings-path-row"><label for="routine-blend-radius">Intermediate blend [mm]</label><input id="routine-blend-radius" type="number" value="5" min="0" step="any" required></div>
+                <p class="routine-form-note">Each route starts and ends with zero blend.</p>
+                <div class="actions"><button id="create-routine-file" type="submit" class="primary">Create file</button></div>
+                <p id="routine-create-message" role="status" hidden></p>
+              </form>
+            </fieldset>
+          </section>
+        </div>
+      </section>
     </main>
     <aside class="panel" aria-label="Cobot status">
       <fieldset><legend>Status</legend>
@@ -97,6 +142,14 @@
       <div class="actions"><button id="stop" class="danger" disabled>Stop current action</button></div>
     </aside>
   </div>
+  <dialog id="routine-file-dialog" aria-labelledby="routine-file-dialog-title">
+    <form id="routine-file-selection-form">
+      <h2 id="routine-file-dialog-title">Choose a routine file</h2>
+      <label for="routine-file-choice">Available routine files</label>
+      <select id="routine-file-choice" size="8" required></select>
+      <div class="actions"><button id="routine-file-cancel" type="button">Cancel</button><button type="submit" class="primary">Use file</button></div>
+    </form>
+  </dialog>
   <dialog id="blocking-error-dialog" role="alertdialog" aria-labelledby="blocking-error-title" aria-describedby="blocking-error-message">
     <h2 id="blocking-error-title">Error</h2>
     <p id="blocking-error-message"></p>

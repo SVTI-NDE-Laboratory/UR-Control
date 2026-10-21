@@ -2,6 +2,9 @@
 const $ = id => document.getElementById(id);
 let latest = null, options = null, pending = false, flexibleLimits = null;
 let activePage = 'manual';
+let uiDefaults = {};
+let routineScript = null;
+let selectingLocalData = false;
 let navigationLock = null;
 const configurationFrame = $('configuration-frame');
 let configurationObserver = null;
@@ -205,6 +208,10 @@ function updateControls() {
   $('move-plane').disabled = !ready;
   $('apply-force').disabled = !ready;
   $('stop').disabled = !latest?.worker.running || pending;
+  $('change-local-data').disabled = busy || selectingLocalData;
+  $('change-routine-file').disabled = busy;
+  $('create-routine-file').disabled = busy;
+  $('choose-routine-script').disabled = busy;
 }
 
 async function refresh() {
@@ -305,8 +312,8 @@ function motionChanged() {
   const linear = $('motion').value === 'l';
   $('speed-label').textContent = linear ? 'Speed [mm/s]' : 'Speed [rad/s]';
   $('acceleration-label').textContent = linear ? 'Acceleration [mm/s²]' : 'Acceleration [rad/s²]';
-  $('speed').value = linear ? 50 : 0.05;
-  $('acceleration').value = linear ? 100 : 0.1;
+  $('speed').value = linear ? (uiDefaults.linear_speed ?? 50) : (uiDefaults.joint_speed ?? 0.05);
+  $('acceleration').value = linear ? (uiDefaults.linear_acceleration ?? 100) : (uiDefaults.joint_acceleration ?? 0.1);
   $('speed').max = linear ? 150 : 0.5;
   $('acceleration').max = linear ? 150 : 0.5;
   renderWaypointChoices();
@@ -396,6 +403,26 @@ $('close').addEventListener('click', async () => {
 });
 async function initialize() {
   try {
+    const settings = await api('/api/settings');
+    uiDefaults = settings.ui_defaults;
+    $('local-data-path').value = settings.data_directory;
+    for (const key of ['app_config', 'measurement_defaults', 'results_directory', 'routine_directory']) {
+      $('settings-' + key.replaceAll('_', '-')).value = settings.display_paths[key];
+    }
+    $('settings-routine-file').value = settings.routine_filename;
+    const creation = settings.routine_creation_defaults;
+    $('routine-home-to-start').value = creation.home_to_start.join(', ');
+    $('routine-end-to-home').value = creation.end_to_home.join(', ');
+    $('routine-additional-points').value = creation.measurement_waypoints.join(', ');
+    if (settings.restart_required) {
+      $('settings-message').textContent = 'Close and relaunch WebApp2 to apply the saved settings.';
+      $('settings-message').hidden = false;
+    }
+    $('threshold').value = uiDefaults.threshold ?? 140;
+    $('force').value = uiDefaults.force ?? 160;
+    $('force-duration').value = uiDefaults.duration ?? 3;
+  } catch(error) { showBlockingError(error.message); }
+  try {
     options = await api('/api/manual/options');
     options.waypoints.forEach(point => $('waypoint').add(new Option(point.name, point.name)));
     options.routines.forEach(routine => $('routine').add(new Option(routine.name, routine.name)));
@@ -415,4 +442,85 @@ async function initialize() {
   }
   setTimeout(poll, 500);
 }
+$('change-local-data').addEventListener('click', async () => {
+  const button = $('change-local-data');
+  selectingLocalData = true;
+  button.disabled = true;
+  try {
+    const result = await api('/api/settings/local-data', {});
+    if (result.cancelled) return;
+    $('settings-message').textContent = result.message;
+    $('settings-message').hidden = false;
+  } catch(error) { showBlockingError(error.message); }
+  finally { selectingLocalData = false; updateControls(); }
+});
+function routineMessage(id, message) {
+  $(id).textContent = message;
+  $(id).hidden = false;
+}
+
+$('change-routine-file').addEventListener('click', async () => {
+  if (pending) return;
+  pending = true;
+  updateControls();
+  try {
+    const result = await api('/api/settings/routines');
+    const choice = $('routine-file-choice');
+    choice.replaceChildren();
+    for (const filename of result.files) choice.add(new Option(filename, filename, false, filename === result.selected));
+    if (!result.files.length) throw new Error('No routine files were found in the routine directory.');
+    $('routine-file-dialog').showModal();
+    choice.focus();
+  } catch(error) { showBlockingError(error.message); }
+  finally { pending = false; updateControls(); }
+});
+$('routine-file-cancel').addEventListener('click', () => $('routine-file-dialog').close());
+$('choose-routine-script').addEventListener('click', async () => {
+  if (pending) return;
+  pending = true;
+  updateControls();
+  try {
+    const result = await api('/api/settings/routines/script', {});
+    if (result.cancelled) return;
+    routineScript = result.script;
+    $('routine-source-script').value = result.filename;
+  } catch(error) { showBlockingError(error.message); }
+  finally { pending = false; updateControls(); }
+});
+$('routine-file-selection-form').addEventListener('submit', async event => {
+  event.preventDefault();
+  if (pending) return;
+  pending = true;
+  event.submitter.disabled = true;
+  updateControls();
+  try {
+    const result = await api('/api/settings/routines/select', {filename: $('routine-file-choice').value});
+    $('settings-routine-file').value = result.filename;
+    routineMessage('routine-settings-message', result.message);
+    $('routine-file-dialog').close();
+    configurationFrame.removeAttribute('src');
+  } catch(error) {
+    $('routine-file-dialog').close();
+    showBlockingError(error.message);
+  } finally { event.submitter.disabled = false; pending = false; updateControls(); }
+});
+$('create-routine-form').addEventListener('submit', async event => {
+  event.preventDefault();
+  if (pending) return;
+  pending = true;
+  updateControls();
+  try {
+    if (routineScript === null) throw new Error('Choose a PolyScope .script file.');
+    const names = id => $(id).value.split(/[,\r\n]+/).map(name => name.trim()).filter(Boolean);
+    const result = await api('/api/settings/routines/create', {
+      filename: $('routine-output-name').value.trim(), script: routineScript,
+      home_to_start: names('routine-home-to-start'), end_to_home: names('routine-end-to-home'),
+      additional_waypoints: names('routine-additional-points'),
+      speed: Number($('routine-joint-speed').value), acceleration: Number($('routine-joint-acceleration').value),
+      blend_radius: Number($('routine-blend-radius').value)
+    });
+    routineMessage('routine-create-message', result.message);
+  } catch(error) { showBlockingError(error.message); }
+  finally { pending = false; updateControls(); }
+});
 initialize();

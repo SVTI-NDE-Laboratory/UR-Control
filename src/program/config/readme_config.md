@@ -1,7 +1,8 @@
 # Measurement configuration
 
 `config_default.json` is the initial default for automatic measurement commands
-and the webapp feedback preset. `config_mira.json` is the time preset;
+and both webapp stop modes. Timer mode uses the same defaults and selects
+`measurement.stop_method: "timer"`; `config_mira.json` is an unused legacy preset.
 `config_server.json` and `config_point_to_point.json` remain example presets.
 The webapp writes validated run settings to `config_tmp.json` and each run's
 `config_used.json`. Existing robot program paths are preserved.

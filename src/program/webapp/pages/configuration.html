@@ -98,7 +98,6 @@
     const createSessionFolder = document.getElementById('create-session-folder');
     const ongoingMeasurement = document.getElementById('ongoing-measurement');
     let pointGeometry = null;
-    let defaultConfigs = null;
     let latestMeasurement = null;
     let outputInitialized = false;
     let formDirty = false;
@@ -326,67 +325,8 @@
       await loadPointGeometry();
     }
 
-    async function loadDefaultConfigs() {
-      const response = await fetch('/api/configuration/defaults', {cache:'no-store'});
-      if (response.ok) defaultConfigs = await response.json();
-    }
-
-    function shownValue(key, value) {
-      if (typeof value === 'number') {
-        return formatNumber(value);
-      }
-      if (Array.isArray(value)) return value.join(', ');
-      return String(value);
-    }
-
-    function setNamedValue(name, key, value) {
-      const input = form.elements.namedItem(name);
-      if (!input) return;
-      if (typeof value === 'number') setNumericInput(input, value);
-      else input.value = shownValue(key, value);
-    }
-
     function selectedServerProfile() {
-      return acquisitionServerEnabled?.checked ? 'server' : 'mira';
-    }
-
-    function applyProfileDefaults(profile = selectedServerProfile(), preserveLine = false) {
-      const config = defaultConfigs?.[profile];
-      if (!config) return;
-      if (!preserveLine) {
-        const parameters = config.line;
-        const method = lineMethod.value;
-        autoFit.checked = parameters.auto_fit !== false;
-        if (method === 'translation') {
-          setNamedValue('line.line_length', 'line_length', parameters.line_length);
-          setNamedValue('line.high_low_distance', 'high_low_distance', parameters.high_low_distance);
-          setNamedValue('line.direction_start_end', 'direction_start_end', parameters.direction_start_end);
-          setNamedValue('line.direction_high_low', 'direction_high_low', parameters.direction_high_low);
-        } else {
-          setNamedValue('line.x_start', 'x_start', autoFit.checked ? 0 : (parameters.x_start || parameters.offset_x || 0));
-          if (autoFit.checked) setNumericInput(xEndInput, pointGeometry?.line_length || 0);
-          else setNamedValue('line.x_end', 'x_end', parameters.x_end);
-          setNamedValue('line.offset_y', 'offset_y', parameters.offset_y || 0);
-        }
-        setNamedValue('line.increment', 'increment', parameters.increment);
-        spacingSourceInput.value = 'increment';
-        measurementCountInput.value = method === 'point_to_point'
-          ? String(parameters.number_of_measurements)
-          : String(Math.max(2, Math.round(parameters.line_length / parameters.increment) + 1));
-
-        obstacleEnabled.checked = Boolean(config.obstacle?.start !== undefined && config.obstacle?.end !== undefined);
-        if (config.obstacle) {
-          setNamedValue('obstacle.start', 'start', config.obstacle.start);
-          setNamedValue('obstacle.end', 'end', config.obstacle.end);
-        }
-      }
-      if (!preserveLine) simulationEnabled.checked = Boolean(config.measurement.simulation);
-      for (const [section, values] of Object.entries({motion:config.motion, measurement:config.measurement})) {
-        for (const [key, value] of Object.entries(values)) setNamedValue(`${section}.${key}`, key, value);
-      }
-      if (acquisitionServerEnabled) acquisitionServerEnabled.checked = profile === 'server';
-      synchronizeFields();
-      drawVisualization();
+      return acquisitionServerEnabled?.checked ? 'server' : 'timer';
     }
 
     function submittedFields() {
@@ -437,7 +377,7 @@
     }
 
     saveDefaultButton.addEventListener('click', async () => {
-      if (!window.confirm(`Replace the saved ${selectedServerProfile()} default with the values currently shown?`)) return;
+      if (!window.confirm('Replace the shared measurement defaults with the values currently shown?')) return;
       saveDefaultButton.disabled = true;
       try {
         await checkConfiguration('/api/configuration/default');
@@ -455,7 +395,6 @@
 
     acquisitionServerEnabled?.addEventListener('change', () => {
       formDirty = true;
-      applyProfileDefaults(selectedServerProfile(), true);
       synchronizeFields();
       drawVisualization();
     });
@@ -728,7 +667,6 @@
     });
 
     spacingSourceInput.value = 'increment';
-    loadDefaultConfigs();
     loadRoutineFiles().catch(error => showImportant(error.message));
     drawVisualization();
     refreshMeasurement();

@@ -5,7 +5,10 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Literal
 
-from .settings import ROUTINE_FILE
+from .settings import ROUTINE_FILE, PROFILE
+from .profile import read_object, resolve_path, select_profile, change_data_directory, display_path, application_directory
+from .dialogs import choose_local_data, choose_routine_script
+from .routine_setup import RoutineSelection, RoutineCreation, routine_directory, selected_routine, select_routine, create_routine, creation_defaults
 from .control import ControlWorkers
 from .waypoint_routes import routine_transitions, waypoint_motion_options
 from fastapi import FastAPI, HTTPException, Request
@@ -20,6 +23,14 @@ DIRECTORY = Path(__file__).parent
 workers = ControlWorkers()
 legacy.state.workers = workers
 legacy.state.set_routine_file(ROUTINE_FILE)
+# Also configure already-imported legacy modules (e.g. embedded/test hosts).
+from webapp import launcher as legacy_launcher, worker_manager as legacy_workers
+import measurement_config
+legacy.SERVER_CONFIG_FILE = PROFILE.paths["measurement_defaults"]
+legacy.TEMP_CONFIG_FILE = PROFILE.data_dir / "runtime/config_tmp.json"
+legacy.state.output_directory = PROFILE.paths["results_directory"]
+legacy_launcher.ROBOT_IP = legacy_workers.ROBOT_IP = PROFILE.values["robot_ip"]
+measurement_config.DEFAULT_CONFIG_FILE = PROFILE.paths["measurement_defaults"]
 @asynccontextmanager
 async def lifespan(app):
     yield
@@ -61,7 +72,7 @@ def shell(request: Request):
 
 
 @api.get("/configuration", response_class=HTMLResponse)
-def configuration(defaults: bool = False, method: str = "point_to_point", server_profile: str = "server"):
+def configuration(defaults: bool = False, method: str = "point_to_point", server_profile: str | None = None):
     page = legacy.configuration_page(defaults, method, server_profile)
     # Retain the tested original form/visualization, embedded in the new shell.
     routine_row = ('<div class="parameter-row routine-file-row"><label for="routine-file">Routine File</label>'
@@ -92,6 +103,108 @@ def start_measurement(request: MeasurementStartRequest):
     if legacy.state.get_config() is None:
         raise HTTPException(409, "Validate the configuration before starting a measurement.")
     return legacy.start_measurement(request)
+
+
+class ProfileSelection(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    configuration_path: str = Field(min_length=1)
+
+
+@api.get("/api/settings")
+def installation_settings():
+    selected = resolve_path(read_object(PROFILE.preferences_path)["configuration_path"], PROFILE.data_dir)
+    saved_routine = selected_routine(PROFILE)
+    return {"data_directory": str(PROFILE.data_dir),
+            "preferences_path": str(PROFILE.preferences_path),
+            "active_configuration_path": str(PROFILE.path),
+            "configuration_path": str(selected),
+            "restart_required": selected != PROFILE.path or application_directory() != PROFILE.data_dir or saved_routine != ROUTINE_FILE,
+            "routine_filename": saved_routine.name,
+            "routine_creation_defaults": creation_defaults(PROFILE),
+            "robot_ip": PROFILE.values["robot_ip"],
+            "paths": {name: str(path) for name, path in PROFILE.paths.items()},
+            "display_paths": {"app_config": display_path(PROFILE.path, PROFILE.data_dir),
+                              "measurement_defaults": display_path(PROFILE.paths["measurement_defaults"], PROFILE.data_dir),
+                              "results_directory": display_path(PROFILE.paths["results_directory"], PROFILE.data_dir),
+                              "routine_directory": display_path(routine_directory(PROFILE), PROFILE.data_dir),
+                              "routine_file": display_path(PROFILE.paths["routine_file"], PROFILE.data_dir)},
+            "ui_defaults": PROFILE.values.get("ui_defaults", {})}
+
+
+@api.get("/api/settings/routines")
+def settings_routines():
+    return {"files": sorted(path.name for path in routine_directory(PROFILE).glob("*.json") if path.is_file()),
+            "selected": selected_routine(PROFILE).name}
+
+
+@api.post("/api/settings/routines/select")
+def settings_select_routine(request: RoutineSelection):
+    if workers.snapshot()["running"]:
+        raise HTTPException(409, "Finish or stop the current robot action before changing the routine file.")
+    try:
+        path = select_routine(PROFILE, request.filename)
+    except (OSError, ValueError, TypeError, KeyError) as error:
+        raise HTTPException(400, str(error)) from error
+    legacy.state.clear_config()
+    return {"filename": path.name, "restart_required": path != ROUTINE_FILE,
+            "message": "Routine file saved. Close and relaunch WebApp2 to use it." if path != ROUTINE_FILE else "This routine file is already in use."}
+
+
+@api.post("/api/settings/routines/create")
+def settings_create_routine(request: RoutineCreation):
+    if workers.snapshot()["running"]:
+        raise HTTPException(409, "Finish or stop the current robot action before creating a routine file.")
+    try:
+        path = create_routine(PROFILE, request)
+    except (OSError, ValueError, TypeError, KeyError) as error:
+        raise HTTPException(400, str(error)) from error
+    return {"filename": path.name, "message": f"Created {path.name}. Use Change file to select it."}
+
+
+@api.post("/api/settings/routines/script")
+def settings_choose_script():
+    if workers.snapshot()["running"]:
+        raise HTTPException(409, "Finish or stop the current robot action before choosing a script.")
+    try:
+        path = choose_routine_script(PROFILE.paths["routine_scripts_directory"])
+        if path is None:
+            return {"cancelled": True}
+        if path.suffix.lower() != ".script":
+            raise ValueError("Choose a PolyScope .script file.")
+        if path.stat().st_size > 5_000_000:
+            raise ValueError("Choose a script smaller than 5 MB.")
+        return {"cancelled": False, "filename": path.name, "script": path.read_text(encoding="utf-8-sig")}
+    except (OSError, ValueError) as error:
+        raise HTTPException(400, str(error)) from error
+
+
+@api.post("/api/settings/local-data")
+def select_local_data():
+    if workers.snapshot()["running"]:
+        raise HTTPException(409, "Finish or stop the current robot action before changing the local data folder.")
+    try:
+        selected = choose_local_data()
+        if selected is None:
+            return {"cancelled": True}
+        candidate = change_data_directory(PROFILE, selected)
+    except (OSError, ValueError, TypeError, KeyError) as error:
+        raise HTTPException(400, str(error)) from error
+    return {"cancelled": False, "data_directory": str(candidate.data_dir),
+            "restart_required": candidate.data_dir != PROFILE.data_dir,
+            "message": "Local data folder saved. Close and relaunch WebApp2 to use it."
+                       if candidate.data_dir != PROFILE.data_dir else "This local data folder is already in use."}
+
+
+@api.post("/api/settings")
+def save_installation_settings(request: ProfileSelection):
+    if workers.snapshot()["running"]:
+        raise HTTPException(409, "Finish or stop the current robot action before changing Settings.")
+    try:
+        candidate = select_profile(PROFILE, request.configuration_path)
+    except (OSError, ValueError, TypeError) as error:
+        raise HTTPException(400, str(error)) from error
+    return {"configuration_path": str(candidate.path), "restart_required": True,
+            "message": "Configuration validated and saved. Close and relaunch WebApp2 to apply it."}
 
 
 class ManualRequest(BaseModel):
@@ -243,8 +356,7 @@ def close_app():
     return {"closed": True}
 
 
-# Mount only original endpoints that are still applicable. No original source
-# files or endpoint implementations are modified.
+# Mount only original endpoints that are still applicable.
 replaced = {route.path for route in api.routes}
 for route in legacy.api.routes:
     if getattr(route, "path", None) not in replaced:
