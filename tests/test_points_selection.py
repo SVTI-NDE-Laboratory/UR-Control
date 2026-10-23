@@ -35,7 +35,7 @@ class PointSelectionTests(unittest.TestCase):
         })
 
     def measured_ids(self):
-        return [point['measurement_index'] for point in create_measurement_plan(self.config, self.data)['points'] if point['measured']]
+        return [point['point_number'] for point in create_measurement_plan(self.config, self.data)['points'] if point['scheduled']]
 
     def fields(self):
         fields = {f'{section}.{key}':[str(value).lower()] for section in ('line','motion','measurement')
@@ -60,7 +60,7 @@ class PointSelectionTests(unittest.TestCase):
         points = create_measurement_plan(self.config, self.data)['points']
         self.assertEqual(points[0]['skip_reason'], 'not_selected')
         self.assertEqual(points[4]['skip_reason'], 'obstacle')
-        self.assertEqual([point['measurement_index'] for point in points], list(range(1,12)))
+        self.assertEqual([point['point_number'] for point in points], list(range(1,12)))
 
     def test_invalid_and_empty_selections_fail_before_connecting(self):
         for selection in ({'mode':'invalid'}, {'mode':'from_point','from_point':12},

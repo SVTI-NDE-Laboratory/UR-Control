@@ -87,7 +87,7 @@ def start_program(
 
     TEMP_CONFIG_FILE.write_text(json.dumps(configuration_file(config), indent=2) + "\n", encoding="utf-8")
     output_directory.mkdir(parents=True, exist_ok=True)
-    write_json_atomic(output_directory / "config_used.json", configuration_file(config))
+    write_json_atomic(output_directory / "measurement_configuration.json", configuration_file(config))
     write_json_atomic(output_directory / "state.json", {"mode": "starting"})
     start_signal_file = output_directory / "start_movement.signal"
     try:

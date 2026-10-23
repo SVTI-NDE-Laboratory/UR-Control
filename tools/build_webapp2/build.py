@@ -44,7 +44,7 @@ def main():
                 "pyinstaller": importlib.metadata.version("pyinstaller"),
                 "build_seconds": round(built - start, 1), "check_seconds": round(end - built, 1),
                 "bytes": executable.stat().st_size, "sha256": checksum}
-    (distribution / "UR15WebApp2-build.json").write_text(json.dumps(metadata, indent=2) + "\n", encoding="utf-8")
+    (distribution / "RTM Cobot Studio-build.json").write_text(json.dumps(metadata, indent=2) + "\n", encoding="utf-8")
     subprocess.run([sys.executable, str(ROOT / "tools/build_webapp2/package.py"), "--dist-dir", str(distribution)], cwd=ROOT, env=environment, check=True)
     print(f"Ready: {executable}\nBuild: {metadata['build_seconds']} s; checks: {metadata['check_seconds']} s; size: {metadata['bytes'] / 1024**2:.1f} MB", flush=True)
 

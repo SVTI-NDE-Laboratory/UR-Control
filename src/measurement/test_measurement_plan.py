@@ -31,7 +31,7 @@ class MeasurementPlanIndexTests(unittest.TestCase):
 
         self.assertEqual(
             [
-                (point["measurement_index"], point["measured"])
+                (point["point_number"], point["scheduled"])
                 for point in plan["points"][:3]
             ],
             [(1, False), (2, False), (3, True)],

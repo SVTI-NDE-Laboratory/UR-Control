@@ -112,7 +112,7 @@ def parse_args() -> argparse.Namespace:
         "--output-dir",
         type=Path,
         default=CONFIG_DIR,
-        help="Folder for config_used.json, state.json, and measurement_plan.json.",
+        help="Folder for measurement_configuration.json, state.json, and measurement_results.json.",
     )
     return parser.parse_args()
 
@@ -144,8 +144,8 @@ def load_run_inputs(
         args.config, routines_data=routines_data
     )
     state_file = output_dir / "state.json"
-    measurement_plan_file = output_dir / "measurement_plan.json"
-    write_used_config(output_dir / "config_used.json", measurement_config)
+    measurement_plan_file = output_dir / "measurement_results.json"
+    write_used_config(output_dir / "measurement_configuration.json", measurement_config)
     write_measurement_plan(measurement_plan_file, measurement_config, routines_data)
     return routines_data, measurement_config, state_file, measurement_plan_file
 

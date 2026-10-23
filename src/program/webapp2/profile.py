@@ -177,17 +177,24 @@ def display_path(path, base):
 
 
 def initialize(data_dir):
-    """Seed missing files only; executable upgrades never overwrite user files."""
+    """Seed an empty data folder once; existing profiles own all their files."""
     data_dir = Path(data_dir)
+    preferences = data_dir / "preferences.json"
+    if preferences.exists():
+        return preferences
+
+    # Missing preferences in a populated folder indicate existing or incomplete
+    # user data. Do not repair it by restoring bundled starter files.
+    if data_dir.exists() and any(data_dir.iterdir()):
+        raise ValueError("Local data folder is not empty and has no preferences.json. Select existing WebApp data or an empty folder.")
+
     profile = data_dir / "profiles/default"
     sources = [(ROOT / "src/program/config/config_default.json", profile / "measurement_default.json"),
                (ROOT / "src/program/data_acquisition/config_server.json", profile / "acquisition.json")]
-    sources.extend((path, profile / "routines" / path.name)
-                   for path in (ROOT / "src/routines/routine_files").glob("*.json"))
-    sources.extend((path, profile / "robot_programs" / path.name)
-                   for path in (ROOT / "src/measurement/polyscope_scripts").iterdir() if path.is_file())
-    sources.extend((path, profile / "routine_scripts" / path.name)
-                   for path in (ROOT / "src/routines/polyscope_scripts").glob("*.script"))
+    starter = ROOT / "src/program/webapp2/default_profile"
+    for name in ("robot_programs", "routine_scripts", "routines"):
+        sources.extend((path, profile / name / path.relative_to(starter / name))
+                       for path in (starter / name).rglob("*") if path.is_file())
     for source, destination in sources:
         if not destination.exists():
             destination.parent.mkdir(parents=True, exist_ok=True)
@@ -197,7 +204,7 @@ def initialize(data_dir):
         write_object(config_path, {
             "schema_version": 1,
             "robot_ip": "192.168.3.10",
-            "routine_file": "routines/routine_bam_at_svti.json",
+            "routine_file": "routines/routine.json",
             "routine_scripts_directory": "routine_scripts",
             "measurement_defaults": "measurement_default.json",
             "acquisition_config": "acquisition.json",
@@ -207,7 +214,6 @@ def initialize(data_dir):
                             "joint_speed": 0.05, "joint_acceleration": 0.1,
                             "force": 200, "settling_time": 1.5, "duration": 3},
         })
-    preferences = data_dir / "preferences.json"
     if not preferences.exists():
         write_object(preferences, {"schema_version": 1,
                                   "configuration_path": "profiles/default/app_config.json"})
@@ -319,14 +325,6 @@ def load_profile(data_dir=None):
         values = {**profile.values, "routine_scripts_directory": "routine_scripts"}
         write_object(profile.path, values)
         profile = validate_profile(profile.path, data_dir)
-    # Older or copied profiles get the same initial waypoint script library.
-    script_directory = profile.paths["routine_scripts_directory"]
-    if script_directory == profile.path.parent / "routine_scripts":
-        script_directory.mkdir(parents=True, exist_ok=True)
-        for source in (ROOT / "src/routines/polyscope_scripts").glob("*.script"):
-            destination = script_directory / source.name
-            if not destination.exists():
-                shutil.copyfile(source, destination)
     return profile
 
 

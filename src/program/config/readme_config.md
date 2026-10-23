@@ -6,7 +6,7 @@ and both Webapp2 stop modes. Select `force.stop_method: "timer"` or
 
 The webapp generates `config_tmp.json` when validating a run. `state.json` stores
 runtime state; neither is a measurement preset. Each run writes its own
-`config_used.json`. Webapp2 stores these runtime files in its local-data folder.
+`measurement_configuration.json`. Webapp2 stores these runtime files in its local-data folder.
 The acquisition server has a separate, actively used configuration at
 `src/program/data_acquisition/config_server.json`.
 
@@ -170,4 +170,4 @@ Existing configurations using `measurement`, `points_selection`, top-level
 `obstacle_width`, `increment` and `number_of_measurements` remain readable.
 Profile startup migrates them to the ordered file format, preserving configured
 force values, paths, selected IDs and obstacle dimensions. Defaults, temporary
-configs and per-run `config_used.json` files all use the ordered format.
+configs and per-run `measurement_configuration.json` files all use the ordered format.

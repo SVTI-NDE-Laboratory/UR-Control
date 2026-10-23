@@ -50,16 +50,16 @@ a separate worker process. In server mode, the worker first waits for the
 acquisition client to send `ALIVE`, verifies Home, then waits for client
 `START_FIRST` before robot motion starts. Timer mode keeps the explicit browser
 safety confirmation. A read-only Home-position preflight still runs before
-movement. The selected output folder receives `config_used.json`,
-`state.json`, `measurement_plan.json`, and `program.log`. The log is updated in
+movement. The selected output folder receives `measurement_configuration.json`,
+`state.json`, `measurement_results.json`, and `program.log`. The log is updated in
 real time and prefixes terminal lines with local ISO timestamps. Each program
 start generates a fresh local date-and-time session ID. The
 **Create dated session folder** checkbox is enabled by default and stores the
 complete run under `<selected folder>/<session ID>/`, including a `session.json`
 file containing the ID, timestamp, and resolved paths. If unchecked, the
-selected folder itself is used. Plan points use one-based `measurement_index` values and are
+selected folder itself is used. Results use one-based `point_number` values and are
 updated atomically after every force cycle with an ISO timestamp and
-`force_reached` result. The log mirrors the same stdout and stderr information
+attempt `status`. The log mirrors the same stdout and stderr information
 shown in a visible program terminal.
 
 ## Layout

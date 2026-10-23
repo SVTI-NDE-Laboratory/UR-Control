@@ -465,6 +465,16 @@ def status():
             "feedback": feedback, "error": error, "routine_file": ROUTINE_FILE.name}
 
 
+@api.get("/api/measurement")
+def measurement_status():
+    """Retain the final automatic display after runtime files are removed."""
+    result = legacy.measurement_status()
+    worker, program, _ = workers.details()
+    if worker["kind"] == "measurement" and result["program_state"].get("mode") != "configuration_error":
+        result.update(worker=worker, program_state=program)
+    return result
+
+
 @api.post("/api/worker/stop")
 def stop_worker():
     """Abort the current worker and stop the robot; End handles a normal return."""

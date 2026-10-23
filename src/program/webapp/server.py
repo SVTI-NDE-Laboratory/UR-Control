@@ -336,7 +336,7 @@ def measurement_status() -> dict[str, Any]:
     plan = None
     if config is not None:
         try:
-            plan_file = state_file.with_name("measurement_plan.json") if state_file else None
+            plan_file = state_file.with_name("measurement_results.json") if state_file else None
             plan = (
                 read_json_if_available(plan_file, {})
                 if plan_file and plan_file.exists()

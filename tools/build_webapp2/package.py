@@ -191,14 +191,14 @@ def main():
     parser.add_argument("--dist-dir", type=Path, default=ROOT / "dist", help="Folder containing the built exe and build record.")
     dist = parser.parse_args().dist_dir.resolve()
     executable = dist / "RTM Cobot Studio.exe"
-    metadata = json.loads((dist / "UR15WebApp2-build.json").read_text(encoding="utf-8"))
+    metadata = json.loads((dist / "RTM Cobot Studio-build.json").read_text(encoding="utf-8"))
     if sha256(executable) != metadata["sha256"]:
         raise ValueError("The executable does not match its build record. Build it again before packaging.")
     documents = ROOT / "documentation/webapp2"
     for name in ("README_FIRST.txt", "USER_MANUAL.html"):
         shutil.copyfile(documents / name, dist / name)
     blocks = create_docx(documents / "USER_MANUAL.html", dist / "USER_MANUAL.docx")
-    defaults = dist / "UR15WebApp2-default-data.zip"
+    defaults = dist / "RTM Cobot Studio-default-data.zip"
     with tempfile.TemporaryDirectory(prefix="webapp2-release-") as temporary:
         temporary = Path(temporary).resolve()
         data = temporary / "seed/RTM Cobot Studio"
@@ -220,9 +220,9 @@ def main():
         if result.returncode:
             raise ValueError(f"The exe rejected the distributed defaults:\n{result.stdout}\n{result.stderr}")
     names = ["RTM Cobot Studio.exe", "README_FIRST.txt", "USER_MANUAL.html", "USER_MANUAL.docx",
-             "UR15WebApp2-default-data.zip", "UR15WebApp2-build.json"]
+             "RTM Cobot Studio-default-data.zip", "RTM Cobot Studio-build.json"]
     (dist / "SHA256SUMS.txt").write_text("".join(f"{sha256(dist / name)}  {name}\n" for name in names), encoding="utf-8")
-    release = dist / "UR15WebApp2-release.zip"
+    release = dist / "RTM Cobot Studio-release.zip"
     with ZipFile(release, "w", ZIP_DEFLATED) as archive:
         for name in [*names, "SHA256SUMS.txt"]:
             archive.write(dist / name, name)

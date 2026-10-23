@@ -29,6 +29,7 @@ class ControlWorkers(WorkerManager):
         super().__init__()
         self._lock = threading.RLock()
         self.directory = None
+        self._finished_measurement = None
 
     def _spawn(self, module, arguments, terminal=False):
         executable = Path(sys.executable)
@@ -42,12 +43,33 @@ class ControlWorkers(WorkerManager):
             self._process = subprocess.Popen([*command, *map(str, arguments)],
                 cwd=ROOT, env=PROFILE.worker_environment(), stdin=subprocess.DEVNULL, stdout=None if terminal else log,
                 stderr=None if terminal else subprocess.STDOUT, creationflags=flags)
+            if self._kind == "measurement":
+                # Wait for process exit so all state and feedback writers have
+                # finished before removing their files, even without UI polling.
+                threading.Thread(target=self._finish_measurement,
+                    args=(self._process, self._state_file, self.directory)).start()
         except OSError as error:
             self._process = None
             write_json_atomic(self._state_file, {"mode": "error", "message": f"Could not start worker: {error}"})
             raise
         finally:
             log.close()
+
+    def _finish_measurement(self, process, state_file, directory):
+        """Keep final UI status in memory and remove only runtime result files."""
+        process.wait()
+        with self._lock:
+            program = read_json(state_file)
+            feedback = read_json(directory / "feedback.json")
+            if self._state_file == state_file:
+                self._finished_measurement = (state_file, program, feedback)
+
+            # Preserve logs, configuration, measurement records and session data.
+            for path in (state_file, directory / "feedback.json"):
+                try:
+                    path.unlink(missing_ok=True)
+                except OSError as error:
+                    print(f"Warning: could not remove completed measurement runtime file {path}: {error}", file=sys.stderr)
 
     def start_manual(self, request):
         with self._lock:
@@ -68,9 +90,10 @@ class ControlWorkers(WorkerManager):
             if routine_file.resolve() != ROUTINE_FILE.resolve():
                 raise ValueError("RTM Cobot Studio uses the fixed installation routine file.")
             self.directory = output_directory
+            self._finished_measurement = None
             self._state_file = output_directory / "state.json"
             self._kind = "measurement"
-            config_path = output_directory / "config_used.json"
+            config_path = output_directory / "measurement_configuration.json"
             write_json_atomic(config_path, configuration_file(config))
             write_json_atomic(self._state_file, {"mode": "starting"})
             (output_directory / "feedback.json").unlink(missing_ok=True)
@@ -161,8 +184,12 @@ class ControlWorkers(WorkerManager):
     def details(self):
         with self._lock:
             worker = self.snapshot_locked()
-            program = read_json(self._state_file) if self._state_file else {}
-            feedback = read_json(self.directory / "feedback.json") if self.directory else {}
+            finished = self._finished_measurement
+            if finished is not None and finished[0] == self._state_file:
+                program, feedback = dict(finished[1]), dict(finished[2])
+            else:
+                program = read_json(self._state_file) if self._state_file else {}
+                feedback = read_json(self.directory / "feedback.json") if self.directory else {}
             if not worker["running"]:
                 feedback.update(robot_connected=False, moving=None, force_mode=False, acquisition_connected=False, acquisition_listening=False)
             if worker["return_code"] not in (None, 0) and program.get("mode") not in {"error", "stopped", "unsafe_start", "measurement_failed"}:

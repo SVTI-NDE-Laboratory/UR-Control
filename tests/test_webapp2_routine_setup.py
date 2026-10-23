@@ -107,12 +107,14 @@ class RoutineSetupTests(unittest.TestCase):
         self.assertEqual(defaults["end_to_home"], [step["waypoint"] for step in routes["end_to_home"]["steps"]])
         self.assertEqual(defaults["measurement_waypoints"], ["p_start_l", "p_end_l"])
 
-    def test_older_profiles_get_seeded_scripts_and_configurable_directory(self):
+    def test_older_profiles_keep_empty_scripts_and_configurable_directory(self):
         values = read_object(self.profile.path)
         values.pop("routine_scripts_directory")
         write_object(self.profile.path, values)
+        for script in self.profile.paths["routine_scripts_directory"].iterdir():
+            script.unlink()
         migrated = load_profile(self.profile.data_dir)
-        self.assertTrue(list(migrated.paths["routine_scripts_directory"].glob("*.script")))
+        self.assertEqual(list(migrated.paths["routine_scripts_directory"].iterdir()), [])
         self.assertEqual(read_object(migrated.path)["routine_scripts_directory"], "routine_scripts")
         custom = self.profile.data_dir / "custom script library"
         custom.mkdir()

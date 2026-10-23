@@ -8,6 +8,9 @@ from atomic_json import write_json_atomic
 from line_planner import POINT_TO_POINT, is_obstacle, line_geometry, line_positions, point_pose, point_is_selected, selected_line_positions
 
 
+RESULT_STATUSES = {"measured", "simulation", "approach_limit", "timeout", "stopped", "error"}
+
+
 def display_tcp_pose(pose: list[float]) -> list[float]:
     """Return a TCP pose with XYZ in millimetres and rotation unchanged."""
 
@@ -17,8 +20,10 @@ def display_tcp_pose(pose: list[float]) -> list[float]:
 def create_measurement_plan(config: dict, routines_data: dict | None = None) -> dict:
     """Return a plan for every sampled line point.
 
-    ``measurement_index`` is the original one-based sample number. Obstructed
-    and unselected points remain with ``measured=false`` and a skip reason.
+    ``point_number`` is the original one-based sample number. Obstructed
+    and unselected points remain with ``scheduled=false`` and a skip reason.
+    Plane X/Y are in millimetres from p_start_l, matching flexible measurement:
+    X follows p_start_l -> p_end_l and Y follows the taught plane's lateral axis.
     """
 
     points = []
@@ -27,12 +32,13 @@ def create_measurement_plan(config: dict, routines_data: dict | None = None) -> 
         blocked = is_obstacle(line_position, config)
         selected = point_is_selected(sample_index + 1, config)
         point = {
-            "measurement_index": sample_index + 1,
-            "line_position": round(line_position, 12),
-            "measured": selected and not blocked,
+            "point_number": sample_index + 1,
+            "plane_position_x": round(geometry.get("x_start", 0.0) + line_position, 12),
+            "plane_position_y": geometry.get("offset_y", 0.0),
+            "scheduled": selected and not blocked,
             "data": {
                 "timestamp": None,
-                "force_reached": None,
+                "status": None,
             },
         }
         if blocked:
@@ -40,21 +46,18 @@ def create_measurement_plan(config: dict, routines_data: dict | None = None) -> 
         elif not selected:
             point["skip_reason"] = "not_selected"
         if geometry["method"] == POINT_TO_POINT:
-            point["x_coordinate"] = round(geometry["x_start"] + line_position, 12)
-            point["y_coordinate"] = geometry["offset_y"]
             point["tcp_pose"] = [
                 round(value, 12)
                 for value in display_tcp_pose(point_pose(geometry, line_position))
             ]
         points.append(point)
 
-    units = {"line_position": "mm"}
+    units = {"plane_position_x": "mm", "plane_position_y": "mm"}
     if geometry["method"] == POINT_TO_POINT:
-        units.update(x_coordinate="mm", y_coordinate="mm")
         units["tcp_pose"] = ["mm", "mm", "mm", "rad", "rad", "rad"]
 
     return {
-        "schema_version": 4,
+        "schema_version": 6,
         "created_at": datetime.now().isoformat(timespec="seconds"),
         "line_method": geometry["method"],
         "units": units,
@@ -83,30 +86,42 @@ def write_measurement_plan(
 def record_measurement_result(
     path: str | Path,
     measurement_index: int,
-    force_reached: bool,
+    status: str,
     timestamp: str | None = None,
+    message: str | None = None,
 ) -> dict:
-    """Atomically record one completed force attempt in an existing plan."""
+    """Record an attempt outcome; null status is reserved for unattempted points.
 
+    approach_limit covers controller status 2, which combines travel limit and
+    approach timeout. timeout covers explicit Python/controller timeouts.
+    """
+
+    if status not in RESULT_STATUSES:
+        raise ValueError(f"Unknown measurement result status: {status!r}")
     plan_path = Path(path)
     plan = json.loads(plan_path.read_text(encoding="utf-8"))
     try:
         point = next(
             point
             for point in plan["points"]
-            if point["measurement_index"] == measurement_index
+            if point.get("point_number", point.get("measurement_index")) == measurement_index
         )
     except (KeyError, StopIteration) as error:
         raise ValueError(
-            f"Measurement index {measurement_index} is not present in the plan."
+            f"Point number {measurement_index} is not present in the measurement results."
         ) from error
 
-    point.setdefault("data", {}).update(
+    data = point.setdefault("data", {})
+    data.pop("force_reached", None)
+    data.pop("message", None)
+    data.update(
         {
             "timestamp": timestamp
             or datetime.now().astimezone().isoformat(timespec="milliseconds"),
-            "force_reached": bool(force_reached),
+            "status": status,
         }
     )
+    if message is not None:
+        data["message"] = message
     write_json_atomic(plan_path, plan)
     return point

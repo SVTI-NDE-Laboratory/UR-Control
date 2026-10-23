@@ -47,7 +47,46 @@ class ProfileTests(unittest.TestCase):
         initialize(self.data)
         self.assertEqual(defaults.read_bytes(), before)
         self.assertTrue((self.data / "runtime").is_dir())
-        self.assertTrue((self.profile.paths["robot_programs_directory"] / "apply_force.script").is_file())
+        self.assertTrue((self.profile.paths["robot_programs_directory"] / "apply_force_v2.script").is_file())
+
+    def test_first_launch_installs_exact_starter_library(self):
+        starter = ROOT / "src/program/webapp2/default_profile"
+        for name in ("robot_programs", "routine_scripts", "routines"):
+            expected = {path.relative_to(starter / name): path.read_bytes()
+                        for path in (starter / name).rglob("*") if path.is_file()}
+            actual = {path.relative_to(self.profile.path.parent / name): path.read_bytes()
+                      for path in (self.profile.path.parent / name).rglob("*") if path.is_file()}
+            self.assertEqual(actual, expected)
+        self.assertEqual(self.profile.paths["routine_file"].name, "routine.json")
+
+    def test_restart_never_restores_deleted_or_edited_starter_files(self):
+        # An empty library is also a user choice once the profile exists.
+        for name in ("robot_programs", "routine_scripts"):
+            for path in (self.profile.path.parent / name).iterdir():
+                path.unlink()
+        routine = self.profile.paths["routine_file"]
+        values = read_object(routine)
+        values["operator_note"] = "Keep my edits"
+        write_object(routine, values)
+        expected = routine.read_bytes()
+        for _ in range(2):
+            load_profile(self.data)
+            self.assertEqual(routine.read_bytes(), expected)
+            for name in ("robot_programs", "routine_scripts"):
+                self.assertEqual(list((self.profile.path.parent / name).iterdir()), [])
+
+    def test_deleted_active_routine_is_reported_without_restoring_it(self):
+        self.profile.paths["routine_file"].unlink()
+        with self.assertRaises(FileNotFoundError):
+            load_profile(self.data)
+        self.assertEqual(list((self.profile.path.parent / "routines").iterdir()), [])
+
+    def test_nonempty_folder_without_preferences_is_not_seeded(self):
+        self.profile.preferences_path.unlink()
+        before = {path.relative_to(self.data): path.read_bytes() for path in self.data.rglob("*") if path.is_file()}
+        with self.assertRaisesRegex(ValueError, "not empty"):
+            initialize(self.data)
+        self.assertEqual({path.relative_to(self.data): path.read_bytes() for path in self.data.rglob("*") if path.is_file()}, before)
 
     def test_existing_profile_does_not_require_its_old_mira_file(self):
         values = read_object(self.profile.path)
@@ -293,7 +332,7 @@ class LocalDataLocationTests(unittest.TestCase):
         candidate = change_data_directory(profile, destination)
         self.assertEqual(application_directory(), destination)
         self.assertEqual(candidate.path, destination / "profiles/default/app_config.json")
-        self.assertEqual(candidate.paths["routine_file"], destination / "profiles/default/routines/routine_bam_at_svti.json")
+        self.assertEqual(candidate.paths["routine_file"], destination / "profiles/default/routines/routine.json")
         self.assertEqual(candidate.paths["routine_scripts_directory"], destination / "profiles/default/routine_scripts")
         self.assertEqual(candidate.paths["measurement_defaults"].read_bytes(), profile.paths["measurement_defaults"].read_bytes())
         self.assertTrue(profile.path.exists())

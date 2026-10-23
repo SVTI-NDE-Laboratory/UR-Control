@@ -28,6 +28,18 @@ its referenced files, and only then loads the server. An invalid selected file
 stops startup with an error instead of silently loading another installation.
 Initialization and the configuration check do not contact the robot.
 
+After an automatic measurement worker exits, the app removes that run's
+`state.json` and `feedback.json`. Final completion or error status stays in memory
+for the current webapp session. Configuration, measurement records, session data
+and logs remain in the results folder.
+
+The starter libraries in `default_profile/robot_programs`, `default_profile/routine_scripts`
+and `default_profile/routines` are copied only when initializing an empty local data
+folder. Existing profiles never receive replacement or additional library files on
+startup or upgrade, even if users empty a library. A missing active routine or other
+required configuration file is reported as an error and must be restored or changed
+by the user.
+
 On upgrade, an existing default `UR15 WebApp` folder is copied and validated under
 the new name before use; the original remains untouched as a backup. Internal
 absolute paths are rebased to the new copy. Existing data under the new name is
@@ -171,7 +183,7 @@ browser tab and Windows executable. Its checked-in icon can be regenerated from
 the SVG with `python tools/build_webapp2/prepare_icon.py` after installing the build
 dependencies. Windows product metadata is defined in `tools/build_webapp2/version_info.txt`.
 
-The build also packages `dist/UR15WebApp2-release.zip`, containing the exe,
+The build also packages `dist/RTM Cobot Studio-release.zip`, containing the exe,
 `README_FIRST.txt`, HTML and editable Word manuals, a clean default-data zip,
 build metadata and checksums. The manual templates live in
 `documentation/webapp2/`. They reserve space for approved robot startup,
@@ -196,7 +208,7 @@ when changing an already-configured installation.
 The build uses `tools/build_webapp2/webapp2.spec` and caches intermediates under
 `temporary_data/webapp2-build/`. Local modules are bundled in their original
 directory structure so reused modules can locate adjacent assets without edits
-to the original webapp. `dist/UR15WebApp2-build.json` records build/check duration,
+to the original webapp. `dist/RTM Cobot Studio-build.json` records build/check duration,
 file size and SHA-256. Build output is excluded from Git.
 
 Each build checks native RTDE imports, all three worker entry points, default
@@ -383,7 +395,7 @@ when present, followed by the other waypoints in routine-file order.
 
 ## Active installation settings
 
-The seeded profile selects `routine_bam_at_svti.json` and robot IP `192.168.3.10`.
+The seeded profile selects `routine.json` and robot IP `192.168.3.10`.
 The routine selector within measurements stays locked to the active profile.
 Use Settings to select another installation for the next launch. Target force,
 settling time, and measurement duration are set in the flexible form.
@@ -465,7 +477,7 @@ Existing profiles are migrated on startup. All saved run configs use this
 format, including direct CLI runs.
 
 **Load configuration** opens a folder browser rooted in the configured Results
-folder. Open a run folder containing `config_used.json`, then load it to refresh
+folder. Open a run folder containing `measurement_configuration.json`, then load it to refresh
 the automatic page with its line, obstacle, selection, force and motion settings.
 The imported X range and spacing mode are preserved after refresh. Installed URP
 paths still come from current shared defaults. Loading does not change the saved

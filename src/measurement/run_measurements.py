@@ -42,7 +42,7 @@ from measurement_state import write_state
 from measurement_config import measurement_stop_method
 from measurement_plan import record_measurement_result
 from apply_force import apply_force
-from robot_connection import assert_robot_running, stop_robot
+from robot_connection import RobotSafetyError, assert_robot_running, stop_robot
 from robot_move import ensure_at_tcp_target, movel_pose, translated_tool_target
 from run_routine import run_routine
 
@@ -261,29 +261,51 @@ def _run_measurements(
             )
             write_state(state_path, state)
 
-        measurement_success, measurement_timestamp = apply_force(
-            robot_ip,
-            measurement["program_path"],
-            measurement["max_displacement"],
-            measurement["target_force"],
-            measurement["simulation"],
-            acquire_data,
-            {
-                "measurement_index": measurement_index,
-                "line_position": position,
-                "x_coordinate": geometry.get("x_start", 0.0) + position,
-            },
-            stop_method=measurement_stop_method(config),
-            on_force_success=publish_force_success,
-            hold_duration=measurement.get("hold_duration", 0.5),
-            settling_time=measurement["settling_time"],
-            simulation_program_path=measurement["simulation_program_path"],
-        )
+        try:
+            measurement_success, measurement_timestamp = apply_force(
+                robot_ip,
+                measurement["program_path"],
+                measurement["max_displacement"],
+                measurement["target_force"],
+                measurement["simulation"],
+                acquire_data,
+                {
+                    "measurement_index": measurement_index,
+                    "line_position": position,
+                    "x_coordinate": geometry.get("x_start", 0.0) + position,
+                },
+                stop_method=measurement_stop_method(config),
+                on_force_success=publish_force_success,
+                hold_duration=measurement.get("hold_duration", 0.5),
+                settling_time=measurement["settling_time"],
+                simulation_program_path=measurement["simulation_program_path"],
+            )
+        except BaseException as error:
+            # Record failed attempts before propagating the original failure.
+            # Movement failures before force application leave the point pending.
+            if measurement_plan_path is not None:
+                if isinstance(error, TimeoutError):
+                    result_status = "timeout"
+                elif isinstance(error, (RobotSafetyError, KeyboardInterrupt, SystemExit)):
+                    result_status = "stopped"
+                else:
+                    result_status = "error"
+                try:
+                    record_measurement_result(measurement_plan_path, measurement_index,
+                        result_status, message=str(error) or type(error).__name__)
+                except Exception as record_error:
+                    print(f"Warning: could not save failed measurement result: {record_error}", file=sys.stderr)
+            raise
+
         if measurement_plan_path is not None:
+            # Simulated completion is recorded without claiming a real measurement.
+            result_status = "simulation" if measurement["simulation"] else "measured"
+            if not measurement_success:
+                result_status = "approach_limit"
             record_measurement_result(
                 measurement_plan_path,
                 measurement_index,
-                measurement_success,
+                result_status,
                 measurement_timestamp,
             )
         state["last_measurement_success"] = measurement_success

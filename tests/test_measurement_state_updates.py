@@ -64,12 +64,12 @@ class MeasurementSnapshotTests(unittest.TestCase):
             self.assertEqual(list(Path(directory).glob("*.tmp")), [])
 
     def test_plan_and_result_updates_retry_destination_lock(self):
-        plan = {"points": [{"measurement_index": 1, "data": {"force_reached": None}}]}
+        plan = {"points": [{"point_number": 1, "data": {"status": None}}]}
         replace = Path.replace
         with tempfile.TemporaryDirectory() as directory:
-            target = Path(directory) / "measurement_plan.json"
+            target = Path(directory) / "measurement_results.json"
             for operation in (lambda: write_measurement_plan(target, {}),
-                              lambda: record_measurement_result(target, 1, True, "test")):
+                              lambda: record_measurement_result(target, 1, "measured", "test")):
                 attempts = []
 
                 def temporarily_locked(staging, destination):
@@ -82,7 +82,7 @@ class MeasurementSnapshotTests(unittest.TestCase):
                     operation()
                 self.assertEqual(len(attempts), 2)
             saved = json.loads(target.read_text())
-            self.assertTrue(saved["points"][0]["data"]["force_reached"])
+            self.assertEqual(saved["points"][0]["data"]["status"], "measured")
             self.assertEqual(saved["points"][0]["data"]["timestamp"], "test")
             self.assertEqual(list(Path(directory).glob("*.tmp")), [])
 

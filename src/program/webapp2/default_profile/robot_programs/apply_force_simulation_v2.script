@@ -1,0 +1,152 @@
+# Simulation: tool-Z travel -> settling -> measurement release -> return.
+# Input floats: 43 = travel [m], 44 = settling [s], 45 = target force [N].
+# Target force is read for interface compatibility; position control drives motion.
+# Input integer 42: 0 before start, 1 when Python completes measurement.
+# Output integer 42: 0 = initialized/completed, 1 = ready, 4 = invalid settings,
+# 5 = force guard, 6 = motion timeout. Failures latch; no automatic return.
+
+def force_state_message(index):
+    if index == 0:
+        return "Setting simulation variables"
+    elif index == 1:
+        return "Simulation approaching configured travel"
+    elif index == 2:
+        return "Simulation travel reached; settling"
+    elif index == 3:
+        return "Simulation ready; waiting for Python measurement release"
+    elif index == 4:
+        return "Simulation returning to starting pose"
+    elif index == 5:
+        return "Simulation cycle completed"
+    elif index == 6:
+        return "Simulation stopped: 40 N force guard"
+    elif index == 7:
+        return "Simulation stopped: motion timeout"
+    else:
+        return "Simulation stopped: invalid settings"
+    end
+end
+
+# Speeds are m/s; resultant XYZ force is N. Do not zero existing contact away.
+# The 40 N guard leaves margin below 50 N; sampling/stopping may cause overshoot.
+register = 42
+approach_speed = 0.005
+return_speed = 0.020
+acceleration = 0.1
+stop_acceleration = 1.0
+force_guard = 40.0
+position_tolerance = 0.00002
+motion_margin = 5.0
+global state_message = force_state_message(0)
+global distance_max = read_input_float_register(43)
+global settling_time = read_input_float_register(44)
+global force_holding = read_input_float_register(45)
+global force_reached = False
+global force_ready = False
+
+# Travel follows the starting TCP frame's positive Z axis.
+start_pose = get_actual_tcp_pose()
+direction_pose = pose_trans(start_pose, p[0, 0, 1, 0, 0, 0])
+direction = [direction_pose[0] - start_pose[0], direction_pose[1] - start_pose[1], direction_pose[2] - start_pose[2]]
+write_output_integer_register(register, 0)
+while read_input_integer_register(register) != 0:
+    sync()
+end
+
+# Stages: 0 approach, 1 settling, 2 measurement, 3 return, 4 complete.
+stage = 0
+failure = 0
+motion_elapsed = 0.0
+global settling_elapsed = 0.0
+step_time = get_steptime()
+state_message = force_state_message(1)
+if not (distance_max > 0 and settling_time >= 0):
+    failure = 4
+    state_message = force_state_message(8)
+end
+
+while stage < 4 and failure == 0:
+    # Check before every motion command and throughout both stationary stages.
+    measured_force = get_tcp_force()
+    force_norm = sqrt(measured_force[0]*measured_force[0] + measured_force[1]*measured_force[1] + measured_force[2]*measured_force[2])
+    if force_norm >= force_guard:
+        failure = 5
+        state_message = force_state_message(6)
+
+    elif stage == 0:
+        current_pose = get_actual_tcp_pose()
+        relative_pose = pose_trans(pose_inv(start_pose), current_pose)
+        remaining = distance_max - relative_pose[2]
+        if remaining <= position_tolerance:
+            stopl(stop_acceleration)
+            force_reached = True
+            stage = 1
+            state_message = force_state_message(2)
+
+        elif motion_elapsed >= distance_max / approach_speed + motion_margin:
+            failure = 6
+            state_message = force_state_message(7)
+
+        else:
+            # Taper near the endpoint to avoid exceeding the requested travel.
+            speed = remaining * 5.0
+            if speed > approach_speed:
+                speed = approach_speed
+            end
+            speedl([direction[0]*speed, direction[1]*speed, direction[2]*speed, 0, 0, 0], acceleration, step_time)
+            motion_elapsed = motion_elapsed + step_time
+        end
+
+    elif stage == 1:
+        if settling_elapsed >= settling_time:
+            force_ready = True
+            stage = 2
+            state_message = force_state_message(3)
+            write_output_integer_register(register, 1)
+        else:
+            sync()
+            settling_elapsed = settling_elapsed + step_time
+        end
+
+    elif stage == 2:
+        if read_input_integer_register(register) == 1:
+            stage = 3
+            motion_elapsed = 0.0
+            state_message = force_state_message(4)
+        else:
+            sync()
+        end
+
+    elif stage == 3:
+        # Return using base-frame error, with the same guard on side loads.
+        current_pose = get_actual_tcp_pose()
+        error = [start_pose[0] - current_pose[0], start_pose[1] - current_pose[1], start_pose[2] - current_pose[2]]
+        remaining = sqrt(error[0]*error[0] + error[1]*error[1] + error[2]*error[2])
+        if remaining <= position_tolerance:
+            stopl(stop_acceleration)
+            stage = 4
+
+        elif motion_elapsed >= distance_max / return_speed + motion_margin:
+            failure = 6
+            state_message = force_state_message(7)
+
+        else:
+            speed = remaining * 5.0
+            if speed > return_speed:
+                speed = return_speed
+            end
+            speedl([error[0]*speed/remaining, error[1]*speed/remaining, error[2]*speed/remaining, 0, 0, 0], acceleration, step_time)
+            motion_elapsed = motion_elapsed + step_time
+        end
+    end
+end
+
+# Stop in place on failure. Only a completed return clears the output status.
+if failure != 0:
+    stopl(stop_acceleration)
+    force_ready = False
+    write_output_integer_register(register, failure)
+else:
+    write_output_integer_register(register, 0)
+    state_message = force_state_message(5)
+end

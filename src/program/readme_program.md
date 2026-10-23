@@ -69,8 +69,8 @@ Startup:
 2. `prepare_output_directory()` creates the output directory and mirrors stdout
    and stderr to `program.log`.
 3. `load_run_inputs()` reads the routine JSON and measurement config, validates
-   them through `read_measurement_config()`, writes `config_used.json`, creates
-   `measurement_plan.json`, and chooses the live `state.json` path.
+   them through `read_measurement_config()`, writes `measurement_configuration.json`, creates
+   `measurement_results.json`, and chooses the live `state.json` path.
 4. `start_acquisition_if_enabled()` starts the TCP acquisition server when
    `measurement.data_server=true`. That server handles `ALIVE`, `START_FIRST`,
    `ISREADY`, `GO`, and `STATE`. Its state provider reads `state.json` and,
@@ -110,7 +110,7 @@ Measurement phase:
 planned point it updates `state.json` with the current mode, measurement index,
 line position, height mode, obstacle status, and last force result. It routes
 around obstacles, moves between high and low positions, verifies the exact TCP
-target, runs the force URP, and records the result in `measurement_plan.json`.
+target, runs the force URP, and records the result in `measurement_results.json`.
 
 When server acquisition is enabled, the force routine reaches the force hold
 and Python exposes that hold through the TCP server:
@@ -148,19 +148,26 @@ configured host/port. It then checks the robot state and requires all six joints
 The output directory contains:
 
 ```text
-config_used.json
+measurement_configuration.json
 state.json
-measurement_plan.json
+measurement_results.json
 program.log
 ```
 
 Web sessions also contain `session.json` when the dated-session-folder option
 is enabled. Both logs are written in real time with local ISO timestamps.
 
-Each entry in `measurement_plan.json` has a one-based `measurement_index`, a
-`line_position` in millimetres, and a `data` result. After a force cycle, `data`
-records the acquisition timestamp and whether the requested force was reached.
-Points excluded by an obstacle remain in the plan with `measured=false` and
+Each entry in `measurement_results.json` has a one-based `point_number`,
+`plane_position_x` and `plane_position_y` in millimetres from `p_start_l`
+origin, a `scheduled` flag, and a `data` result. After a force cycle, `data`
+records the attempt timestamp and `status`: null before an attempt, `measured`
+after real completion, `simulation` after simulated completion,
+`approach_limit` for controller distance/approach limits,
+`timeout` for an explicit timeout, `stopped` for a caught safety stop or interrupt,
+and `error` for other failures. Failure details are recorded in `data.message`.
+Controller status 2 combines the distance limit and approach timeout, so those
+two causes cannot be distinguished with the current robot program.
+Points excluded by an obstacle remain in the results with `scheduled=false` and
 `skip_reason="obstacle"` so their original point IDs are visible.
 
 When contact is reached, `ISREADY` returns `true`. The external client records the

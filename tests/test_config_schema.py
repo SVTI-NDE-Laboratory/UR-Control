@@ -65,7 +65,7 @@ class ConfigSchemaTests(unittest.TestCase):
         saved = edited_config(self.config, fields, self.data)
         stored = configuration_file(saved)
         self.assertEqual(stored["obstacle"], {"present": False, "width": 200., "position": 650., "start": 550., "end": 750.})
-        self.assertTrue(all(point["measured"] for point in create_measurement_plan(saved, self.data)["points"]))
+        self.assertTrue(all(point["scheduled"] for point in create_measurement_plan(saved, self.data)["points"]))
         fields["obstacle.enabled"] = ["true"]
         enabled = edited_config(canonical_config(stored), fields, self.data)
         self.assertTrue(enabled["obstacle"]["present"])
@@ -142,9 +142,9 @@ class ConfigSchemaTests(unittest.TestCase):
         self.config["obstacle"] = {"start": 300, "end": 500}
         validate_measurement_config(self.config, self.data)
         after = create_measurement_plan(self.config, self.data)["points"]
-        self.assertEqual([p["x_coordinate"] for p in before], [p["x_coordinate"] for p in after])
+        self.assertEqual([p["plane_position_x"] for p in before], [p["plane_position_x"] for p in after])
         self.assertEqual([p["tcp_pose"] for p in before], [p["tcp_pose"] for p in after])
-        self.assertEqual([p["x_coordinate"] for p in after if not p["measured"]], [300, 400, 500])
+        self.assertEqual([p["plane_position_x"] for p in after if not p["scheduled"]], [300, 400, 500])
         self.assertTrue(crosses_obstacle(100, 500, self.config))
 
     def test_time_mode_disables_external_listener_before_connecting(self):

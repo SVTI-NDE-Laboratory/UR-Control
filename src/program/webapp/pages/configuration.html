@@ -499,30 +499,30 @@
       document.body.innerHTML = '<main><h1>Application closed</h1><p>You can close this tab.</p></main>';
     });
 
-    function completedState(point, programState, points) {
-      if (point.measured === false) return 'skipped';
-      if (point.data?.force_reached === true) return 'complete';
-      if (point.data?.force_reached === false) return 'failed';
+    function completedState(point, programState, points, origin = 0) {
+      if (point.scheduled === false) return 'skipped';
+      if (['measured', 'simulation'].includes(point.data?.status)) return 'complete';
+      if (point.data?.status != null) return 'failed';
       const mode = programState.mode || '';
       const current = programState.active_point ?? programState.measurement_index;
       if (['measurements_done', 'end_routine', 'idle'].includes(mode)) return 'complete';
       if (typeof current !== 'number') return 'pending';
-      if (point.measurement_index < current) return 'complete';
-      if (point.measurement_index > current) return 'pending';
+      if (point.point_number < current) return 'complete';
+      if (point.point_number > current) return 'pending';
       if (programState.last_measurement_success === false) return 'failed';
       if (
         programState.last_measurement_success === true
         && programState.point_completed === true
         && !points.some(nextPoint =>
-          nextPoint.measured !== false && nextPoint.measurement_index > current
+          nextPoint.scheduled !== false && nextPoint.point_number > current
         )
       ) {
         return 'complete';
       }
       const reachedPosition = programState.line_position;
       const isReached = typeof reachedPosition === 'number'
-        && Math.abs(reachedPosition - point.line_position) < 1e-6;
-      return isReached || point.measurement_index === current ? 'current' : 'pending';
+        && Math.abs(reachedPosition - (point.plane_position_x - origin)) < 1e-6;
+      return isReached || point.point_number === current ? 'current' : 'pending';
     }
 
     function humanizePhase(mode) {
@@ -536,7 +536,7 @@
       if (['measurements_done', 'end_routine', 'idle'].includes(mode)) return null;
       if (typeof current !== 'number') return null;
       return points.find(point =>
-        point.measured !== false && point.measurement_index === current
+        point.scheduled !== false && point.point_number === current
       ) || null;
     }
 
@@ -549,11 +549,11 @@
       const pointToPoint = true;
       const origin = pointToPoint ? (parameters.x_start || 0) : 0;
       const configuredLength = pointToPoint ? parameters.x_end - origin : parameters.line_length;
-      const lastPosition = points.length ? Math.max(...points.map(point => point.line_position)) : 0;
+      const lastPosition = points.length ? Math.max(...points.map(point => (point.plane_position_x - origin))) : 0;
       const length = Number.isFinite(configuredLength) && configuredLength >= 0 ? configuredLength : lastPosition;
       const reachedPosition = typeof programState.line_position === 'number' ? programState.line_position : null;
       const activePoint = activePlanPoint(points, programState);
-      const currentPosition = activePoint ? activePoint.line_position : reachedPosition;
+      const currentPosition = activePoint ? (activePoint.plane_position_x - origin) : reachedPosition;
       const obstacle = config?.obstacle;
       const left = 55, right = 585, lowY = 170;
       const obstacleHeight = 62, obstacleBottomY = lowY - 3;
@@ -568,13 +568,13 @@
       }
 
       let complete = 0;
-      const measuredTotal = points.filter(point => point.measured !== false).length;
+      const scheduledTotal = points.filter(point => point.scheduled !== false).length;
       for (const point of points) {
-        const pointState = completedState(point, programState, points);
+        const pointState = completedState(point, programState, points, origin);
         if (pointState === 'complete') complete += 1;
         const colors = {pending:'#9aa9b8', current:'#1769aa', complete:'#159447', failed:'#b42318', skipped:'#b85b5b'};
-        addSvg('circle', {cx:scale(point.line_position), cy:lowY, r:pointState === 'current' ? 10 : 7, fill:colors[pointState], stroke:'white', 'stroke-width':2});
-        addSvg('text', {x:scale(point.line_position), y:lowY+25, 'text-anchor':'middle', fill:'#334e60', 'font-size':12}, String(point.measurement_index));
+        addSvg('circle', {cx:scale((point.plane_position_x - origin)), cy:lowY, r:pointState === 'current' ? 10 : 7, fill:colors[pointState], stroke:'white', 'stroke-width':2});
+        addSvg('text', {x:scale((point.plane_position_x - origin)), y:lowY+25, 'text-anchor':'middle', fill:'#334e60', 'font-size':12}, String(point.point_number));
       }
       if (currentPosition !== null) {
         addSvg('text', {x:scale(currentPosition), y:lowY-20, 'text-anchor':'middle', fill:'#1769aa', 'font-size':14, 'font-weight':700}, `Current: ${formatMillimetres(origin + currentPosition)}`);
@@ -584,7 +584,7 @@
 
       document.getElementById('ongoing-mode').textContent = humanizePhase(programState.mode);
       document.getElementById('ongoing-current').textContent = currentPosition === null ? '—' : formatNumber(origin + currentPosition);
-      document.getElementById('ongoing-progress').textContent = `${complete} / ${measuredTotal}`;
+      document.getElementById('ongoing-progress').textContent = `${complete} / ${scheduledTotal}`;
     }
 
     function showMeasurement(data) {

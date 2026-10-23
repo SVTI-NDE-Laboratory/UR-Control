@@ -34,9 +34,9 @@ nav{background:#edf3f8;padding:12px 18px}nav a{display:block;margin:3px 0}.works
 
 <h2 id="first-use">2. First launch</h2>
 <ol><li>Extract the release package into a normal folder on a 64-bit Windows PC. Python is included; do not run the exe inside a zip.</li>
-<li>For a new installation, extract <code>UR15WebApp2-default-data.zip</code>. Put its <code>RTM Cobot Studio</code> folder in a writable location, for example <code>%LOCALAPPDATA%</code>. Do not overwrite existing working data.</li>
+<li>For a new installation, extract <code>RTM Cobot Studio-default-data.zip</code>. Put its <code>RTM Cobot Studio</code> folder in a writable location, for example <code>%LOCALAPPDATA%</code>. Do not overwrite existing working data. Starter robot programs, routine scripts and routines are copied only into an empty local data folder. After setup, the user manages these libraries; startup and upgrades do not restore deleted files or add starter files.</li>
 <li>Start <code>RTM Cobot Studio.exe</code>. If prompted, select the folder containing <code>preferences.json</code>; alternatively, select an empty folder to create defaults. An existing saved location is reused.</li>
-<li>In Settings, check the active data folder and routine. The supplied IP is <code>192.168.3.10</code> and the routine is <code>routine_bam_at_svti.json</code>. These are for the existing installation, not generic safe coordinates for another robot.</li>
+<li>In Settings, check the active data folder and routine. The supplied IP is <code>192.168.3.10</code> and the routine is <code>routine.json</code>. These are for the existing installation, not generic safe coordinates for another robot.</li>
 <li>Complete the safety checks and approved robot startup before commanding motion. The matching Apply Force URP must already be installed on the controller; the exe does not install it.</li></ol>
 <p>The browser opens automatically. If it does not, copy the local URL from the console. Opening the app alone does not move the robot. Use <strong>Close app</strong> to shut down; closing only the tab can leave it running.</p>
 
@@ -88,7 +88,7 @@ nav{background:#edf3f8;padding:12px 18px}nav a{display:block;margin:3px 0}.works
 <li>Monitor phase, point and progress. Verify normal completion/return; stopping a run does not guarantee Home.</li></ol>
 <p><strong>Save as default</strong> replaces shared measurement defaults. <strong>Reset default</strong> reloads them and can discard edits. With a 1000 mm span and 300 mm step, samples stop at 900 mm; choosing four points with fit on instead includes both 0 and 1000 mm.</p>
 
-<p><strong>Load configuration</strong> opens a folder browser inside Results. Select a run folder containing <code>config_used.json</code> and load it; the page refreshes with its saved parameters, including the X range and point spacing. Loading leaves the saved run and shared defaults unchanged. Installed URP paths come from current defaults. <strong>Reset default</strong> clears imported settings.</p>
+<p><strong>Load configuration</strong> opens a folder browser inside Results. Select a run folder containing <code>measurement_configuration.json</code> and load it; the page refreshes with its saved parameters, including the X range and point spacing. Loading leaves the saved run and shared defaults unchanged. Installed URP paths come from current defaults. <strong>Reset default</strong> clears imported settings.</p>
 <p>The graph is titled <strong>Summary</strong>. Its <strong>Points list</strong> button lists every original ID, X/Y coordinates in the taught measurement frame, and its selection or obstacle status. The run section is titled <strong>Run measurements</strong>.</p>
 
 <h2 id="settings">4. Settings and routines</h2>

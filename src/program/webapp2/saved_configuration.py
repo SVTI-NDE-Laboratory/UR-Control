@@ -6,6 +6,12 @@ from measurement_config import read_measurement_config
 from line_planner import line_geometry
 
 
+def saved_configuration_path(folder: Path) -> Path:
+    """Prefer the current filename while allowing older results to be loaded."""
+    current = folder / "measurement_configuration.json"
+    return current if current.exists() else folder / "config_used.json"
+
+
 def results_directory(results: Path, directory: str) -> Path:
     """Resolve a relative folder without following paths outside Results."""
     root = Path(results).resolve()
@@ -27,20 +33,20 @@ def configuration_folders(results: Path, directory: str = "") -> dict:
     for child in sorted(folder.iterdir(), key=lambda path: path.name.casefold()):
         if child.is_dir() and child.resolve().is_relative_to(root):
             folders.append({"name": child.name, "directory": child.relative_to(root).as_posix(),
-                            "has_configuration": (child / "config_used.json").is_file()})
+                            "has_configuration": saved_configuration_path(child).is_file()})
     return {"directory": folder.relative_to(root).as_posix(),
             "parent": folder.parent.relative_to(root).as_posix() if folder != root else None,
-            "folders": folders, "can_load": (folder / "config_used.json").is_file()}
+            "folders": folders, "can_load": saved_configuration_path(folder).is_file()}
 
 
 def read_saved_configuration(results: Path, directory: str, routines: dict) -> dict:
     """Validate a saved run without changing its files or shared defaults."""
     root = Path(results).resolve()
-    path = (results_directory(root, directory) / "config_used.json").resolve()
+    path = saved_configuration_path(results_directory(root, directory)).resolve()
     if not path.is_relative_to(root):
         raise ValueError("The saved configuration must be inside Results.")
     if not path.is_file():
-        raise ValueError("This folder has no config_used.json. Select a saved measurement run.")
+        raise ValueError("This folder has no measurement_configuration.json. Select a saved measurement run.")
     config = read_measurement_config(path, routines_data=routines)
     geometry = line_geometry(config, routines)
     if geometry["method"] == "point_to_point":

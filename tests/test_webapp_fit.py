@@ -51,8 +51,8 @@ class FitTests(unittest.TestCase):
             self.assertEqual(parameters["increment"], 12.25)
             self.assertEqual(parameters["number_of_measurements"], 7)
             plan = create_measurement_plan(config, self.data)
-            self.assertEqual([p["line_position"] for p in plan["points"]],
-                             [i * 12.25 for i in range(7)])
+            self.assertEqual([p["plane_position_x"] for p in plan["points"]],
+                             [23.5 + i * 12.25 for i in range(7)])
 
     def test_independent_start_change_preserves_spacing_and_count(self):
         self.config["line"]["x_start"] = 50

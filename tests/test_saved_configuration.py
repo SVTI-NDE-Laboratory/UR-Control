@@ -32,7 +32,7 @@ class SavedConfigurationTests(unittest.TestCase):
         self.config['motion'].update(speed=33.,acceleration=88.)
         self.config['obstacle']={'present':False,'width':80.,'position':300.}
         self.config['points_selection']={'mode':'custom','point_ids':[2,4]}
-        self.path=self.folder/'config_used.json'
+        self.path=self.folder/'measurement_configuration.json'
         self.path.write_text(json.dumps(configuration_file(self.config)),encoding='utf-8')
         self.original=self.path.read_bytes()
         self.old_config=server.legacy.state.get_config()
@@ -60,6 +60,22 @@ class SavedConfigurationTests(unittest.TestCase):
         self.assertEqual(config['points_selection']['point_ids'],[2,4])
         self.assertEqual(self.path.read_bytes(),self.original)
         self.assertEqual(self.defaults_file.read_bytes(),self.defaults_bytes)
+
+    def test_older_configuration_filename_is_still_listed_and_loadable(self):
+        legacy = self.path.with_name('config_used.json')
+        self.path.rename(legacy)
+        self.assertTrue(configuration_folders(self.results,'series/run_01')['can_load'])
+        self.assertTrue(configuration_folders(self.results,'series')['folders'][0]['has_configuration'])
+        config = read_saved_configuration(self.results,'series/run_01',self.routines)
+        self.assertEqual(config['measurement']['target_force'],240.)
+        self.assertEqual(legacy.read_bytes(),self.original)
+        self.assertFalse(self.path.exists())
+
+    def test_current_configuration_takes_precedence_over_legacy_file(self):
+        legacy = self.path.with_name('config_used.json')
+        legacy.write_text('{invalid',encoding='utf-8')
+        config = read_saved_configuration(self.results,'series/run_01',self.routines)
+        self.assertEqual(config['measurement']['target_force'],240.)
 
     def load(self):
         with patch.dict(server.PROFILE.paths,results_directory=self.results), patch.object(server,'read_routines_file',return_value=self.routines), patch.object(server.workers,'snapshot',return_value={'running':False}), patch.object(server.legacy,'TEMP_CONFIG_FILE',Path(self.temp.name)/'config_tmp.json'):

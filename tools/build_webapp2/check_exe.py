@@ -28,6 +28,22 @@ def check(executable):
             if result.returncode:
                 raise RuntimeError(f"Executable check failed: {arguments}\n{result.stdout}\n{result.stderr}")
             print(result.stdout.strip(), flush=True)
+
+        # Confirm the exe ships exactly the starter library, then simulate user
+        # deletions. Later startups must preserve even an emptied library.
+        starter = Path(__file__).resolve().parents[2] / "src/program/webapp2/default_profile"
+        profile_directory = data / "profiles/default"
+        for name in ("robot_programs", "routine_scripts", "routines"):
+            expected = {path.relative_to(starter / name): path.read_bytes()
+                        for path in (starter / name).rglob("*") if path.is_file()}
+            actual = {path.relative_to(profile_directory / name): path.read_bytes()
+                      for path in (profile_directory / name).rglob("*") if path.is_file()}
+            if actual != expected:
+                raise RuntimeError(f"Bundled starter library differs: {name}")
+        deleted_program = profile_directory / "robot_programs/apply_force_v1.script"
+        deleted_program.unlink()
+        for script in (profile_directory / "routine_scripts").iterdir():
+            script.unlink()
         process = subprocess.Popen([str(executable), "--data-dir", str(data), "--no-browser"],
                                    cwd=directory, env=environment, stdout=subprocess.PIPE,
                                    stderr=subprocess.STDOUT, text=True)
@@ -63,12 +79,23 @@ def check(executable):
                     raise RuntimeError("Executable did not acknowledge shutdown.")
             if process.wait(timeout=30):
                 raise RuntimeError("Executable failed during shutdown.\n" + "".join(output))
+            if deleted_program.exists() or any((profile_directory / "routine_scripts").iterdir()):
+                raise RuntimeError("Executable restored deleted starter files.")
         finally:
             if process.poll() is None:
                 process.terminate()
                 process.wait(timeout=15)
             reader.join(timeout=3)
             process.stdout.close()
+
+        # A deleted active routine must produce a configuration error rather
+        # than silently recreating the routine and its taught coordinates.
+        active_routine = profile_directory / "routines/routine.json"
+        active_routine.unlink()
+        result = subprocess.run([str(executable), "--check-config", "--data-dir", str(data)],
+                                cwd=directory, env=environment, capture_output=True, text=True, timeout=90)
+        if result.returncode == 0 or any((profile_directory / "routines").iterdir()):
+            raise RuntimeError("Executable did not preserve the deleted active routine.")
     print("Executable checks passed: UI, assets, defaults, RTDE imports, worker entry points and shutdown. No robot connection opened.")
 
 
