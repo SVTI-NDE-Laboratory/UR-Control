@@ -9,6 +9,19 @@ def waypoint_motion_options(name, waypoint):
             "joint": "q" in waypoint and not linear_only}
 
 
+def waypoint_motion_limits(data):
+    """Use routine maxima in mm/s and mm/s² for linear, rad/s and rad/s² for joint."""
+    limits = {}
+    for motion_type, fallback in (("l", 150.0), ("j", 0.5)):
+        motions = [step["motion"] for routine in data["routines"] for step in routine["steps"]
+                   if step.get("motion", {}).get("type", "").lower() == motion_type]
+
+        # Retain manual limits when the file teaches no motion of this type.
+        limits[motion_type] = {field: max((motion[field] for motion in motions), default=fallback)
+                               for field in ("speed", "acceleration")}
+    return limits
+
+
 def routine_transitions(data):
     transitions = []
     for routine in data["routines"]:

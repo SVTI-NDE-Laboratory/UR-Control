@@ -314,10 +314,12 @@ function motionChanged() {
   const linear = $('motion').value === 'l';
   $('speed-label').textContent = linear ? 'Speed [mm/s]' : 'Speed [rad/s]';
   $('acceleration-label').textContent = linear ? 'Acceleration [mm/s²]' : 'Acceleration [rad/s²]';
-  $('speed').value = linear ? (uiDefaults.linear_speed ?? 50) : (uiDefaults.joint_speed ?? 0.05);
-  $('acceleration').value = linear ? (uiDefaults.linear_acceleration ?? 100) : (uiDefaults.joint_acceleration ?? 0.1);
-  $('speed').max = linear ? 150 : 0.5;
-  $('acceleration').max = linear ? 150 : 0.5;
+  const limits = options.motion_limits[$('motion').value];
+  $('speed').max = limits.speed;
+  $('acceleration').max = limits.acceleration;
+  // Keep the configured defaults within this routine file's limits.
+  $('speed').value = Math.min(limits.speed, linear ? (uiDefaults.linear_speed ?? 50) : (uiDefaults.joint_speed ?? 0.05));
+  $('acceleration').value = Math.min(limits.acceleration, linear ? (uiDefaults.linear_acceleration ?? 100) : (uiDefaults.joint_acceleration ?? 0.1));
   renderWaypointChoices();
 }
 

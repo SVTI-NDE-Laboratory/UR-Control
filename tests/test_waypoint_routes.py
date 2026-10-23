@@ -13,7 +13,7 @@ sys.path.insert(0, str(ROOT))
 from src.program.webapp2 import manual_worker as worker, server
 from src.program.webapp2.control import ControlWorkers
 from src.program.webapp2.settings import ROUTINE_FILE
-from src.program.webapp2.waypoint_routes import routine_transitions, waypoint_warning, waypoint_motion_options
+from src.program.webapp2.waypoint_routes import routine_transitions, waypoint_warning, waypoint_motion_options, waypoint_motion_limits
 from read_routines import read_routines_file
 
 
@@ -61,6 +61,45 @@ class RouteTests(unittest.TestCase):
     def test_high_low_pair_requires_both_points_to_exist(self):
         self.data["waypoints"] = {"p_start_h": {}}
         self.assertIsNotNone(waypoint_warning(self.data, "p_start_h", "p_start_l", "l"))
+
+
+class MotionLimitTests(unittest.TestCase):
+    def setUp(self):
+        self.data = {"waypoints": {"p_start_h": {"p": [0] * 6, "q": [0] * 6}}, "routines": [
+            {"name": "first", "steps": [
+                {"motion": {"type": "j", "speed": 2.0, "acceleration": 0.4}},
+                {"motion": {"type": "l", "speed": 250, "acceleration": 80}}]},
+            {"name": "second", "steps": [
+                {"motion": {"type": "j", "speed": 1.0, "acceleration": 0.8}},
+                {"motion": {"type": "l", "speed": 100, "acceleration": 300}}]}]}
+
+    def test_independent_maxima_across_all_routines_and_matching_api_options(self):
+        expected = {"j": {"speed": 2.0, "acceleration": 0.8}, "l": {"speed": 250, "acceleration": 300}}
+        self.assertEqual(waypoint_motion_limits(self.data), expected)
+        # Options also need waypoint names for their routine summaries.
+        for routine in self.data["routines"]:
+            for step in routine["steps"]:
+                step["waypoint"] = "p_start_h"
+        with patch.object(server, "read_routines_file", return_value=self.data):
+            self.assertEqual(server.options()["motion_limits"], expected)
+
+    def test_validator_accepts_maxima_and_rejects_excess_for_each_quantity(self):
+        with patch.object(server, "read_routines_file", return_value=self.data):
+            for motion, limits in waypoint_motion_limits(self.data).items():
+                request = {"action": "waypoint", "waypoint": "p_start_h", "motion": motion, **limits}
+                server.ManualRequest(**request)
+                for field in ("speed", "acceleration"):
+                    with self.subTest(motion=motion, field=field):
+                        with self.assertRaisesRegex(ValueError, "Manual limits"):
+                            server.ManualRequest(**{**request, field: limits[field] + 0.01})
+
+    def test_lower_routine_limits_replace_manual_caps(self):
+        self.data["routines"] = [{"steps": [{"motion": {"type": "l", "speed": 20, "acceleration": 30}}]}]
+        self.assertEqual(waypoint_motion_limits(self.data), {
+            "l": {"speed": 20, "acceleration": 30}, "j": {"speed": 0.5, "acceleration": 0.5}})
+        with patch.object(server, "read_routines_file", return_value=self.data):
+            with self.assertRaisesRegex(ValueError, "Manual limits"):
+                server.ManualRequest(action="waypoint", waypoint="p_start_h", speed=21, acceleration=30)
 
 
 class ConfirmationTests(unittest.TestCase):
@@ -136,7 +175,9 @@ class ConfirmationTests(unittest.TestCase):
     def test_small_speed_noise_does_not_block_stopped_robot(self):
         self.receiver.getActualTCPSpeed.return_value = [.0003, -.0002, .0001, .0004, -.0002, 0]
         self.request["waypoint"] = "home_to_start1"
-        self.assertTrue(worker.check_waypoint_move(self.request, self.receiver, self.data, self.directory))
+        with patch("robot_move.time.sleep") as sleep:
+            self.assertTrue(worker.check_waypoint_move(self.request, self.receiver, self.data, self.directory))
+        sleep.assert_not_called()
 
     def test_recent_motion_can_settle_before_checking_route(self):
         samples = iter([[.01, 0, 0, 0, 0, 0], [.004, 0, 0, 0, 0, 0]])

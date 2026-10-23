@@ -95,6 +95,17 @@ class PlaneTests(unittest.TestCase):
         with self.assertRaisesRegex(TimeoutError, "TCP did not stop"):
             worker.assert_in_plane(receiver, self.data)
 
+    def test_stopped_plane_check_does_not_repeat_settling_wait(self):
+        receiver = Mock()
+        receiver.getSafetyStatusBits.return_value = 0
+        receiver.getActualQ.return_value = []
+        receiver.getActualTCPPose.return_value = worker.flexible.measurement_pose(self.data, self.geometry, 500, -200)
+        receiver.getActualTCPSpeed.return_value = [0] * 6
+        with patch("robot_move.time.sleep") as sleep:
+            result = worker.assert_in_plane(receiver, self.data)
+        self.assertTrue(result["in_measurement_plane"])
+        sleep.assert_not_called()
+
     def test_entry_accepts_small_speed_noise_after_reaching_start_low(self):
         receiver = Mock()
         receiver.getSafetyStatusBits.return_value = 0

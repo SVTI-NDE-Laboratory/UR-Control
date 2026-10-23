@@ -20,7 +20,7 @@ from run_single_routine import assert_at_routine_first_waypoint
 def check_waypoint_move(request, receiver, data, directory):
     """Warn from live position, wait without moving, then verify it is unchanged."""
     assert_robot_safe(receiver)
-    wait_until_tcp_stops(receiver, timeout=3.0, settle_time=.2)
+    wait_until_tcp_stops(receiver, timeout=3.0, settle_time=.2, skip_if_stopped=True)
     pose, joints = receiver.getActualTCPPose(), receiver.getActualQ()
     source = classify_position(pose, joints, data)["waypoint"]
     warning = waypoint_warning(data, source, request["waypoint"], request["motion"])
@@ -43,7 +43,7 @@ def check_waypoint_move(request, receiver, data, directory):
     if decision.get("proceed") is not True:
         return False
     assert_robot_safe(receiver)
-    wait_until_tcp_stops(receiver, timeout=3.0, settle_time=.2)
+    wait_until_tcp_stops(receiver, timeout=3.0, settle_time=.2, skip_if_stopped=True)
     distance, rotation = tcp_target_errors(receiver.getActualTCPPose(), pose)
     actual_joints = receiver.getActualQ()
     if (distance > POSITION_TOLERANCE or rotation > ROTATION_TOLERANCE

@@ -1,6 +1,7 @@
 """Small robot communication helpers."""
 
 import socket
+import time
 
 
 SCRIPT_PORT = 30002
@@ -133,7 +134,8 @@ def assert_robot_running(robot_ip: str) -> None:
 def send_script(robot_ip: str, script: str) -> None:
     """Send one URScript program to the robot.
 
-    The robot executes the script immediately through port 30002.
+    Drain controller data before closing port 30002. This protects script
+    delivery but does not confirm that the controller executed the program.
     """
 
     if not script.endswith("\n"):
@@ -141,6 +143,23 @@ def send_script(robot_ip: str, script: str) -> None:
 
     with socket.create_connection((robot_ip, SCRIPT_PORT), timeout=5) as sock:
         sock.sendall(script.encode("utf-8"))
+
+        # UR requires reading at least 79 bytes before closing a script socket
+        # to avoid discarding the outgoing program during TCP shutdown.
+        # Allow fragmented replies, with a total read timeout of five seconds.
+        remaining = 79
+        deadline = time.monotonic() + 5.0
+        while remaining > 0:
+            read_timeout = deadline - time.monotonic()
+            if read_timeout <= 0:
+                raise TimeoutError("Timed out reading controller data after sending URScript; execution is unconfirmed.")
+            sock.settimeout(read_timeout)
+            data = sock.recv(remaining)
+
+            # A closed connection cannot satisfy the orderly-close requirement.
+            if not data:
+                raise ConnectionError("Controller closed the script socket before 79 bytes were read; execution is unconfirmed.")
+            remaining -= len(data)
 
 
 def assert_robot_safe(rtde_receive) -> None:

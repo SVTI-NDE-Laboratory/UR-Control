@@ -42,13 +42,15 @@ def wait_until_at_joint_target(
     motion_start_timeout: float = JOINT_MOTION_START_TIMEOUT,
     stall_timeout: float = CARTESIAN_STALL_TIMEOUT,
     progress_threshold: float = JOINT_PROGRESS_THRESHOLD,
-    require_target_progress: bool = True,
+    require_target_progress: bool = False,
     speed_tolerance: float = JOINT_SPEED_TOLERANCE,
     settle_time: float = JOINT_SETTLE_TIME,
 ) -> list[float]:
     """Wait until actual joints match the target and have settled.
 
-    Raises TimeoutError if the robot does not reach the target in time.
+    By default, movement of any joint counts as watchdog activity. All joints
+    must still reach the target tolerance and settle before returning.
+    Raises TimeoutError if motion fails to start, stalls, or exceeds timeout.
     """
 
     start = time.monotonic()
@@ -75,12 +77,16 @@ def wait_until_at_joint_target(
         if progress_reference is None:
             progress_reference = error
             activity_reference = list(q_actual)
+
+        # Measure every joint against the last activity reference. Small moves
+        # accumulate until any joint has moved at least the progress threshold.
         target_progress = progress_reference - error >= progress_threshold
         joint_activity = (
             max_joint_error(q_actual, activity_reference) >= progress_threshold
         )
         made_progress = target_progress if require_target_progress else joint_activity
         if made_progress:
+            # Refresh the reference so a later standstill triggers the watchdog.
             progress_reference = error
             activity_reference = list(q_actual)
             motion_started = True
@@ -201,12 +207,21 @@ def _tcp_target_reached(
     )
 
 
-def wait_until_tcp_stops(rtde_receive, timeout: float, speed_tolerance: float = 0.002, settle_time: float = 0.5) -> None:
+def wait_until_tcp_stops(rtde_receive, timeout: float, speed_tolerance: float = 0.002, settle_time: float = 0.5, skip_if_stopped: bool = False) -> None:
     """Wait until the TCP appears stopped.
 
     Safety state is checked on every poll so a stopped TCP is never mistaken
     for a successfully completed move after an emergency or protective stop.
+    Serialized web actions can accept an already stopped sample because the
+    preceding movement helper has confirmed arrival and settling.
     """
+
+    # Avoid repeating the settling wait between serialized web actions. If
+    # unexpected motion is present, use the full standstill check below.
+    if skip_if_stopped:
+        assert_robot_safe(rtde_receive)
+        if vector_norm(rtde_receive.getActualTCPSpeed()) <= speed_tolerance:
+            return
 
     time.sleep(0.2)
     start = time.monotonic()

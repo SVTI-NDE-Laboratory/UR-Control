@@ -14,7 +14,7 @@ from .control import ControlWorkers
 from .browser_session import BrowserSessions
 from .sessions import FolderSelection, MeasurementStartRequest, measurement_folder
 from .saved_configuration import configuration_folders, read_saved_configuration
-from .waypoint_routes import routine_transitions, waypoint_motion_options
+from .waypoint_routes import routine_transitions, waypoint_motion_options, waypoint_motion_limits
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
@@ -349,8 +349,9 @@ class ManualRequest(BaseModel):
             waypoint = get_waypoint(data, self.waypoint)
             if not waypoint_motion_options(self.waypoint, waypoint)["linear" if self.motion == "l" else "joint"]:
                 raise ValueError("This waypoint does not allow the selected motion type.")
-            # Installation limits deliberately match the existing manual tools.
-            speed_limit, acceleration_limit = (150, 150) if self.motion == "l" else (0.5, 0.5)
+            # Bound manual motion by the selected routine file's taught maxima.
+            limits = waypoint_motion_limits(data)[self.motion]
+            speed_limit, acceleration_limit = limits["speed"], limits["acceleration"]
             if self.speed > speed_limit or self.acceleration > acceleration_limit:
                 raise ValueError(f"Manual limits: speed <= {speed_limit}, acceleration <= {acceleration_limit}.")
         elif self.action == "routine":
@@ -366,6 +367,7 @@ def options():
     names = [name for name in preferred if name in data["waypoints"]]
     names.extend(name for name in data["waypoints"] if name not in preferred)
     return {"routine_file": ROUTINE_FILE.name,
+            "motion_limits": waypoint_motion_limits(data),
             "waypoints": [{"name": name, **waypoint_motion_options(name, data["waypoints"][name])} for name in names],
             "transitions": routine_transitions(data),
             "routines": [{"name": routine["name"], "first": routine["steps"][0]["waypoint"] if routine["steps"] else None} for routine in data["routines"]]}

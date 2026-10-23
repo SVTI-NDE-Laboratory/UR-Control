@@ -57,7 +57,7 @@ def classify_plane(pose, joints, data):
 def assert_in_plane(receiver, data, allow_outside_range=False):
     """Recheck safety, actual plane/orientation, and stationary TCP before action."""
     assert_robot_safe(receiver)
-    wait_until_tcp_stops(receiver, timeout=3.0, settle_time=.2)
+    wait_until_tcp_stops(receiver, timeout=3.0, settle_time=.2, skip_if_stopped=True)
     result = classify_plane(receiver.getActualTCPPose(), receiver.getActualQ(), data)
     if not result["in_measurement_plane"]:
         raise ValueError("Robot position or tool orientation is outside the taught measurement plane.")
