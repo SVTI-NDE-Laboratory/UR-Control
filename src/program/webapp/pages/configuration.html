@@ -24,15 +24,17 @@
         <div class="config-actions">
           <button id="reset-default" type="button">Reset default</button>
           <button id="save-default" type="button">Save as default</button>
+          <button id="load-configuration" type="button" hidden>Load configuration</button>
         </div>
       </section>
 
       <section class="panel measurement-panel" aria-label="Configuration visualization">
         <fieldset>
-          <legend>Visualization</legend>
+          <legend>Summary</legend>
+          <div class="summary-tools"><button id="show-points-list" type="button">Points list</button></div>
         <svg id="line-visualization" class="line-visualization" viewBox="0 0 640 310" role="img" aria-label="Configured measurement line"></svg>
         <div id="ongoing-measurement" class="ongoing-measurement" aria-live="polite">
-          <dl class="state-grid">
+          <dl class="state-grid measurement-state-grid">
             <dt>Phase</dt><dd id="ongoing-mode">—</dd>
             <dt>Current position [mm]</dt><dd id="ongoing-current">—</dd>
             <dt>Progress</dt><dd id="ongoing-progress">—</dd>
@@ -41,7 +43,7 @@
         </fieldset>
 
         <fieldset class="run-measurement-fieldset">
-          <legend>Run measurement</legend>
+          <legend>Run measurements</legend>
           <label for="output-directory" class="run-folder-label">Data folder</label>
           <div class="folder-control">
             <input id="output-directory" autocomplete="off">
@@ -69,6 +71,35 @@
       <button value="yes">Yes, start program</button>
     </form>
   </dialog>
+
+  <dialog id="points-selection-dialog" aria-labelledby="points-selection-title">
+    <h2 id="points-selection-title">Select points</h2>
+    <div class="inline-controls"><button id="points-select-all" type="button">Select all</button>
+      <button id="points-select-none" type="button">Clear all</button></div>
+    <div id="points-selection-list"></div>
+    <div class="actions"><button id="points-selection-cancel" type="button">Cancel</button>
+      <button id="points-selection-apply" type="button" class="primary">Apply</button></div>
+  </dialog>
+  <dialog id="points-list-dialog" aria-labelledby="points-list-title">
+    <h2 id="points-list-title">Points list</h2>
+    <p>Coordinates in the taught measurement frame.</p>
+    <div class="points-table-scroll"><table class="points-table">
+      <thead><tr><th>Point</th><th>X [mm]</th><th>Y [mm]</th><th>Status</th></tr></thead>
+      <tbody id="points-list-body"></tbody>
+    </table></div>
+    <div class="actions"><button id="close-points-list" type="button">Close</button></div>
+  </dialog>
+  <dialog id="load-configuration-dialog" aria-labelledby="load-configuration-title">
+    <h2 id="load-configuration-title">Load configuration</h2>
+    <p>Select a saved run folder in Results.</p>
+    <div class="folder-navigation"><button id="configuration-folder-up" type="button">Up</button>
+      <span id="configuration-folder-path"></span></div>
+    <div id="configuration-folders"></div>
+    <p id="configuration-load-message" role="status"></p>
+    <div class="actions"><button id="cancel-load-configuration" type="button">Cancel</button>
+      <button id="confirm-load-configuration" type="button" class="primary" disabled>Load configuration</button></div>
+  </dialog>
+  <script src="/static/point_selection.js"></script>
 
   <script>
     const form = document.getElementById('config-form');
@@ -200,7 +231,7 @@
         const active = obstacleEnabled.checked;
         element.classList.toggle('optional-disabled', !active);
         if (element.matches('input, select')) {
-          element.disabled = !active;
+          element.disabled = false;
           element.required = active;
         }
       }
@@ -247,6 +278,7 @@
     function drawVisualization() {
       synchronizeFields();
       synchronizeSpacingFromSource();
+      synchronizePointControls();
       const translation = lineMethod.value === 'translation';
       const requestedCount = Number(measurementCountInput?.value || '1');
       const count = Number.isInteger(requestedCount) && requestedCount >= 1 ? requestedCount : 1;
@@ -280,12 +312,12 @@
         const position = index * increment;
         if (position > length + 1e-9) break;
         const blocked = hasObstacle && position >= obstacleStart - 1e-9 && position <= obstacleEnd + 1e-9;
-        addSvg('circle', {cx:scale(position), cy:lowY, r:6, fill:blocked ? '#b85b5b' : '#2474a9', stroke:'white', 'stroke-width':2});
+        addSvg('circle', {cx:scale(position), cy:lowY, r:6, fill:blocked ? '#b85b5b' : isPreviewPointSelected(index + 1) ? '#2474a9' : '#9aa9b8', stroke:'white', 'stroke-width':2});
         addSvg('text', {x:scale(position), y:lowY+25, 'text-anchor':'middle', fill:'#334e60', 'font-size':12}, String(index + 1));
       }
-      addSvg('text', {x:left, y:285, fill:'#334e60', 'font-size':14}, translation ? '0 mm' : `X Start: ${formatMillimetres(numberValue('line.x_start'))}`);
-      addSvg('text', {x:right, y:285, 'text-anchor':'end', fill:'#334e60', 'font-size':14}, translation ? formatMillimetres(length) : `X End: ${formatMillimetres(numberValue('line.x_end'))}`);
-      if (!translation) addSvg('text', {x:(left+right)/2, y:55, 'text-anchor':'middle', fill:'#334e60', 'font-size':14}, `Y Offset: ${formatMillimetres(numberValue('line.offset_y'))}`);
+      addSvg('text', {x:left, y:285, fill:'#334e60', 'font-size':14}, translation ? '0 mm' : `X start: ${formatMillimetres(numberValue('line.x_start'))}`);
+      addSvg('text', {x:right, y:285, 'text-anchor':'end', fill:'#334e60', 'font-size':14}, translation ? formatMillimetres(length) : `X end: ${formatMillimetres(numberValue('line.x_end'))}`);
+      if (!translation) addSvg('text', {x:(left+right)/2, y:55, 'text-anchor':'middle', fill:'#334e60', 'font-size':14}, `Y offset: ${formatMillimetres(numberValue('line.offset_y'))}`);
 
     }
 
@@ -529,7 +561,7 @@
 
       svg.replaceChildren();
       addSvg('line', {x1:left, y1:lowY, x2:length > 0 ? right : left, y2:lowY, stroke:'#17212b', 'stroke-width':5});
-      if (obstacle && obstacle.end >= obstacle.start && obstacle.end >= origin && obstacle.start <= origin + length) {
+      if (obstacle && obstacle.present !== false && obstacle.end >= obstacle.start && obstacle.end >= origin && obstacle.start <= origin + length) {
         const start = obstacle.start - origin, end = obstacle.end - origin;
         addSvg('rect', {x:scale(start), y:obstacleBottomY-obstacleHeight, width:Math.max(2, scale(end)-scale(start)), height:obstacleHeight, rx:5, fill:'#e05252', opacity:.72});
         addSvg('text', {x:(scale(start)+scale(end))/2, y:obstacleBottomY-32, 'text-anchor':'middle', fill:'white', 'font-size':14}, 'Obstacle');
@@ -547,8 +579,8 @@
       if (currentPosition !== null) {
         addSvg('text', {x:scale(currentPosition), y:lowY-20, 'text-anchor':'middle', fill:'#1769aa', 'font-size':14, 'font-weight':700}, `Current: ${formatMillimetres(origin + currentPosition)}`);
       }
-      addSvg('text', {x:left, y:285, fill:'#334e60', 'font-size':14}, `X Start: ${formatMillimetres(origin)}`);
-      addSvg('text', {x:right, y:285, 'text-anchor':'end', fill:'#334e60', 'font-size':14}, `X End: ${formatMillimetres(origin + length)}`);
+      addSvg('text', {x:left, y:285, fill:'#334e60', 'font-size':14}, `X start: ${formatMillimetres(origin)}`);
+      addSvg('text', {x:right, y:285, 'text-anchor':'end', fill:'#334e60', 'font-size':14}, `X end: ${formatMillimetres(origin + length)}`);
 
       document.getElementById('ongoing-mode').textContent = humanizePhase(programState.mode);
       document.getElementById('ongoing-current').textContent = currentPosition === null ? '—' : formatNumber(origin + currentPosition);

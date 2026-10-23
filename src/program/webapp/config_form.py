@@ -114,7 +114,7 @@ def edited_config(
     config["line"] = parameters
     parameters["auto_fit"] = parse_value(fields.get("line.auto_fit", ["true"])[0], True)
     if parameters["auto_fit"] and parameters["x_end"] <= parameters["x_start"]:
-        raise ValueError("X End must be larger than X Start when Automatic Fit is enabled.")
+        raise ValueError("X End must be larger than X Start when Automatic fit is enabled.")
     if method == "point_to_point":
         spacing_source = fields.get(
             "line.spacing_source", ["increment"]
@@ -130,7 +130,7 @@ def edited_config(
         )
 
     for section, values in defaults.items():
-        if section in {"line", "obstacle"}:
+        if section not in {"motion", "measurement"}:
             continue
         for key, template in values.items():
             if section == "measurement" and key in ("program_path", "simulation_program_path"):
@@ -147,26 +147,28 @@ def edited_config(
                 label = FIELD_LABELS.get(key, key.replace("_", " ").title())
                 raise ValueError(f"{label}: {error}") from error
 
-    obstacle_enabled = fields.get("obstacle.enabled") == ["true"]
-    obstacle = {}
-    selected_obstacle_keys = ["start", "end"] if obstacle_enabled else []
-
-    for key in selected_obstacle_keys:
-        field_name = f"obstacle.{key}"
-        if field_name not in fields:
-            raise ValueError(f"Missing field: {FIELD_LABELS.get(key, key)}")
-        try:
-            obstacle[key] = parse_field_value(
-                key, fields[field_name][0], 0.0
-            )
-        except ValueError as error:
-            label = FIELD_LABELS.get(key, key.replace("_", " ").title())
-            raise ValueError(f"{label}: {error}") from error
-
-    if obstacle:
-        config["obstacle"] = obstacle
+    # Width is fixed by defaults; keep the center even when the obstacle is absent.
+    width = defaults["obstacle"]["width"]
+    present = fields.get("obstacle.enabled") == ["true"]
+    if "obstacle.position" in fields:
+        center = float(fields["obstacle.position"][0])
+    elif present and "obstacle.start" in fields and "obstacle.end" in fields:
+        center = (float(fields["obstacle.start"][0]) + float(fields["obstacle.end"][0])) / 2.0
     else:
-        config.pop("obstacle", None)
+        center = defaults["obstacle"]["position"]
+    config["obstacle_width"] = width
+    config["obstacle"] = {"present": present, "width": width, "position": center,
+                          "start": center - width / 2.0, "end": center + width / 2.0}
+
+    selection = defaults.get("points_selection", {})
+    mode = fields.get("points_selection.mode", [selection.get("mode", "all")])[0]
+    try:
+        from_point = int(fields.get("points_selection.from_point", [str(selection.get("from_point", 1))])[0])
+        ids_text = fields.get("points_selection.point_ids")
+        ids = [int(value.strip()) for value in ids_text[0].split(",") if value.strip()] if ids_text else selection.get("point_ids", [])
+    except ValueError as error:
+        raise ValueError("Point IDs must be whole numbers.") from error
+    config["points_selection"] = {"mode": mode, "from_point": from_point, "point_ids": ids}
 
     if method == POINT_TO_POINT:
         if routines_data is None:
@@ -277,35 +279,53 @@ def form_html(
     point_offset_attributes = "required"
     auto_fit_checked = " checked" if parameters.get("auto_fit", True) else ""
     sections = [
-        '<fieldset><legend>Measurement Line</legend>'
-        '<div class="parameter-row routine-file-row"><label for="routine-file">Routine File</label>'
+        '<fieldset><legend>Measurement line</legend>'
+        '<div class="parameter-row routine-file-row"><label for="routine-file">Routine file</label>'
         '<select id="routine-file" aria-label="Routine file used by the measurement"></select></div>'
         '<small id="point-method-note" hidden></small>'
         '<div class="toggle-row"><label class="option-toggle">'
-        f'<input id="auto-fit" type="checkbox"{auto_fit_checked}>Automatic Fit</label></div>'
+        f'<input id="auto-fit" type="checkbox"{auto_fit_checked}>Automatic fit</label></div>'
         '<div class="parameter-row double line-spacing-row">'
-        f'<span>Step Size [mm] / Nb. Points</span>{increment}'
-        f'<input id="measurement-count" name="line.number_of_measurements" type="number" min="1" step="1" value="{measurement_count}" aria-label="Nb. Points" required>'
+        f'<span>Step size [mm] / Nb. points</span>{increment}'
+        f'<input id="measurement-count" name="line.number_of_measurements" type="number" min="1" step="1" value="{measurement_count}" aria-label="Nb. points" required>'
         '</div>'
         '<div class="parameter-row double">'
-        f'<span>X Start / X End [mm]</span>{line_input("x_start", point_values["x_start"], point_offset_attributes)}'
+        f'<span>X start / X end [mm]</span>{line_input("x_start", point_values["x_start"], point_offset_attributes)}'
         f'{line_input("x_end", point_values["x_end"], point_offset_attributes)}</div>'
         '<div class="parameter-row single">'
-        f'<label for="line.offset_y">Y Offset [mm]</label>{line_input("offset_y", point_values["offset_y"], point_offset_attributes)}</div>'
+        f'<label for="line.offset_y">Y offset [mm]</label>{line_input("offset_y", point_values["offset_y"], point_offset_attributes)}</div>'
         '</fieldset>'
     ]
 
     obstacle = config.get("obstacle") or {}
-    obstacle_checked = " checked" if "start" in obstacle and "end" in obstacle else ""
-    start = input_html("obstacle", "start", 'data-optional-group="obstacle-position"')
-    end = input_html("obstacle", "end", 'data-optional-group="obstacle-position"')
+    obstacle_checked = " checked" if obstacle.get("present", False) else ""
+    width = defaults["obstacle"]["width"]
+    center = obstacle.get("position", (obstacle.get("start", 0.0) + obstacle.get("end", width)) / 2.0)
     sections.append(
         '<fieldset id="obstacle-fields"><legend>Obstacle</legend>'
-        '<div class="toggle-row">'
+        '<div class="parameter-row obstacle-summary-row">'
         '<label class="option-toggle"><input id="obstacle-enabled" name="obstacle.enabled" type="checkbox" value="true"'
-        f'{obstacle_checked}>Obstacle Exists</label></div>'
-        '<div class="parameter-row double obstacle-position-row" data-optional-group="obstacle-position">'
-        f'<span>Positions Start / End [mm]</span>{start}{end}</div>'
+        f'{obstacle_checked}>Obstacle exists</label>'
+        f'<small id="obstacle-summary"{(" hidden" if not obstacle_checked else "")}></small></div>'
+        f'<input id="obstacle-width" type="hidden" value="{html.escape(str(width), quote=True)}" readonly>'
+        f'<input id="obstacle.start" name="obstacle.start" type="hidden" value="{center-width/2}">'
+        f'<input id="obstacle.end" name="obstacle.end" type="hidden" value="{center+width/2}">'
+        '<div class="parameter-row single"><label for="obstacle.position">Position [mm]</label>'
+        f'<input id="obstacle.position" name="obstacle.position" value="{html.escape(str(center), quote=True)}" data-optional-group="obstacle-position"></div>'
+        '</fieldset>'
+    )
+
+    selection = config.get("points_selection", {})
+    options = "".join(f'<option value="{value}"' + (' selected' if selection.get("mode", "all") == value else '') + f'>{label}</option>'
+                      for value, label in (("all", "All"), ("from_point", "From point"), ("custom", "Custom")))
+    ids = html.escape(",".join(str(value) for value in selection.get("point_ids", [])), quote=True)
+    sections.append(
+        '<fieldset id="points-selection-fields"><legend>Points selection</legend>'
+        '<div class="parameter-row double"><label for="points-selection-mode">Selection</label>'
+        f'<select id="points-selection-mode" name="points_selection.mode">{options}</select>'
+        f'<input id="points-selection-from" name="points_selection.from_point" type="number" min="1" step="1" value="{selection.get("from_point", 1)}" aria-label="From point" hidden>'
+        '<button id="edit-selected-points" type="button" hidden>Select points</button></div>'
+        f'<input id="points-selection-ids" name="points_selection.point_ids" type="hidden" value="{ids}">'
         '</fieldset>'
     )
 
@@ -324,12 +344,16 @@ def form_html(
         '<div class="toggle-row">'
         '<label class="option-toggle"><input id="acquisition-server-enabled" '
         'name="acquisition.server_profile" type="checkbox" value="server"'
-        f'{server_checked}>With RTM Program</label>'
+        f'{server_checked}>With RTM program</label>'
         '<label class="option-toggle">'
         f'<input id="simulation-enabled" type="checkbox"{simulation_checked}>Simulation</label></div>'
-        f'<div class="parameter-row single force-row"><label for="measurement.target_force">Target Force [N]</label>{target}</div>'
+        f'<div class="parameter-row single force-row"><label for="measurement.target_force">Target force [N]</label>{target}</div>'
         '<div class="parameter-row single">'
-        f'<label for="measurement.max_displacement">Maximum Displacement [mm]</label>{maximum}</div>'
+        f'<label for="measurement.max_displacement">Max. displacement [mm]</label>{maximum}</div>'
+    )
+    measurement_controls += (
+        '<div class="parameter-row double"><span>Settling / Hold time [s]</span>'
+        f'{input_html("measurement", "settling_time")}{input_html("measurement", "hold_duration")}</div>'
     )
     for key, default_value in defaults["measurement"].items():
         if key in {
@@ -340,6 +364,8 @@ def form_html(
             "target_force",
             "simulation_program_path",
             "max_displacement",
+            "settling_time",
+            "hold_duration",
         }:
             continue
         label = html.escape(FIELD_LABELS.get(key, key.replace("_", " ").title()))
@@ -349,7 +375,7 @@ def form_html(
             f'{input_html("measurement", key)}</div>'
         )
     sections.append(
-        f'<fieldset><legend>Force Measurement</legend>{measurement_controls}</fieldset>'
+        f'<fieldset><legend>Force measurement</legend>{measurement_controls}</fieldset>'
     )
 
     replacements = {

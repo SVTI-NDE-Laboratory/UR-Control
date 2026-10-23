@@ -33,7 +33,7 @@ for folder in [PROGRAM_DIR, MEASUREMENT_DIR, ROBOT_DIR, ROUTINES_DIR]:
     if str(folder) not in sys.path:
         sys.path.insert(0, str(folder))
 
-from measurement_config import read_measurement_config, measurement_stop_method
+from measurement_config import read_measurement_config, measurement_stop_method, configuration_file
 from measurement_plan import first_measurable_index, write_measurement_plan
 from measurement_state import write_state
 from read_routines import get_waypoint, read_routines_file
@@ -45,7 +45,7 @@ from robot_connection import (
 )
 from run_measurements import MeasurementUnavailableError, run_measurements
 from run_routine import run_routine
-from line_planner import is_obstacle, line_positions, line_geometry, line_parameters, start_entry_crosses_obstacle
+from line_planner import line_geometry, line_parameters, start_entry_crosses_obstacle, selected_line_positions
 from data_acquisition.server_control import (
     AcquisitionControlServer,
     read_server_config,
@@ -121,7 +121,7 @@ def write_used_config(path: Path, config: dict) -> None:
     """Atomically save the effective configuration without changing defaults."""
 
     temporary_path = path.with_suffix(path.suffix + ".tmp")
-    temporary_path.write_text(json.dumps(config, indent=2) + "\n", encoding="utf-8")
+    temporary_path.write_text(json.dumps(configuration_file(config), indent=2) + "\n", encoding="utf-8")
     temporary_path.replace(path)
 
 
@@ -402,13 +402,13 @@ def first_measurement_is_blocked(
     measurement_config: dict[str, Any],
     routines_data: dict[str, Any],
 ) -> bool:
-    """Return whether the first point or the taught-start approach is blocked."""
+    """Return whether entry to the first selected point crosses the obstacle."""
 
-    positions = line_positions(measurement_config, routines_data)
+    positions = selected_line_positions(measurement_config, routines_data)
     if not positions:
         return False
-    return is_obstacle(positions[0][1], measurement_config) or start_entry_crosses_obstacle(
-        measurement_config, line_geometry(measurement_config, routines_data)
+    return start_entry_crosses_obstacle(
+        measurement_config, line_geometry(measurement_config, routines_data), positions[0][1]
     )
 
 

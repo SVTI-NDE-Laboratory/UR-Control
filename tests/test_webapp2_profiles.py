@@ -41,7 +41,7 @@ class ProfileTests(unittest.TestCase):
         self.assertFalse((self.profile.path.parent / "measurement_mira.json").exists())
         defaults = self.profile.paths["measurement_defaults"]
         config = read_object(defaults)
-        config["measurement"]["target_force"] = 240
+        config["force"]["target_force"] = 240
         write_object(defaults, config)
         before = defaults.read_bytes()
         initialize(self.data)
@@ -59,20 +59,41 @@ class ProfileTests(unittest.TestCase):
     def test_force_defaults_migrate_and_preserve_custom_target_and_paths(self):
         path = self.profile.paths["measurement_defaults"]
         config = read_object(path)
-        measurement = config["measurement"]
+        measurement = config["force"]
         for key in ("target_force", "settling_time", "simulation_program_path"):
             measurement.pop(key)
         measurement.update(contact_threshold=140, holding_force=250,
                            program_path="Custom/Force Cycle.urp")
         write_object(path, config)
         load_profile(self.data)
-        updated = read_object(path)["measurement"]
+        updated = read_object(path)["force"]
         self.assertEqual(updated["target_force"], 250)
         self.assertEqual(updated["settling_time"], 1.5)
         self.assertEqual(updated["program_path"], "Custom/Force Cycle.urp")
         self.assertEqual(updated["simulation_program_path"], "Custom/apply_force_simulation.urp")
         self.assertNotIn("contact_threshold", updated)
         self.assertNotIn("holding_force", updated)
+
+    def test_point_selection_defaults_are_added_and_custom_values_survive_restart(self):
+        path = self.profile.paths["measurement_defaults"]
+        config = read_object(path)
+        from measurement_config import canonical_config
+        config = canonical_config(config)
+        config.pop("obstacle", None)
+        config.pop("obstacle_width", None)
+        config.pop("points_selection", None)
+        write_object(path, config)
+        load_profile(self.data)
+        updated = read_object(path)
+        self.assertEqual(updated["obstacle"]["width"], 200.0)
+        self.assertEqual(updated["points_selections"]["mode"], "all")
+        updated["obstacle"]["width"] = 320.0
+        updated["points_selections"] = {"mode": "custom", "point_ids": [2, 4]}
+        from measurement_config import configuration_file
+        updated = configuration_file(updated)
+        write_object(path, updated)
+        load_profile(self.data)
+        self.assertEqual(read_object(path), updated)
 
     def test_relative_profile_paths_survive_copy_and_restart(self):
         selected = self.alternative()
@@ -104,7 +125,7 @@ class ProfileTests(unittest.TestCase):
         write_object(selected, values)
         measurement_path = selected.parent / "measurement_default.json"
         measurement = read_object(measurement_path)
-        measurement["measurement"]["max_displacement"] = -1
+        measurement["force"]["max_displacement"] = -1
         write_object(measurement_path, measurement)
         with self.assertRaisesRegex(ValueError, "displacement"):
             select_profile(self.profile, str(selected))
@@ -337,7 +358,7 @@ class BrandedLocalDataTests(unittest.TestCase):
         result.write_bytes(b'original measurement data')
         defaults = profile.paths['measurement_defaults']
         values = read_object(defaults)
-        values['measurement']['target_force'] = 250
+        values['force']['target_force'] = 250
         write_object(defaults, values)
         original_preferences = profile.preferences_path.read_bytes()
         migrated = load_profile()
@@ -372,7 +393,7 @@ class BrandedLocalDataTests(unittest.TestCase):
         old = load_profile(self.old)
         current = load_profile(self.new)
         values = read_object(current.paths['measurement_defaults'])
-        values['measurement']['target_force'] = 260
+        values['force']['target_force'] = 260
         write_object(current.paths['measurement_defaults'], values)
         expected = current.paths['measurement_defaults'].read_bytes()
         migrate_legacy_directory()

@@ -43,7 +43,7 @@ h1 { margin-bottom: 0; font-size: 1.65rem; }
 .workspace { display: grid; grid-template-columns: minmax(380px, 1fr) minmax(420px, 1fr); gap: 20px; }
 .panel { min-width: 0; padding: 16px; border: 1px solid #cbd5df; border-radius: 9px; background: #f8fafb; }
 .measurement-panel { display: flex; flex-direction: column; }
-.run-measurement-fieldset { margin-top: auto; }
+.run-measurement-fieldset { margin-top: 0; }
 .measurement-panel::after {
   content: '';
   flex: 0 0 37px;
@@ -73,7 +73,7 @@ fieldset > .option-toggle { margin-bottom: 12px; }
 .run-options { margin-bottom: 12px; }
 .optional-disabled { opacity: .46; }
 .actions { justify-content: flex-end; margin-top: 14px; }
-.config-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 14px; }
+.config-actions { display: flex; flex-wrap: wrap; justify-content: flex-start; gap: 10px; margin-top: 14px; }
 
 button {
   padding: 9px 16px;
@@ -123,3 +123,34 @@ button:disabled { cursor: not-allowed; opacity: .48; }
   .routine-file-row select { grid-column: auto; }
 }
 .simulation-force { filter: blur(3px); opacity: .5; }
+
+/* Fixed obstacle dimensions and derived endpoints stay readable. */
+.derived-parameter { background: #edf2f6; color: #687681; }
+#points-selection-list { max-height: 55vh; overflow-y: auto; margin-top: 14px; }
+.point-choice { display: flex; align-items: center; gap: 10px; padding: 7px 0; }
+.point-choice input { width: auto; }
+.point-choice:has(input:disabled) { color: #87939c; }
+[hidden] { display: none !important; }
+
+.obstacle-summary-row > small { grid-column: 2 / 4; color: #687681; line-height: 1.5; }
+.obstacle-summary-row .option-toggle { margin: 0; }
+@media (max-width: 650px) {
+  .obstacle-summary-row > small { grid-column: auto; }
+}
+
+/* Current position and progress share a row below the phase. */
+.measurement-state-grid { grid-template-columns: max-content minmax(0, 1fr) max-content minmax(0, 1fr); }
+.measurement-state-grid > dd:first-of-type { grid-column: 2 / -1; }
+
+/* Keep typed numeric input while hiding browser increment controls. */
+input[type="number"] { appearance: textfield; -moz-appearance: textfield; }
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+#load-configuration { margin-left: auto; }
+.summary-tools { display: flex; justify-content: flex-end; margin-bottom: 4px; }
+.points-table-scroll, #configuration-folders { max-height: 50vh; overflow: auto; }
+.points-table { width: 100%; border-collapse: collapse; text-align: left; }
+.points-table th, .points-table td { padding: 8px; border-bottom: 1px solid #d7e0e7; }
+.folder-navigation { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
+#configuration-folder-path { overflow-wrap: anywhere; }
+.configuration-folder { display: block; width: 100%; text-align: left; margin-bottom: 6px; }

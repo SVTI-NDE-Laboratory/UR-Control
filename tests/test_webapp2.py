@@ -331,7 +331,9 @@ class LifecycleTests(unittest.TestCase):
             output = Path(directory)
             (output / "start_movement.signal").write_text("stale")
             (output / "feedback.json").write_text('{"robot_connected": true}')
-            workers.start_measurement({"example": "config"}, output, False, ROUTINE_FILE)
+            workers.start_measurement(server.legacy.load_default_config("point_to_point"), output, False, ROUTINE_FILE)
+            saved = json.loads((output / "config_used.json").read_text())
+            self.assertEqual(list(saved), ["line", "obstacle", "points_selections", "force", "motion"])
             arguments = spawn.call_args.args[1]
             self.assertEqual(arguments[arguments.index("--routines-file") + 1], ROUTINE_FILE)
             self.assertEqual(arguments[arguments.index("--config") + 1], output / "config_used.json")

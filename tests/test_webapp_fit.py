@@ -34,7 +34,7 @@ class FitTests(unittest.TestCase):
         for key, value in self.config["line"].items():
             result[f"line.{key}"] = [str(value).lower()]
         for section, values in self.config.items():
-            if section == "line":
+            if section not in {"motion", "measurement"}:
                 continue
             for key, value in values.items():
                 text = ", ".join(map(str, value)) if isinstance(value, list) else str(value).lower()

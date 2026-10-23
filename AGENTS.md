@@ -23,9 +23,10 @@ the preferred style.
 - Describe what the code does now. Avoid development history, references to
   previous implementations, and unnecessary emphatic wording or capitalization.
 - Preserve the user's manual edits and established style when making changes.
-- Preserve key order in `src/program/config/config_default.json`. Top-level
-  sections are `line`, `motion`, `measurement`. Within `measurement`, keep:
+- Preserve measurement configuration order: `line`, `obstacle`,
+  `points_selections`, `force`, then `motion`. In `line`, use `steps` and
+  `nb_points`. Always retain obstacle `present`, `width`, `position`, and
+  calculated `start`/`end`, even when absent. Within `force`, keep:
   `program_path`, `target_force`, `settling_time`, `max_displacement`,
   `stop_method`, `hold_duration`, `simulation`, `simulation_program_path`.
-  Preserve the existing order inside `line` and `motion` as well; do not sort
-  keys when writing configuration files.
+  Do not sort keys when writing configuration files.

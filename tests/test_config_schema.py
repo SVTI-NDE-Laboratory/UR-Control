@@ -12,7 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from src.program.webapp2 import server
 from src.program.webapp2.settings import ROUTINE_FILE
-from measurement_config import canonical_config, read_measurement_config, validate_measurement_config, measurement_stop_method
+from measurement_config import canonical_config, configuration_file, read_measurement_config, validate_measurement_config, measurement_stop_method
 from measurement_plan import create_measurement_plan
 from line_planner import line_geometry, crosses_obstacle
 from read_routines import read_routines_file
@@ -37,10 +37,45 @@ class ConfigSchemaTests(unittest.TestCase):
         raw = json.loads(path.read_text())
         self.assertNotIn("method", raw["line"])
         self.assertNotIn("parameters", raw["line"])
-        self.assertNotIn("data_server", raw["measurement"])
+        self.assertNotIn("data_server", raw["force"])
+        self.assertEqual(list(raw), ["line", "obstacle", "points_selections", "force", "motion"])
+        self.assertIn("steps", raw["line"])
+        self.assertIn("nb_points", raw["line"])
         loaded = read_measurement_config(path, routines_data=self.data)
         self.assertEqual(loaded["measurement"]["stop_method"], "client_feedback")
         self.assertGreater(len(create_measurement_plan(loaded, self.data)["points"]), 1)
+
+    def test_ordered_schema_round_trip_preserves_plan_and_force(self):
+        self.config["obstacle"] = {"present": True, "width": 200., "position": 400.}
+        self.config["points_selection"] = {"mode": "custom", "point_ids": [2, 7]}
+        stored = configuration_file(self.config)
+        self.assertEqual(list(stored), ["line", "obstacle", "points_selections", "force", "motion"])
+        self.assertEqual(stored["obstacle"], {"present": True, "width": 200., "position": 400., "start": 300., "end": 500.})
+        self.assertNotIn("measurement", stored)
+        self.assertNotIn("increment", stored["line"])
+        self.assertEqual(configuration_file(stored), stored)
+        restored = canonical_config(stored)
+        self.assertEqual(restored["measurement"], self.config["measurement"])
+        self.assertEqual(create_measurement_plan(restored, self.data)["points"],
+                         create_measurement_plan(self.config, self.data)["points"])
+
+    def test_disabled_obstacle_retains_center_width_and_bounds(self):
+        fields = self.fields()
+        fields["obstacle.position"] = ["650"]
+        saved = edited_config(self.config, fields, self.data)
+        stored = configuration_file(saved)
+        self.assertEqual(stored["obstacle"], {"present": False, "width": 200., "position": 650., "start": 550., "end": 750.})
+        self.assertTrue(all(point["measured"] for point in create_measurement_plan(saved, self.data)["points"]))
+        fields["obstacle.enabled"] = ["true"]
+        enabled = edited_config(canonical_config(stored), fields, self.data)
+        self.assertTrue(enabled["obstacle"]["present"])
+        self.assertEqual(enabled["obstacle"]["position"], 650.)
+
+    def test_explicit_interval_migration_preserves_its_width(self):
+        self.config["obstacle"] = {"start": 300., "end": 650.}
+        stored = configuration_file(self.config)
+        self.assertEqual(stored["obstacle"], {"present": True, "width": 350., "position": 475., "start": 300., "end": 650.})
+        self.assertEqual(configuration_file(stored), stored)
 
     def test_legacy_point_config_is_converted_without_changing_the_plan(self):
         old = deepcopy(self.config)

@@ -11,6 +11,7 @@ from uuid import uuid4
 from .settings import ROOT, RUNTIME, ROUTINE_FILE, PROFILE
 from webapp.worker_manager import WorkerManager
 from webapp.launcher import write_json_atomic
+from measurement_config import configuration_file
 
 
 def read_json(path, fallback=None):
@@ -70,7 +71,7 @@ class ControlWorkers(WorkerManager):
             self._state_file = output_directory / "state.json"
             self._kind = "measurement"
             config_path = output_directory / "config_used.json"
-            write_json_atomic(config_path, config)
+            write_json_atomic(config_path, configuration_file(config))
             write_json_atomic(self._state_file, {"mode": "starting"})
             (output_directory / "feedback.json").unlink(missing_ok=True)
             signal = output_directory / "start_movement.signal"

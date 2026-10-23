@@ -13,6 +13,7 @@ from .routine_setup import RoutineSelection, RoutineCreation, routine_directory,
 from .control import ControlWorkers
 from .browser_session import BrowserSessions
 from .sessions import FolderSelection, MeasurementStartRequest, measurement_folder
+from .saved_configuration import configuration_folders, read_saved_configuration
 from .waypoint_routes import routine_transitions, waypoint_motion_options
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse
@@ -114,6 +115,9 @@ def shell(request: Request):
 @api.get("/configuration", response_class=HTMLResponse)
 def configuration(defaults: bool = False, method: str = "point_to_point", server_profile: str | None = None):
     page = legacy.configuration_page(defaults, method, server_profile)
+    preserve = legacy.state.get_config() is not None and not defaults
+    page = page.replace('<form id="config-form">', f'<form id="config-form" data-preserve-line="{str(preserve).lower()}">')
+    page = page.replace('id="load-configuration" type="button" hidden', 'id="load-configuration" type="button"')
     page = page.replace("<title>UR15 Control</title>", "<title>RTM Cobot Studio</title>")
     # Adapt only WebApp2's copy of the shared form; the original app keeps its UI.
     page = page.replace("</head>", '<link rel="stylesheet" href="/v2-static/dialogs.css">'
@@ -123,11 +127,39 @@ def configuration(defaults: bool = False, method: str = "point_to_point", server
     page = re.sub(r'<script>.*?</script>', '<script src="/v2-static/automatic.js" defer></script>',
                   page, count=1, flags=re.S)
     # Retain the tested original form/visualization, embedded in the new shell.
-    routine_row = ('<div class="parameter-row routine-file-row"><label for="routine-file">Routine File</label>'
+    routine_row = ('<div class="parameter-row routine-file-row"><label for="routine-file">Routine file</label>'
                    '<select id="routine-file" aria-label="Routine file used by the measurement"></select></div>')
     page = page.replace(routine_row, "")
     return page.replace(
         "</head>", '<link rel="stylesheet" href="/v2-static/automatic.css"><style>.app-header,#point-method-note{display:none} html{overflow:hidden} body{min-height:0;padding:0;background:transparent;display:flow-root} main{width:100%;min-height:0;margin:0;padding:0;box-shadow:none;background:transparent}</style></head>')
+
+
+class SavedConfigurationSelection(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    directory: str = Field(max_length=1000)
+
+
+@api.get("/api/configuration/results")
+def saved_configuration_folders(directory: str = ""):
+    try:
+        return configuration_folders(PROFILE.paths["results_directory"], directory)
+    except (OSError, ValueError) as error:
+        raise HTTPException(422, str(error)) from error
+
+
+@api.post("/api/configuration/load")
+def load_saved_configuration(request: SavedConfigurationSelection):
+    if workers.snapshot()["running"]:
+        raise HTTPException(409, "Wait for the current robot action to finish before loading a configuration.")
+    try:
+        routines = read_routines_file(ROUTINE_FILE)
+        config = read_saved_configuration(PROFILE.paths["results_directory"], request.directory, routines)
+        legacy.write_json_atomic(legacy.TEMP_CONFIG_FILE, measurement_config.configuration_file(config))
+    except (OSError, KeyError, TypeError, ValueError) as error:
+        raise HTTPException(422, f"Could not load this configuration: {error}") from error
+    legacy.state.set_loaded_defaults(config)
+    legacy.state.set_config(config)
+    return {"loaded": True, "directory": request.directory}
 
 
 @api.get("/api/configuration/routine-files")

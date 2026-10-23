@@ -32,6 +32,8 @@ INITIALIZATION_TIMEOUT = 5.0
 # includes a small margin so Python cannot time out just before status arrives.
 APPROACH_STATUS_TIMEOUT = 15.0
 SIMULATION_STATUS_TIMEOUT = 7.0
+# Match approach_speed in apply_force_simulation.script.
+SIMULATION_APPROACH_SPEED_MM_S = 5.0
 RETURN_TIMEOUT = 30.0
 RETURN_ACCELERATION = 100.0
 RETURN_SPEED = 20.0
@@ -94,6 +96,10 @@ def wait_for_status(
         last_status = rtde_receive.getOutputIntRegister(42)
         if last_status == 4:
             raise ValueError("Force program rejected its settings (status 4).")
+        if last_status == 5:
+            raise RuntimeError("Simulation stopped at its 40 N force guard (status 5); automatic return disabled.")
+        if last_status == 6:
+            raise TimeoutError("Simulation motion timed out (status 6); automatic return disabled.")
         if last_status in accepted_statuses:
             return last_status
         now = time.monotonic()
@@ -145,7 +151,7 @@ def apply_force(robot_ip: str, program_path: str, max_distance: float, target_fo
 
     ``max_distance`` is configured in millimetres. It is converted to metres
     only when written to the robot input register. ``settling_time`` is in
-    seconds. Simulation selects its own stationary URP; both programs signal
+    seconds. Simulation selects its own guarded travel URP; both programs signal
     readiness after settling and wait for the same Python release.
     """
 
@@ -232,9 +238,10 @@ def apply_force(robot_ip: str, program_path: str, max_distance: float, target_fo
         status = wait_for_status(
             rtde_receive,
             {1, 2, 3},
-            (SIMULATION_STATUS_TIMEOUT if simulation else APPROACH_STATUS_TIMEOUT) + settling_time,
+            (max_distance / SIMULATION_APPROACH_SPEED_MM_S + SIMULATION_STATUS_TIMEOUT
+             if simulation else APPROACH_STATUS_TIMEOUT) + settling_time,
             "force approach and settling",
-            # Settling and simulation intentionally wait in place; the URP bounds approach.
+            # Settling waits in place; the URP bounds approach motion.
             motion_watchdog=False,
         )
         measurement_timestamp = (
@@ -291,20 +298,30 @@ def apply_force(robot_ip: str, program_path: str, max_distance: float, target_fo
         return_status = wait_for_status(
             rtde_receive,
             {0, 3},
-            RETURN_TIMEOUT,
+            max(RETURN_TIMEOUT, max_distance / RETURN_SPEED + SIMULATION_STATUS_TIMEOUT)
+            if simulation else RETURN_TIMEOUT,
             "return to the measurement pose",
         )
         if return_status == 3:
             raise TimeoutError("Robot timed out while waiting for acknowledgement.")
         print("Force program: verifying the pre-force pose.")
-        returned_pose = ensure_at_tcp_target(
-            robot_ip,
-            rtde_receive,
-            pre_force_pose,
-            millimetres_to_metres(RETURN_ACCELERATION),
-            millimetres_to_metres(RETURN_SPEED),
-            RETURN_TIMEOUT,
-        )
+        if simulation:
+            # Simulation motion stays inside the guarded URP. Do not issue an
+            # unguarded corrective move if its reported return is inaccurate.
+            returned_pose = rtde_receive.getActualTCPPose()
+            position_error, rotation_error = tcp_target_errors(returned_pose, pre_force_pose)
+            linear_speed = math.sqrt(sum(value * value for value in rtde_receive.getActualTCPSpeed()[:3]))
+            if position_error > 0.001 or rotation_error > 0.01 or linear_speed > 0.002:
+                raise RuntimeError("Simulation return verification failed; automatic correction disabled.")
+        else:
+            returned_pose = ensure_at_tcp_target(
+                robot_ip,
+                rtde_receive,
+                pre_force_pose,
+                millimetres_to_metres(RETURN_ACCELERATION),
+                millimetres_to_metres(RETURN_SPEED),
+                RETURN_TIMEOUT,
+            )
         position_error, rotation_error = tcp_target_errors(
             returned_pose, pre_force_pose
         )

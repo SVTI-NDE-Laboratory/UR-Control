@@ -153,17 +153,6 @@ class ApplyForceScriptTests(unittest.TestCase):
             self.assertEqual(robot.statuses, [0, 2, 0])
             self.assertIn(("return",), robot.events)
 
-    def test_stationary_simulation_waits_for_the_same_release(self):
-        robot = RobotStub(ack_after=7)
-        result = robot.run(SCRIPT.with_name("apply_force_simulation.script"))
-        self.assertEqual(robot.statuses, [0, 1, 0])
-        self.assertEqual(robot.force_calls, 0)
-        self.assertTrue(result["force_reached"])
-        self.assertTrue(result["force_ready"])
-        self.assertGreaterEqual(result["approach_elapsed"], 1)
-        self.assertGreaterEqual(result["settling_elapsed"], result["settling_time"])
-        self.assertEqual(robot.hold_ticks, 7)
-        self.assertFalse(any(event[0] in ("force", "end_force", "return") for event in robot.events))
 
 
 if __name__ == "__main__":

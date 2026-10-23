@@ -255,11 +255,13 @@ def validate_profile(path, data_dir, *, values=None):
             sys.path.insert(0, str(folder))
     from measurement_config import canonical_config, validate_measurement_config
     for key in ("measurement_defaults",):
-        defaults = read_object(paths[key])
-        if not all(isinstance(defaults.get(section), dict) for section in ("line", "motion", "measurement")):
-            raise ValueError(f"{key} must contain line, motion and measurement objects.")
+        stored = read_object(paths[key])
+        if (not all(isinstance(stored.get(section), dict) for section in ("line", "motion"))
+                or not isinstance(stored.get("force", stored.get("measurement")), dict)):
+            raise ValueError(f"{key} must contain line, force and motion objects.")
+        defaults = canonical_config(stored)
         if not isinstance(defaults["measurement"].get("program_path"), str) or not defaults["measurement"]["program_path"].strip():
-            raise ValueError(f"{key} must specify measurement.program_path on the robot controller.")
+            raise ValueError(f"{key} must specify force.program_path on the robot controller.")
         for name in ("start_point", "end_point"):
             if defaults["line"].get(name) not in routines["waypoints"]:
                 raise ValueError(f"{key}: {name} is missing from the selected routine file.")
@@ -302,12 +304,11 @@ def load_profile(data_dir=None):
         raise ValueError("Unsupported preferences.json schema_version; expected 1.")
     selected = values.get("configuration_path")
     profile = validate_profile(resolve_path(selected, data_dir), data_dir)
-    from measurement_config import normalize_force_settings
+    from measurement_config import configuration_file
     defaults = read_object(profile.paths["measurement_defaults"])
-    force_settings = normalize_force_settings(defaults["measurement"])
-    if force_settings != defaults["measurement"]:
-        defaults["measurement"] = force_settings
-        write_object(profile.paths["measurement_defaults"], defaults)
+    updated = configuration_file(defaults)
+    if updated != defaults or list(updated) != list(defaults):
+        write_object(profile.paths["measurement_defaults"], updated)
     ui_defaults = profile.values.get("ui_defaults", {})
     if "threshold" in ui_defaults:
         values = {**profile.values, "ui_defaults": {key: value for key, value in ui_defaults.items() if key != "threshold"}}

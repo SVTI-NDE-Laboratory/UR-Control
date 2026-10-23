@@ -26,11 +26,11 @@ class Clock:
 class ForceProgramCompletionTests(unittest.TestCase):
     def run_cycle(self, feedback=False, completion_delay=3.5, terminal_status=0,
                   safety_error=False, hold_duration=0.5, simulation=True,
-                  ready_delay=.1, settling_time=1.5):
+                  ready_delay=.1, settling_time=1.5, return_error=0):
         clock = Clock()
         io = Mock()
         receiver = Mock()
-        receiver.getActualTCPPose.return_value = [0.] * 6
+        receiver.getActualTCPPose.side_effect = [[0.] * 6, [return_error, 0., 0., 0., 0., 0.]]
         receiver.getActualTCPSpeed.return_value = [0.] * 6
         reached_at = ready_delay
         acknowledged_at = None
@@ -89,8 +89,11 @@ class ForceProgramCompletionTests(unittest.TestCase):
                                  {43: .05, 44: settling_time, 45: 160})
                 self.assertGreaterEqual(clock.now, reached_at + completion_delay)
                 stop.assert_not_called()
-                verify.assert_called_once()
-                self.assertEqual(verify.call_args.args[2], [0.] * 6)
+                if simulation:
+                    verify.assert_not_called()
+                else:
+                    verify.assert_called_once()
+                    self.assertEqual(verify.call_args.args[2], [0.] * 6)
             finally:
                 self.assertEqual({call.args[0] for call in io.setInputDoubleRegister.call_args_list}, {43, 44, 45})
                 self.assertTrue(all(42 <= call.args[0] <= 46 for call in io.setInputIntRegister.call_args_list))
@@ -113,11 +116,26 @@ class ForceProgramCompletionTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "settings"):
             self.run_cycle(terminal_status=4)
 
+    def test_simulation_force_guard_stops_without_return_correction(self):
+        with self.assertRaisesRegex(RuntimeError, "40 N force guard"):
+            self.run_cycle(terminal_status=5)
+
+    def test_simulation_motion_timeout_stops_without_return_correction(self):
+        with self.assertRaisesRegex(TimeoutError, "Simulation motion timed out"):
+            self.run_cycle(terminal_status=6)
+
+    def test_simulation_readiness_deadline_includes_configured_travel(self):
+        self.run_cycle(ready_delay=12, settling_time=1.5)
+
+    def test_simulation_return_error_never_triggers_unguarded_correction(self):
+        with self.assertRaisesRegex(RuntimeError, "automatic correction disabled"):
+            self.run_cycle(return_error=.002)
+
     def test_feedback_release_can_complete_without_observable_return_motion(self):
         self.run_cycle(feedback=True)
 
     def test_missing_completion_still_times_out_and_stops_robot(self):
-        with self.assertRaisesRegex(TimeoutError, "timed out during return.*6.0 s"):
+        with self.assertRaisesRegex(TimeoutError, "timed out during return.*9.5 s"):
             self.run_cycle(completion_delay=100)
 
     def test_controller_acknowledgement_timeout_is_reported_immediately(self):

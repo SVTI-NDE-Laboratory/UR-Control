@@ -5,7 +5,7 @@ from datetime import datetime
 from pathlib import Path
 
 from atomic_json import write_json_atomic
-from line_planner import POINT_TO_POINT, is_obstacle, line_geometry, line_positions, point_pose
+from line_planner import POINT_TO_POINT, is_obstacle, line_geometry, line_positions, point_pose, point_is_selected, selected_line_positions
 
 
 def display_tcp_pose(pose: list[float]) -> list[float]:
@@ -17,19 +17,19 @@ def display_tcp_pose(pose: list[float]) -> list[float]:
 def create_measurement_plan(config: dict, routines_data: dict | None = None) -> dict:
     """Return a plan for every sampled line point.
 
-    ``measurement_index`` is the original one-based sample number. Points inside
-    an obstacle remain in the plan with ``measured=false`` so the output shows
-    exactly which original IDs were skipped.
+    ``measurement_index`` is the original one-based sample number. Obstructed
+    and unselected points remain with ``measured=false`` and a skip reason.
     """
 
     points = []
     geometry = line_geometry(config, routines_data)
     for sample_index, line_position in line_positions(config, routines_data):
         blocked = is_obstacle(line_position, config)
+        selected = point_is_selected(sample_index + 1, config)
         point = {
             "measurement_index": sample_index + 1,
             "line_position": round(line_position, 12),
-            "measured": not blocked,
+            "measured": selected and not blocked,
             "data": {
                 "timestamp": None,
                 "force_reached": None,
@@ -37,6 +37,8 @@ def create_measurement_plan(config: dict, routines_data: dict | None = None) -> 
         }
         if blocked:
             point["skip_reason"] = "obstacle"
+        elif not selected:
+            point["skip_reason"] = "not_selected"
         if geometry["method"] == POINT_TO_POINT:
             point["x_coordinate"] = round(geometry["x_start"] + line_position, 12)
             point["y_coordinate"] = geometry["offset_y"]
@@ -61,11 +63,10 @@ def create_measurement_plan(config: dict, routines_data: dict | None = None) -> 
 
 
 def first_measurable_index(config: dict, routines_data: dict | None = None) -> int | None:
-    """Return the first actual one-based measurement index that is not skipped."""
+    """Return the first selected, unobstructed one-based point ID."""
 
-    for sample_index, line_position in line_positions(config, routines_data):
-        if not is_obstacle(line_position, config):
-            return sample_index + 1
+    for sample_index, line_position in selected_line_positions(config, routines_data):
+        return sample_index + 1
     return None
 
 

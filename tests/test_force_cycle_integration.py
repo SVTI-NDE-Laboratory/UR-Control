@@ -1,11 +1,10 @@
-"""Force defaults, form schema, and stationary simulation protocol checks."""
+"""Force defaults, form schema, and force-cycle protocol checks."""
 
 from copy import deepcopy
 from pathlib import Path
 import unittest
-from unittest.mock import Mock
 
-from test_apply_force_script import RobotStub, SCRIPT
+from test_apply_force_script import SCRIPT
 from src.program.webapp2 import server
 from measurement_config import canonical_config, validate_force_config
 from webapp.config_form import form_html
@@ -18,37 +17,6 @@ class ForceCycleIntegrationTests(unittest.TestCase):
             return '\n'.join(line.rstrip() for line in path.read_text(encoding='utf-8').splitlines())
         self.assertEqual(normalized(SCRIPT), normalized(reviewed))
         self.assertEqual(normalized(SCRIPT.with_name('apply_force_from_ur_settling.script')), normalized(reviewed))
-
-    def test_simulation_uses_only_timers_and_registers(self):
-        for delay in (0, .5, 2.5):
-            with self.subTest(delay=delay):
-                robot = RobotStub(ack_after=4)
-                forbidden = Mock(side_effect=AssertionError('Stationary simulation must not inspect force or move'))
-                reads = []
-
-                def read_float(register):
-                    reads.append(register)
-                    return {43: .05, 44: delay, 45: 200}[register]
-
-                result = robot.run(SCRIPT.with_name('apply_force_simulation.script'), {
-                    'read_input_float_register': read_float,
-                    **{name: forbidden for name in ('get_actual_tcp_pose', 'get_tcp_force', 'zero_ftsensor',
-                                                   'force_mode', 'end_force_mode', 'movel', 'stopl')},
-                })
-                self.assertEqual(reads, [43, 44, 45])
-                self.assertEqual(robot.statuses, [0, 1, 0])
-                self.assertGreaterEqual(result['approach_elapsed'], 1)
-                self.assertGreaterEqual(result['settling_elapsed'], delay)
-                self.assertTrue(result['force_ready'])
-                self.assertEqual(robot.hold_ticks, 4)
-                forbidden.assert_not_called()
-
-    def test_simulation_waits_for_client_release(self):
-        robot = RobotStub(ack_after=None)
-        with self.assertRaisesRegex(AssertionError, 'test budget'):
-            robot.run(SCRIPT.with_name('apply_force_simulation.script'))
-        self.assertEqual(robot.statuses, [0, 1])
-        self.assertEqual(robot.force_calls, 0)
 
     def test_old_force_config_migrates_to_one_target(self):
         config = server.legacy.load_default_config('point_to_point')

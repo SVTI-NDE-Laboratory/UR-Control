@@ -67,20 +67,22 @@ Test-NetConnection 192.168.3.10 -Port 30002
 ## 2. Robot Programs For Force Measurement
 
 The Python program loads a URP on the robot controller for each force cycle.
-The selected URP is configured with `measurement.program_path`.
+The selected URP is configured with `force.program_path`.
 
 The real program uses `src/measurement/polyscope_scripts/apply_force_from_ur_settling.script`.
-Set its controller URP in `measurement.program_path`. The identical `apply_force.script`
-is also provided. The stationary simulation uses `apply_force_simulation.script`, with
-its controller URP selected by `measurement.simulation_program_path`.
+Set its controller URP in `force.program_path`. The identical `apply_force.script`
+is also provided. The guarded travel simulation uses `apply_force_simulation.script`, with
+its controller URP selected by `force.simulation_program_path`.
 
 Copy each source into its PolyScope Script node and save its URP on the controller.
 Local source changes do not update a controller-side program.
 
 The real cycle enters force mode once, reaches `target_force`, waits `settling_time`,
 then reports readiness. Python's timer or acquisition client releases the hold.
-Simulation waits one second, then the same settling delay and release handshake;
-it does not issue motion or force commands or read the force sensor.
+Simulation moves the configured distance along starting TCP Z+ at up to 5 mm/s,
+then uses the same settling delay and release handshake before returning. It
+monitors resultant XYZ force throughout: a 40 N guard stops and aborts in place.
+This software guard cannot guarantee a 50 N peak limit during stopping.
 
 Force-program registers:
 
@@ -191,7 +193,7 @@ The single measurement default is:
 src/program/config/config_default.json
 ```
 
-Select `measurement.stop_method` as `client_feedback` for RTM acquisition or
+Select `force.stop_method` as `client_feedback` for RTM acquisition or
 `timer` for a local measurement timer. Webapp2 seeds this file into the active
 profile's `measurement_default.json`; both stop modes share that profile.
 
@@ -200,9 +202,9 @@ Important fields:
 | Field | Meaning |
 |---|---|
 | `line.method` | Use `point_to_point` for taught start/end waypoints |
-| `line.parameters.increment` | Distance between measurement points [mm] when spacing source is `increment` |
-| `line.parameters.number_of_measurements` | Number of points when spacing source is `count` |
-| `line.parameters.spacing_source` | Either `increment` or `count` |
+| `line.steps` | Distance between measurement points [mm] when spacing source is `increment` |
+| `line.nb_points` | Number of points when spacing source is `count` |
+| `line.spacing_source` | Either `increment` or `count` |
 | `line.parameters.x_start` | Start offset along `p_start_l -> p_end_l` [mm] |
 | `line.parameters.x_end` | End offset along `p_start_l -> p_end_l` [mm]; `0` means full taught length |
 | `line.parameters.offset_y` | Sideways offset of the measurement line [mm] |
@@ -210,12 +212,12 @@ Important fields:
 | `line.parameters.end_point` | Usually `p_end_l` |
 | `motion.acceleration` | Linear movement acceleration along the measurement line [mm/s^2] |
 | `motion.speed` | Linear movement speed along the measurement line [mm/s] |
-| `measurement.program_path` | URP loaded for force application |
-| `measurement.settling_time` | Settling delay after first reaching target [s] |
-| `measurement.target_force` | Target force for approach and measurement [N] |
-| `measurement.simulation_program_path` | Stationary simulation URP |
-| `measurement.max_displacement` | Maximum force-approach travel [mm] |
-| `measurement.simulation` | Enables simulated force behavior |
+| `force.program_path` | URP loaded for force application |
+| `force.settling_time` | Settling delay after first reaching target [s] |
+| `force.target_force` | Target force for approach and measurement [N] |
+| `force.simulation_program_path` | Guarded travel simulation URP |
+| `force.max_displacement` | Maximum force-approach travel [mm] |
+| `force.simulation` | Enables simulated force behavior |
 | `measurement.data_server` | Enables the Python TCP acquisition server |
 
 Force values must be valid:
@@ -223,11 +225,11 @@ Force values must be valid:
 - `target_force` must be positive and finite.
 - `settling_time` must be nonnegative and finite.
 - `max_displacement` must be positive and finite.
-- `simulation: true` selects the stationary simulation URP.
+- `simulation: true` selects the guarded travel simulation URP.
 
 ### Server Configuration
 
-Use `measurement.stop_method: "client_feedback"` when the independent
+Use `force.stop_method: "client_feedback"` when the independent
 data-acquisition client should control acquisition timing.
 
 Typical values:
@@ -281,7 +283,7 @@ it releases the force program.
 
 ### Timer Configuration
 
-Set `measurement.stop_method` to `timer` and `measurement.hold_duration` to the
+Set `force.stop_method` to `timer` and `force.hold_duration` to the
 measurement duration in seconds. Python starts timing after settling/readiness,
 then releases the selected real or simulation URP. No acquisition TCP server is
 started in this mode.
@@ -333,7 +335,7 @@ For explicit control, call the measurement command directly:
   --output-dir C:\path\to\output
 ```
 
-For timer-based operation, set `measurement.stop_method: "timer"` in the
+For timer-based operation, set `force.stop_method: "timer"` in the
 measurement configuration. Without `--operator-confirmed`, timer mode asks for
 Enter before robot motion. Client-feedback mode waits for the acquisition
 client to send `START_FIRST` instead.
@@ -398,7 +400,7 @@ routine file. The startup check is joint-based and uses a tolerance of
 
 ### Force URP Cannot Be Loaded
 
-Confirm that `measurement.program_path` matches a real program path on the
+Confirm that `force.program_path` matches a real program path on the
 controller, for example:
 
 ```text

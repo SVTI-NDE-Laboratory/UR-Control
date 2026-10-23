@@ -70,7 +70,7 @@ def load_and_play_urp(robot_ip: str, program_path: str) -> None:
             detail += (
                 ". The controller rejected the load syntax. Verify the controller-side "
                 "path; if it cannot accept spaces, save the URP in a folder without "
-                "spaces and update measurement.program_path in config_default.json."
+                "spaces and update force.program_path in config_default.json."
             )
         raise RuntimeError(f"Could not load URP '{program_path}': {detail}")
 

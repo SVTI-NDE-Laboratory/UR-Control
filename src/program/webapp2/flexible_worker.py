@@ -89,7 +89,8 @@ def perform_action(action, receiver, data, geometry, state_file):
                 or action["force"] <= 0 or settling < 0 or not 0 <= action["duration"] <= 8):
             raise ValueError("Use a positive target force, nonnegative settling time, and a hold from 0 to 8 seconds.")
         measurement, _ = flexible.force_measurement_settings([str(action["force"]), str(action["duration"])])
-        measurement["max_displacement"] = read_object(PROFILE.paths["measurement_defaults"])["measurement"]["max_displacement"]
+        from measurement_config import canonical_config
+        measurement["max_displacement"] = canonical_config(read_object(PROFILE.paths["measurement_defaults"]))["measurement"]["max_displacement"]
         measurement["settling_time"] = settling
         flexible.validate_force_config({"measurement": measurement})
 

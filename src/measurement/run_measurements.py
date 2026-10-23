@@ -21,7 +21,6 @@ from line_planner import (
     is_obstacle,
     line_geometry,
     line_parameters,
-    line_positions,
     millimetres_to_metres,
     next_measurement_step,
     normalize,
@@ -29,6 +28,8 @@ from line_planner import (
     point_pose,
     scale,
     start_entry_crosses_obstacle,
+    selected_line_positions,
+    validate_points_selection,
 )
 from measurement_movement import (
     high_to_low,
@@ -88,6 +89,7 @@ def run_measurements(
     # command is allowed to start.
     line_geometry(config, routines_data)
     high_low_movement(config, routines_data)
+    validate_points_selection(config, routines_data)
     assert_robot_running(robot_ip)
     try:
         return _run_measurements(
@@ -128,13 +130,13 @@ def _run_measurements(
 
     height_mode = "high"
     geometry = line_geometry(config, routines_data)
-    positions = line_positions(config, routines_data)
+    positions = selected_line_positions(config, routines_data)
     measurement = config["measurement"]
     traversal_start_pose = rtde_receive.getActualTCPPose()
     step = 0
     measurement_index = None
     reached_line_position = None
-    start_from_end = bool(positions and start_entry_crosses_obstacle(config, geometry))
+    start_from_end = bool(positions and start_entry_crosses_obstacle(config, geometry, positions[0][1]))
     current_side = "end" if start_from_end else "start"
     finish_side = current_side
 

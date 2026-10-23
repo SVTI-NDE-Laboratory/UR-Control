@@ -48,7 +48,7 @@ else:
 
 from measurement_plan import create_measurement_plan
 from line_planner import line_geometry, line_scope_warning
-from measurement_config import canonical_config, read_default_program_path
+from measurement_config import canonical_config, read_default_program_path, configuration_file
 from read_routines import get_waypoint, read_routines_file
 
 
@@ -58,6 +58,7 @@ class WebState:
     def __init__(self) -> None:
         self.lock = threading.Lock()
         self.validated_config: dict[str, Any] | None = None
+        self.loaded_defaults: dict[str, Any] | None = None
         self.output_directory = DEFAULT_OUTPUT_DIR
         self.selected_routine_file = DEFAULT_SELECTED_ROUTINES_FILE
         self.session_started_at: str | None = None
@@ -75,6 +76,14 @@ class WebState:
     def clear_config(self) -> None:
         with self.lock:
             self.validated_config = None
+
+    def set_loaded_defaults(self, config: dict | None) -> None:
+        with self.lock:
+            self.loaded_defaults = deepcopy(config)
+
+    def get_loaded_defaults(self) -> dict | None:
+        with self.lock:
+            return deepcopy(self.loaded_defaults)
 
     def get_routine_file(self) -> Path:
         with self.lock:
@@ -125,6 +134,17 @@ def load_default_config(method: str, server_profile: str | None = None) -> dict[
 
 def submitted_method(submission: ConfigurationSubmission) -> str:
     return submission.fields.get("line.method", ["point_to_point"])[0]
+
+
+def form_defaults(method: str, server_profile: str | None = None) -> dict:
+    """Keep imported parameters while resolving installed URP paths from defaults."""
+    defaults = load_default_config(method, server_profile)
+    loaded = state.get_loaded_defaults()
+    if loaded is None:
+        return defaults
+    for key in ("program_path", "simulation_program_path"):
+        loaded["measurement"][key] = defaults["measurement"][key]
+    return loaded
 
 
 def submitted_server_profile(submission: ConfigurationSubmission) -> str:
@@ -180,7 +200,7 @@ def configuration_page(
         config = load_default_config("point_to_point", server_profile)
     else:
         config = state.get_config() or load_default_config("point_to_point", server_profile)
-    defaults = load_default_config("point_to_point", server_profile)
+    defaults = load_default_config("point_to_point", server_profile) if show_defaults else form_defaults("point_to_point", server_profile)
     return form_html(config, defaults)
 
 
@@ -208,7 +228,7 @@ def validate_configuration(
 ) -> dict[str, Any]:
     # A rejected edit must not leave an older configuration looking approved.
     state.clear_config()
-    defaults = load_default_config(
+    defaults = form_defaults(
         submitted_method(submission), submitted_server_profile(submission)
     )
     routines_data = read_routines_file(state.get_routine_file())
@@ -218,7 +238,7 @@ def validate_configuration(
     except (KeyError, TypeError, ValueError) as error:
         raise HTTPException(status_code=422, detail=str(error)) from error
 
-    write_json_atomic(TEMP_CONFIG_FILE, config)
+    write_json_atomic(TEMP_CONFIG_FILE, configuration_file(config))
     state.set_config(config)
     return {
         "validated": True,
@@ -238,7 +258,7 @@ def save_default_configuration(
     state.clear_config()
     method = submitted_method(submission)
     server_profile = submitted_server_profile(submission)
-    defaults = load_default_config(method, server_profile)
+    defaults = form_defaults(method, server_profile)
     routines_data = read_routines_file(state.get_routine_file())
     try:
         config = edited_config(defaults, submission.fields, routines_data)
@@ -246,8 +266,8 @@ def save_default_configuration(
     except (KeyError, TypeError, ValueError) as error:
         raise HTTPException(status_code=422, detail=str(error)) from error
 
-    write_json_atomic(default_config_path(method, server_profile), config)
-    write_json_atomic(TEMP_CONFIG_FILE, config)
+    write_json_atomic(default_config_path(method, server_profile), configuration_file(config))
+    write_json_atomic(TEMP_CONFIG_FILE, configuration_file(config))
     state.set_config(config)
     return {
         "validated": True,
@@ -262,6 +282,7 @@ def reset_configuration() -> dict[str, bool]:
     """Discard the in-memory approval so defaults can be reviewed again."""
 
     state.clear_config()
+    state.set_loaded_defaults(None)
     return {"reset": True}
 
 

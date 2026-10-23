@@ -27,6 +27,7 @@ else:
 from read_routines import get_waypoint, read_routines_file
 from robot_connection import assert_at_home, assert_robot_running, get_rtde_receive
 from atomic_json import write_json_atomic
+from measurement_config import configuration_file
 
 
 def choose_directory() -> Path | None:
@@ -84,9 +85,9 @@ def start_program(
 ) -> subprocess.Popen:
     """Write the temporary config and launch the measurement command worker."""
 
-    TEMP_CONFIG_FILE.write_text(json.dumps(config, indent=2) + "\n", encoding="utf-8")
+    TEMP_CONFIG_FILE.write_text(json.dumps(configuration_file(config), indent=2) + "\n", encoding="utf-8")
     output_directory.mkdir(parents=True, exist_ok=True)
-    write_json_atomic(output_directory / "config_used.json", config)
+    write_json_atomic(output_directory / "config_used.json", configuration_file(config))
     write_json_atomic(output_directory / "state.json", {"mode": "starting"})
     start_signal_file = output_directory / "start_movement.signal"
     try:

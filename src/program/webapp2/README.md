@@ -119,7 +119,7 @@ environment variable. Without an override, Python and a future executable use
 the normal AppData location.
 
 Local robot programs are reference/deployment copies. They are not uploaded to
-the controller automatically. `measurement.program_path` in the measurement
+the controller automatically. `force.program_path` in the measurement
 defaults remains the path **on the robot**, separately from the local program
 directory. This repository supplies `.script` files; add any `.urp` or
 installation files required by the controller separately.
@@ -264,7 +264,7 @@ The **Flexible measurement** tab reuses the geometry and entry/exit routines in
    The hold defaults to three seconds; the existing 0-to-8-second form range is
    retained. Python runs the hold timer and then releases the feedback-only
    robot script through integer register 42. A zero duration releases immediately.
-   Select **Simulation** beside the force settings to run a separate stationary simulation URP with the same Apply force button. The target-force value is
+   Select **Simulation** beside the force settings to run a separate guarded travel simulation URP with the same Apply force button. The target-force value is
    blurred and read-only while selected, and its value is preserved.
    If the target force is not reached, a verified return to the measurement
    plane leaves the session Ready and reports the error in a popup. Adjust the
@@ -294,17 +294,18 @@ Automatic measurements also provide a **Simulation** toggle, beside **With RTM
 Program**, so forces do not need to be set to zero. Changing With RTM Program
 preserves the measurement line settings. **Automatic Fit** defaults to on.
 Configurations store line settings directly in `line`, without `method` or
-`parameters`. `measurement.stop_method` selects `client_feedback` (With RTM Program on)
+`parameters`. `force.stop_method` selects `client_feedback` (With RTM Program on)
 or `timer` (off), replacing `data_server`. `src/program/config/config_default.json`
 is the shared initial default for automatic commands and the feedback preset.
 Existing nested point-to-point configurations and their boolean `data_server`
-are converted when loaded; saved configurations use the new schema. Optional
-top-level obstacle settings remain unchanged.
-Timer exposes **Hold Duration [s]** (`measurement.hold_duration`, default
-0.5 seconds). Python handles this timer and always releases the robot through
+are converted when loaded; saved configurations use the new schema. Obstacle width is stored in `obstacle.width` (200 mm by default).
+The form edits its center and displays read-only width and calculated bounds.
+The **Settling / Hold time [s]** row places settling and hold inputs side by side.
+The hold input sets `force.hold_duration` in seconds. Python handles
+this timer and always releases the robot through
 input integer register 42. Client feedback uses the acquisition callback instead.
 The script reads no mode/duration register, and register 47 is never written.
-Integer 46 independently selects simulation.
+The selected URP path determines simulation; no integer simulation flag is written.
 At initialization and whenever re-enabled, it resets X Start to zero, X End
 to the exact taught length and the lead variable to Step Size. Step Size lead
 keeps the step and calculates `Count = floor((End - Start) / Increment) + 1`;
@@ -319,7 +320,7 @@ the backend rejects an unconfirmed start before connecting to the robot.
 The controls are labelled **Step Size [mm]** and **Nb. Points**. The visualization
 updates on every edit and displays the current X range and Y offset.
 Y Offset is a fixed perpendicular shift and never changes the X spacing.
-Obstacle Start/End use the same taught X origin as X Start/End, including when
+Obstacle center and calculated Start/End use the same taught X origin as X Start/End, including when
 X Start is nonzero. Obstacles only mark existing samples as skipped; they
 never change the sample coordinates or count. Preview and progress use that
 same coordinate system. Plans include explicit X/Y coordinates in millimetres
@@ -386,8 +387,8 @@ The seeded profile selects `routine_bam_at_svti.json` and robot IP `192.168.3.10
 The routine selector within measurements stays locked to the active profile.
 Use Settings to select another installation for the next launch. Target force,
 settling time, and measurement duration are set in the flexible form.
-Both measurement modes read `measurement.program_path` and
-`measurement.simulation_program_path` from the active measurement defaults.
+Both measurement modes read `force.program_path` and
+`force.simulation_program_path` from the active measurement defaults.
 `target_force` is in newtons, `settling_time` is in seconds, and
 `max_displacement` is in millimetres. Shipped defaults use 200 N and 1.5 s.
 
@@ -398,10 +399,12 @@ in the separate URP selected by `simulation_program_path` (default:
 local source file does not update the controller-side URP.
 
 The real URP reaches the target, waits the configured settling delay, signals
-readiness, and maintains force until Python releases it. Simulation issues no
-motion or force commands and reads no force sensor: it waits one second,
-waits the settling delay, then signals readiness. Both wait for Python's timer
-or acquisition client before completing. Flexible numeric holds use the timer;
+readiness, and maintains force until Python releases it. Simulation moves the configured distance along starting TCP Z+ at up to
+5 mm/s, waits the settling delay, then signals readiness. Both wait for Python's
+timer or acquisition client before returning. Simulation monitors resultant XYZ
+force during travel, settling, measurement and return: at 40 N it stops and
+aborts without automatic return (status 5). Motion timeouts abort with status 6.
+The 40 N software guard cannot guarantee a 50 N peak limit during stopping. Flexible numeric holds use the timer;
 automatic measurements with RTM use client feedback. CLI examples:
 `force 3`, `force 200 3`, and `force 200 manual` (release by typing `stop`).
 
@@ -446,3 +449,29 @@ They do not validate physical robot motion. Commission the manual moves,
 local force cycle and automatic sequence on the actual installation before routine
 operation. A browser rendering test also requires a local browser; no automated
 browser driver is included in the existing environment.
+
+Automatic **Points selection** offers All, From point (inclusive ID), and Custom.
+Custom opens a checklist of original IDs with X/Y positions; obstacle points
+are unavailable. Preview distinguishes selected, excluded and obstructed points.
+Selections are saved in `points_selections` and also apply to CLI execution.
+Skipped points retain their original plan IDs and reasons. Entry and travel
+still check obstacles even when unselected points lie between measurements.
+
+Saved measurement JSON follows `line`, `obstacle`, `points_selections`, `force`,
+then `motion`. `line.steps` and `line.nb_points` hold spacing and count.
+The obstacle object always retains `present`, `width`, `position`, `start` and
+`end`; `present: false` disables exclusions without discarding its values.
+Existing profiles are migrated on startup. All saved run configs use this
+format, including direct CLI runs.
+
+**Load configuration** opens a folder browser rooted in the configured Results
+folder. Open a run folder containing `config_used.json`, then load it to refresh
+the automatic page with its line, obstacle, selection, force and motion settings.
+The imported X range and spacing mode are preserved after refresh. Installed URP
+paths still come from current shared defaults. Loading does not change the saved
+run or shared defaults; Reset default clears the imported configuration.
+
+The **Summary** graph provides **Points list**, listing all original point IDs
+with X/Y coordinates in the taught measurement frame and their selection or
+obstacle status. The action does not change the selection. Numeric inputs hide
+browser increment arrows. The run section is titled **Run measurements**.

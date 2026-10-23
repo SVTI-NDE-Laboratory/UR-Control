@@ -89,7 +89,8 @@ function showImportant(message) {
 function setInactiveParameter(input, inactive) {
   input.readOnly = inactive;
   input.classList.remove('optional-disabled', 'simulation-force');
-  input.classList.toggle('inactive-parameter', inactive);
+  input.classList.toggle('inactive-parameter', inactive && input !== xEndInput);
+  input.classList.toggle('derived-parameter', inactive && input === xEndInput);
 }
 
 function synchronizeFields() {
@@ -134,7 +135,7 @@ function synchronizeFields() {
     element.classList.remove('optional-disabled');
     if (element.matches('input, select')) {
       setInactiveParameter(element, !active);
-      element.disabled = !active;
+      element.disabled = false;
       element.required = active;
     }
   }
@@ -181,6 +182,7 @@ function synchronizeSpacingFromSource() {
 function drawVisualization() {
   synchronizeFields();
   synchronizeSpacingFromSource();
+  synchronizePointControls();
   const translation = lineMethod.value === 'translation';
   const requestedCount = Number(measurementCountInput?.value || '1');
   const count = Number.isInteger(requestedCount) && requestedCount >= 1 ? requestedCount : 1;
@@ -214,12 +216,12 @@ function drawVisualization() {
     const position = index * increment;
     if (position > length + 1e-9) break;
     const blocked = hasObstacle && position >= obstacleStart - 1e-9 && position <= obstacleEnd + 1e-9;
-    addSvg('circle', {cx:scale(position), cy:lowY, r:6, fill:blocked ? '#b85b5b' : '#2474a9', stroke:'white', 'stroke-width':2});
+    addSvg('circle', {cx:scale(position), cy:lowY, r:6, fill:blocked ? '#b85b5b' : isPreviewPointSelected(index + 1) ? '#2474a9' : '#9aa9b8', stroke:'white', 'stroke-width':2});
     addSvg('text', {x:scale(position), y:lowY+25, 'text-anchor':'middle', fill:'#334e60', 'font-size':12}, String(index + 1));
   }
-  addSvg('text', {x:left, y:285, fill:'#334e60', 'font-size':14}, translation ? '0 mm' : `X Start: ${formatMillimetres(numberValue('line.x_start'))}`);
-  addSvg('text', {x:right, y:285, 'text-anchor':'end', fill:'#334e60', 'font-size':14}, translation ? formatMillimetres(length) : `X End: ${formatMillimetres(numberValue('line.x_end'))}`);
-  if (!translation) addSvg('text', {x:(left+right)/2, y:55, 'text-anchor':'middle', fill:'#334e60', 'font-size':14}, `Y Offset: ${formatMillimetres(numberValue('line.offset_y'))}`);
+  addSvg('text', {x:left, y:285, fill:'#334e60', 'font-size':14}, translation ? '0 mm' : `X start: ${formatMillimetres(numberValue('line.x_start'))}`);
+  addSvg('text', {x:right, y:285, 'text-anchor':'end', fill:'#334e60', 'font-size':14}, translation ? formatMillimetres(length) : `X end: ${formatMillimetres(numberValue('line.x_end'))}`);
+  if (!translation) addSvg('text', {x:(left+right)/2, y:55, 'text-anchor':'middle', fill:'#334e60', 'font-size':14}, `Y offset: ${formatMillimetres(numberValue('line.offset_y'))}`);
 
 }
 
@@ -256,7 +258,7 @@ async function loadRoutineFiles() {
     option.selected = filename === result.default;
     routineFileSelect.appendChild(option);
   }
-  await loadPointGeometry();
+  await loadPointGeometry(autoFit.checked && form.dataset.preserveLine !== 'true');
 }
 
 function selectedServerProfile() {
@@ -402,7 +404,7 @@ document.getElementById('close-app').addEventListener('click', async () => {
 });
 
 function completedState(point, programState, points) {
-  if (point.measured === false) return 'skipped';
+  if (point.measured === false) return point.skip_reason === 'not_selected' ? 'excluded' : 'skipped';
   if (point.data?.force_reached === true) return 'complete';
   if (point.data?.force_reached === false) return 'failed';
   const mode = programState.mode || '';
@@ -463,7 +465,7 @@ function drawProgress(data) {
 
   svg.replaceChildren();
   addSvg('line', {x1:left, y1:lowY, x2:length > 0 ? right : left, y2:lowY, stroke:'#17212b', 'stroke-width':5});
-  if (obstacle && obstacle.end >= obstacle.start && obstacle.end >= origin && obstacle.start <= origin + length) {
+  if (obstacle && obstacle.present !== false && obstacle.end >= obstacle.start && obstacle.end >= origin && obstacle.start <= origin + length) {
     const start = obstacle.start - origin, end = obstacle.end - origin;
     addSvg('rect', {x:scale(start), y:obstacleBottomY-obstacleHeight, width:Math.max(2, scale(end)-scale(start)), height:obstacleHeight, rx:5, fill:'#e05252', opacity:.72});
     addSvg('text', {x:(scale(start)+scale(end))/2, y:obstacleBottomY-32, 'text-anchor':'middle', fill:'white', 'font-size':14}, 'Obstacle');
@@ -474,15 +476,15 @@ function drawProgress(data) {
   for (const point of points) {
     const pointState = completedState(point, programState, points);
     if (pointState === 'complete') complete += 1;
-    const colors = {pending:'#9aa9b8', current:'#1769aa', complete:'#159447', failed:'#b42318', skipped:'#b85b5b'};
+    const colors = {pending:'#9aa9b8', current:'#1769aa', complete:'#159447', failed:'#b42318', skipped:'#b85b5b', excluded:'#9aa9b8'};
     addSvg('circle', {cx:scale(point.line_position), cy:lowY, r:pointState === 'current' ? 10 : 7, fill:colors[pointState], stroke:'white', 'stroke-width':2});
     addSvg('text', {x:scale(point.line_position), y:lowY+25, 'text-anchor':'middle', fill:'#334e60', 'font-size':12}, String(point.measurement_index));
   }
   if (currentPosition !== null) {
     addSvg('text', {x:scale(currentPosition), y:lowY-20, 'text-anchor':'middle', fill:'#1769aa', 'font-size':14, 'font-weight':700}, `Current: ${formatMillimetres(origin + currentPosition)}`);
   }
-  addSvg('text', {x:left, y:285, fill:'#334e60', 'font-size':14}, `X Start: ${formatMillimetres(origin)}`);
-  addSvg('text', {x:right, y:285, 'text-anchor':'end', fill:'#334e60', 'font-size':14}, `X End: ${formatMillimetres(origin + length)}`);
+  addSvg('text', {x:left, y:285, fill:'#334e60', 'font-size':14}, `X start: ${formatMillimetres(origin)}`);
+  addSvg('text', {x:right, y:285, 'text-anchor':'end', fill:'#334e60', 'font-size':14}, `X end: ${formatMillimetres(origin + length)}`);
 
   document.getElementById('ongoing-mode').textContent = humanizePhase(programState.mode);
   document.getElementById('ongoing-current').textContent = currentPosition === null ? '—' : formatNumber(origin + currentPosition);
@@ -621,8 +623,74 @@ runButton.addEventListener('click', async () => {
 });
 
 synchronizeFolderName();
-spacingSourceInput.value = 'increment';
 loadRoutineFiles().catch(error => showImportant(error.message));
 drawVisualization();
 refreshMeasurement();
 setInterval(refreshMeasurement, 500);
+
+// Browse saved run folders; loading replaces the form and refreshes this page.
+const configurationDialog = document.getElementById('load-configuration-dialog');
+const loadConfigurationButton = document.getElementById('confirm-load-configuration');
+const configurationUpButton = document.getElementById('configuration-folder-up');
+const configurationMessage = document.getElementById('configuration-load-message');
+let configurationDirectory = '';
+let configurationParent = null;
+let configurationFolderRequest = 0;
+
+async function browseSavedConfigurations(directory) {
+  const request = ++configurationFolderRequest;
+  loadConfigurationButton.disabled = true;
+  configurationUpButton.disabled = true;
+  configurationMessage.textContent = 'Loading folders...';
+  try {
+    const response = await fetch(`/api/configuration/results?directory=${encodeURIComponent(directory)}`, {cache:'no-store'});
+    const result = await response.json();
+    if (request !== configurationFolderRequest) return;
+    if (!response.ok) throw new Error(result.detail || `HTTP ${response.status}`);
+    configurationDirectory = result.directory;
+    configurationParent = result.parent;
+    document.getElementById('configuration-folder-path').textContent = result.directory === '.' || !result.directory
+      ? 'Results' : `Results / ${result.directory}`;
+    const list = document.getElementById('configuration-folders');
+    list.replaceChildren();
+    for (const folder of result.folders) {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'configuration-folder';
+      button.textContent = folder.name + (folder.has_configuration ? ' (saved configuration)' : '');
+      button.addEventListener('click', () => browseSavedConfigurations(folder.directory));
+      list.appendChild(button);
+    }
+    configurationUpButton.disabled = result.parent === null;
+    loadConfigurationButton.disabled = !result.can_load;
+    configurationMessage.textContent = result.can_load ? 'Load the parameters saved in this folder.'
+      : result.folders.length ? 'Open a saved run folder to continue.' : 'No saved configurations in this folder.';
+  } catch (error) {
+    if (request === configurationFolderRequest) configurationMessage.textContent = error.message;
+  }
+}
+
+document.getElementById('load-configuration').addEventListener('click', () => {
+  configurationDialog.showModal();
+  browseSavedConfigurations('');
+});
+configurationUpButton.addEventListener('click', () => {
+  if (configurationParent !== null) browseSavedConfigurations(configurationParent);
+});
+document.getElementById('cancel-load-configuration').addEventListener('click', () => configurationDialog.close());
+loadConfigurationButton.addEventListener('click', async () => {
+  loadConfigurationButton.disabled = true;
+  configurationMessage.textContent = 'Loading configuration...';
+  try {
+    const response = await fetch('/api/configuration/load', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({directory:configurationDirectory}),
+    });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.detail || `HTTP ${response.status}`);
+    window.location.href = '/configuration';
+  } catch (error) {
+    configurationMessage.textContent = error.message;
+    loadConfigurationButton.disabled = false;
+  }
+});

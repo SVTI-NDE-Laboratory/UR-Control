@@ -41,11 +41,16 @@ def line_parameters(config: dict) -> dict:
 
     line = config["line"]
     if "parameters" in line:
-        return line["parameters"]
+        line = line["parameters"]
 
     # Compatibility for saved configurations created before high/low geometry
     # moved from the obstacle section into the line section.
     parameters = dict(line)
+    for stored, internal in (("steps", "increment"), ("nb_points", "number_of_measurements")):
+        if stored in parameters:
+            parameters[internal] = parameters.pop(stored)
+    if "spacing_source" in parameters:
+        parameters["spacing_source"] = {"steps": "increment", "nb_points": "count"}.get(parameters["spacing_source"], parameters["spacing_source"])
     obstacle = config.get("obstacle") or {}
     for key in ("high_low_distance", "direction_high_low"):
         if key not in parameters and key in obstacle:
@@ -61,15 +66,29 @@ def obstacle_interval(config: dict) -> tuple[float, float] | None:
     """
 
     obstacle = config.get("obstacle") or {}
-    has_start = "start" in obstacle
-    has_end = "end" in obstacle
-    if has_start != has_end:
-        raise ValueError("Obstacle start and end must either both be set or both be omitted.")
-    if not has_start:
+    if "present" in obstacle and not isinstance(obstacle["present"], bool):
+        raise ValueError("Obstacle present must be true or false.")
+    if obstacle.get("present") is False:
         return None
-
-    start = obstacle["start"]
-    end = obstacle["end"]
+    if "position" in obstacle:
+        width = obstacle.get("width", config.get("obstacle_width", 200.0))
+        if isinstance(width, bool) or not isinstance(width, (int, float)) or not math.isfinite(width) or width <= 0:
+            raise ValueError("Obstacle width must be positive and finite (mm).")
+        center = obstacle["position"]
+        if isinstance(center, bool) or not isinstance(center, (int, float)) or not math.isfinite(center):
+            raise ValueError("Obstacle position must be a finite number (mm).")
+        half_width = width / 2.0
+        start = obstacle["position"] - half_width
+        end = obstacle["position"] + half_width
+    else:
+        has_start = "start" in obstacle
+        has_end = "end" in obstacle
+        if has_start != has_end:
+            raise ValueError("Obstacle start and end must either both be set or both be omitted.")
+        if not has_start:
+            return None
+        start = obstacle["start"]
+        end = obstacle["end"]
     if not all(math.isfinite(value) for value in (start, end)):
         raise ValueError("Obstacle positions must be finite numbers.")
     if start < 0:
@@ -443,9 +462,9 @@ def crosses_obstacle(start_position: float, end_position: float, config: dict) -
     return segment_start <= obstacle_end + 1e-9 and segment_end >= obstacle_start - 1e-9
 
 
-def start_entry_crosses_obstacle(config: dict, geometry: dict) -> bool:
+def start_entry_crosses_obstacle(config: dict, geometry: dict, first_position: float = 0.0) -> bool:
     """Check the approach from the taught start to the first selected point."""
-    return crosses_obstacle(-geometry.get("x_start", 0.0), 0.0, config)
+    return crosses_obstacle(-geometry.get("x_start", 0.0), first_position, config)
 
 
 def line_positions(
@@ -473,9 +492,42 @@ def line_positions(
 def next_measurement_step(
     positions: list[tuple[int, float]], start_step: int, config: dict
 ) -> int | None:
-    """Return the next step that is not inside the obstacle."""
+    """Return the next selected step outside the obstacle."""
 
     for step in range(start_step, len(positions)):
-        if not is_obstacle(positions[step][1], config):
+        if point_is_selected(positions[step][0] + 1, config) and not is_obstacle(positions[step][1], config):
             return step
     return None
+
+
+def point_is_selected(point_id: int, config: dict) -> bool:
+    """Apply selection to original one-based point IDs, independently of obstacles."""
+    selection = config.get("points_selection", {})
+    mode = selection.get("mode", "all")
+    if mode == "from_point":
+        return point_id >= selection.get("from_point", 1)
+    if mode == "custom":
+        return point_id in selection.get("point_ids", [])
+    return mode == "all"
+
+
+def selected_line_positions(config: dict, routines_data: dict | None = None) -> list[tuple[int, float]]:
+    """Keep selected, unobstructed points in their original spatial order."""
+    return [(index, position) for index, position in line_positions(config, routines_data)
+            if point_is_selected(index + 1, config) and not is_obstacle(position, config)]
+
+
+def validate_points_selection(config: dict, routines_data: dict | None = None) -> None:
+    """Reject invalid IDs and empty selections before any robot motion."""
+    selection = config.get("points_selection", {})
+    if not isinstance(selection, dict) or selection.get("mode", "all") not in ("all", "from_point", "custom"):
+        raise ValueError("Points selection mode must be all, from_point or custom.")
+    count = len(line_positions(config, routines_data))
+    mode = selection.get("mode", "all")
+    ids = ([selection.get("from_point", 1)] if mode == "from_point" else
+           selection.get("point_ids", []) if mode == "custom" else [])
+    if not isinstance(ids, list) or any(isinstance(value, bool) or not isinstance(value, int)
+                                       or value < 1 or value > count for value in ids):
+        raise ValueError(f"Selected point IDs must be integers between 1 and {count}.")
+    if mode != "all" and not selected_line_positions(config, routines_data):
+        raise ValueError("Select at least one point outside the obstacle.")
