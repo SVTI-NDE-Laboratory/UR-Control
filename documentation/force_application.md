@@ -1,7 +1,51 @@
 # Force application
 
+## Tool-frame variants from UR
+
+`src/measurement/polyscope_scripts/apply_force_from_ur.script` copies the
+existing cycle and register protocol, but uses UR's supplied
+`get_tcp_force_tool()` helper to rotate the measured force into the **current
+actual TCP axes**. Contact compares `abs(tool_force_z)` with register 44;
+`measured_force_z_signed` also exposes the signed projection in PolyScope.
+Both signs count as contact, as in the original script.
+
+The commanded force and approach displacement still use the **starting TCP
+frame**, captured once. This differs from the helper's current frame if the
+tool orientation changes during contact. The helper rotates torque axes too,
+but does not shift the torque reference point; only force Z is used here.
+
+Load this source into a separate PolyScope Script node/URP and select that URP
+through the existing Python program-path configuration to use the new version.
+The original `apply_force.script` and default program selection are unchanged.
+
+`src/measurement/polyscope_scripts/apply_force_from_ur_direct.script` contains
+the same tool-frame measurement with constants instead of any register I/O.
+Load it into a PolyScope Script node to execute one cycle. Edit the constants
+inside `apply_force_from_ur_direct()` to choose:
+
+| Constant | Default | Meaning |
+|---|---|---|
+| `distance_max` | `0.050` m | Maximum approach displacement (50 mm) |
+| `force_contact` | `15.0` N | Absolute measured tool Z contact threshold |
+| `force_holding` | `20.0` N | Commanded force along starting TCP Z+ |
+| `hold_duration` | `3.0` s | Hold duration starting after contact |
+| `simulation` | `False` | If true, approach still moves but ignores contact |
+
+The direct version times the hold locally using `sync()` and `get_steptime()`.
+It retains the 10-second approach timeout, 20 mm/s approach speed limit, and
+return to the starting pose. Failed approaches skip the hold and return.
+Simulation stops force mode at its approach limit, then waits out the timer.
+For calls after multiple waypoints, define both functions once, omit the final
+`apply_force_from_ur_direct()` call in the definition node, and call that
+function from each desired waypoint's Script node.
+
+UR's explanation and helper source:
+https://www.universal-robots.com/articles/ur/programming/get-force-and-torque-values-in-tool-coordinate-system/
+
+## Original default version
+
 The robot-side source is `src/measurement/polyscope_scripts/apply_force.script`.
-Install it in `Inspection/Programs/apply_force.urp`. The original MIRA and server
+Install it in `/Projects/BAM TTS/Programs/Apply_Force/apply_force.urp`. The original MIRA and server
 sources remain historical references; the active script always uses feedback.
 
 ## Python selects when to release

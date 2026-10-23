@@ -46,7 +46,7 @@ ROUTINES_FILE = ROUTINES_DIR / "routine_files" / "routines_pk-03-prism-a.json"
 # Distance from p_start_l along the p_start_l -> p_end_l measurement line [mm].
 TARGET_LINE_POSITION = 310.0
 
-FORCE_PROGRAM_PATH = "Inspection/Programs/apply_force.urp"
+FORCE_PROGRAM_PATH = "/Projects/BAM TTS/Programs/Apply_Force/apply_force.urp"
 CONTACT_THRESHOLD = 140.0
 HOLDING_FORCE = 160.0
 MAX_DISPLACEMENT = 50.0

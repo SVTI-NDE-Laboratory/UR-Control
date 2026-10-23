@@ -41,7 +41,7 @@ def load_and_play_urp(robot_ip: str, program_path: str) -> None:
     """Load and play a controller-side URP program.
 
     ``program_path`` is the path as seen by the robot controller, for example
-    ``Benoit/apply_force.urp``.
+    ``/Projects/BAM TTS/Programs/Apply_Force/apply_force.urp``.
     """
 
     if not isinstance(program_path, str) or not program_path.strip():

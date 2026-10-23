@@ -11,13 +11,13 @@ import robot_connection
 
 class DashboardLoadTests(unittest.TestCase):
     def test_raw_path_success_preserves_existing_command(self):
-        path = "Inspection/Programs/Apply Force/apply_force.urp"
+        path = "/Projects/BAM TTS/Programs/Apply_Force/apply_force.urp"
         with patch.object(robot_connection, "dashboard_command", side_effect=[f"Loading program: {path}", "Starting program"]) as command:
             robot_connection.load_and_play_urp("robot", path)
         self.assertEqual(command.call_args_list, [call("robot", f"load {path}"), call("robot", "play")])
 
     def test_parser_rejection_retries_quoted_path_before_play(self):
-        path = "Inspection/Programs/Apply Force/apply_force.urp"
+        path = "/Projects/BAM TTS/Programs/Apply_Force/apply_force.urp"
         with patch.object(robot_connection, "dashboard_command", side_effect=["could not understand: load " + path, "Loading program: " + path, "Starting program"]) as command:
             robot_connection.load_and_play_urp("robot", path)
         self.assertEqual(command.call_args_list, [call("robot", f"load {path}"), call("robot", f'load "{path}"'), call("robot", "play")])

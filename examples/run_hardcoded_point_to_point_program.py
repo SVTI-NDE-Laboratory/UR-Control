@@ -71,7 +71,7 @@ MEASUREMENT_CONFIG = {
         "speed": 300.0,
     },
     "measurement": {
-        "program_path": "Benoit/apply_force.urp",
+        "program_path": "/Projects/BAM TTS/Programs/Apply_Force/apply_force.urp",
         "contact_threshold": 0.0,
         "holding_force": 0.0,
         "max_displacement": 1.0,

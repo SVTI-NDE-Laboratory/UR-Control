@@ -365,7 +365,7 @@ if __name__ == "__main__":
 
     force_reached, measurement_timestamp = apply_force(
         "192.168.3.10",
-        "Benoit/apply_force.urp",
+        "/Projects/BAM TTS/Programs/Apply_Force/apply_force.urp",
         50.0,
         15.0,
         20.0,

@@ -1,0 +1,223 @@
+# Standalone moving-standard-deviation force cycle. Load in a NEW Script node.
+# Calls apply_force_std_settling() once at the bottom.
+# No mean-band or slope criterion: readiness uses standard deviation ONLY.
+# Collection begins at the FIRST abs(current-tool Z force) >= force_holding.
+# Later dips do not re-arm or clear the rolling history.
+# A full window is required; readiness and hold start are latched once per cycle.
+# Continuous force mode uses fixed STARTING TCP Z+; measurements use CURRENT TCP Z.
+# Start the independent recorder before running the URP.
+
+def get_tcp_force_tool():
+    force_torque = get_tcp_force()
+    force_B = p[force_torque[0], force_torque[1], force_torque[2], 0, 0, 0]
+    torque_B = p[force_torque[3], force_torque[4], force_torque[5], 0, 0, 0]
+    tcp = get_actual_tcp_pose()
+    rotation_BT = p[0, 0, 0, tcp[3], tcp[4], tcp[5]]
+    force_T = pose_trans(pose_inv(rotation_BT), force_B)
+    torque_T = pose_trans(pose_inv(rotation_BT), torque_B)
+    return p[force_T[0], force_T[1], force_T[2], torque_T[0], torque_T[1], torque_T[2]]
+end
+
+def apply_force_std_settling():
+    # ---------- Edit these constants ----------
+    global force_holding = 100.0            # Requested force [N], starting TCP Z+
+    global std_percent = 2.0                # 2.0 -> 5.6 N; 5.0 -> 14 N at 280 N
+    global std_window = 0.5                 # Moving window span [s]
+    global distance_max = 0.050             # Maximum displacement along starting Z [m]
+    max_approach_speed = 0.02               # Compliant-axis speed limit [m/s]
+    hold_duration = 3.0                     # Local hold AFTER readiness [s]
+    use_python_release = False             # True: output/input integer 42 handshake
+    approach_settle_timeout = 10.0          # Total time to reach target AND settle [s]
+    python_release_timeout = 60.0           # Maximum wait after readiness [s]
+    acknowledgement_reset_timeout = 5.0     # Wait for input 42 = 0 before motion [s]
+    return_speed = 0.04
+    return_acceleration = 0.100
+
+    # Live values visible in PolyScope.
+    global state_message = "Initializing standard deviation cycle"
+    global target_reached_once = False
+    global force_ready = False
+    global contact_detected = False         # True only AFTER settling
+    global measured_force_z_signed = 0.0
+    global measured_force_z = 0.0
+    global moving_force_mean = 0.0          # Display only; NOT an acceptance check
+    global moving_force_std = -1.0          # -1 until a complete window is available
+    global std_limit = force_holding * std_percent / 100.0
+    global hold_elapsed = 0.0
+    global cycle_failed = False
+    global failure_message = ""
+    global actual_window_span = 0.0
+
+    step_time = get_steptime()
+    window_samples = ceil(std_window / step_time) + 1
+    # 251 samples cover >=0.5 s at 500 Hz; smaller controller rates use fewer.
+    # Fixed literal avoids relying on newer make_list APIs.
+    samples = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+
+    if (force_holding <= 0) or ((std_percent != 2.0) and (std_percent != 5.0)):
+        state_message = "Invalid target or std_percent: select 2.0 or 5.0"
+        return False
+    end
+    if (std_window <= 0) or (window_samples < 2) or (window_samples > 251):
+        state_message = "Invalid window: need 2 to 251 controller samples"
+        return False
+    end
+    if (distance_max <= 0) or (max_approach_speed <= 0) or (hold_duration < 0):
+        state_message = "Invalid travel, speed or hold duration"
+        return False
+    end
+    if (approach_settle_timeout <= 0) or (python_release_timeout <= 0) or (acknowledgement_reset_timeout <= 0):
+        state_message = "Timeouts must be positive"
+        return False
+    end
+    actual_window_span = (window_samples - 1) * step_time
+
+    if use_python_release:
+        write_output_integer_register(42, 0)
+        reset_elapsed = 0.0
+        while (read_input_integer_register(42) != 0) and (reset_elapsed < acknowledgement_reset_timeout):
+            sync()
+            reset_elapsed = reset_elapsed + step_time
+        end
+        if read_input_integer_register(42) != 0:
+            cycle_failed = True
+            failure_message = "Input register 42 was not reset to zero"
+            state_message = failure_message
+            write_output_integer_register(42, 2)
+            return False
+        end
+    end
+
+    start_pose = get_actual_tcp_pose()
+    force_frame = start_pose
+    zero_ftsensor()
+    sleep(0.2)
+
+    sample_position = 0
+    sample_count = 0
+    sum_force = 0.0
+    sum_force_squared = 0.0
+    approach_elapsed = 0.0
+    cycle_finished = False
+    state_message = "Approaching: waiting to reach requested force once"
+
+    while (cycle_finished == False) and (cycle_failed == False):
+        # One force_mode call site for approach, settling, and the full hold.
+        force_mode(
+            force_frame,
+            [0, 0, 1, 0, 0, 0],
+            [0, 0, force_holding, 0, 0, 0],
+            2,
+            [0.010, 0.010, max_approach_speed, 0.10, 0.10, 0.10]
+        )
+
+        current_pose = get_actual_tcp_pose()
+        relative_pose = pose_trans(pose_inv(start_pose), current_pose)
+        travelled_z = relative_pose[2]
+        wrench = get_tcp_force_tool()
+        measured_force_z_signed = wrench[2]
+        measured_force_z = measured_force_z_signed
+        if measured_force_z < 0:
+            measured_force_z = -measured_force_z
+        end
+
+        # Travel stays bounded during settling AND hold, independently of readiness.
+        if travelled_z >= distance_max:
+            cycle_failed = True
+            failure_message = "Maximum approach displacement reached"
+        elif (force_ready == False) and (approach_elapsed >= approach_settle_timeout):
+            cycle_failed = True
+            failure_message = "Requested force was not reached and settled in time"
+        end
+
+        if cycle_failed == False:
+            if (target_reached_once == False) and (measured_force_z >= force_holding):
+                target_reached_once = True
+                state_message = "Target reached once: collecting standard deviation window"
+            end
+
+            if target_reached_once:
+                # O(1) circular-buffer update; no pre-target samples are included.
+                if sample_count == window_samples:
+                    old_force = samples[sample_position]
+                    sum_force = sum_force - old_force
+                    sum_force_squared = sum_force_squared - old_force * old_force
+                else:
+                    sample_count = sample_count + 1
+                end
+                samples[sample_position] = measured_force_z
+                sum_force = sum_force + measured_force_z
+                sum_force_squared = sum_force_squared + measured_force_z * measured_force_z
+                sample_position = sample_position + 1
+                if sample_position >= window_samples:
+                    sample_position = 0
+                end
+
+                if sample_count == window_samples:
+                    moving_force_mean = sum_force / window_samples
+                    variance = sum_force_squared / window_samples - moving_force_mean * moving_force_mean
+                    if variance < 0:
+                        variance = 0.0
+                    end
+                    moving_force_std = sqrt(variance)
+
+                    # Latch exactly once. No mean-band or slope test.
+                    if (force_ready == False) and (moving_force_std <= std_limit):
+                        force_ready = True
+                        contact_detected = True
+                        hold_elapsed = 0.0
+                        state_message = "Force settled: hold started"
+                        if use_python_release:
+                            write_output_integer_register(42, 1)
+                        end
+                    end
+                end
+            end
+        end
+
+        sync()
+        if force_ready and (cycle_failed == False):
+            # This counter is never reset by a later force/std change.
+            hold_elapsed = hold_elapsed + step_time
+            if use_python_release:
+                if read_input_integer_register(42) == 1:
+                    cycle_finished = True
+                elif hold_elapsed >= python_release_timeout:
+                    cycle_failed = True
+                    failure_message = "Python release acknowledgement timed out"
+                end
+            elif hold_elapsed >= hold_duration:
+                cycle_finished = True
+            end
+        else:
+            approach_elapsed = approach_elapsed + step_time
+        end
+    end
+
+    if cycle_failed:
+        state_message = failure_message
+        if use_python_release:
+            write_output_integer_register(42, 2)
+        end
+    else:
+        state_message = "Force hold completed"
+    end
+
+    end_force_mode()
+    stopl(1.0)
+    sleep(0.1)
+    state_message = "Moving back to initial position"
+    movel(start_pose, a=return_acceleration, v=return_speed)
+    if use_python_release:
+        write_output_integer_register(42, 0)
+    end
+    if cycle_failed:
+        state_message = failure_message
+    else:
+        state_message = "Cycle completed"
+    end
+    return cycle_failed == False
+end
+
+apply_force_std_settling()
+

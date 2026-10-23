@@ -1,0 +1,196 @@
+# Feedback-controlled force cycle, for both Python timer and client feedback.
+# Input integer 42: reset to 0 before starting; write 1 to release the hold.
+# Integer 46: simulation flag. Floats 43/44/45: distance [m], contact [N], hold [N].
+# No duration or mode register is read. Python owns all normal hold timing.
+# Contact uses absolute CURRENT tool-frame Z force via the attached UR helper.
+# Commanded force and travel remain along the fixed STARTING TCP Z+ direction.
+
+# Adapted from UR Global Competence Center's get_tcp_force_tool.script.
+# Rotate force and torque axes using the CURRENT actual TCP orientation.
+# Rotation only: no TCP position translation or torque origin shift is applied.
+def get_tcp_force_tool():
+    force_torque = get_tcp_force()
+    force_B = p[force_torque[0], force_torque[1], force_torque[2], 0, 0, 0]
+    torque_B = p[force_torque[3], force_torque[4], force_torque[5], 0, 0, 0]
+    tcp = get_actual_tcp_pose()
+    rotation_BT = p[0, 0, 0, tcp[3], tcp[4], tcp[5]]
+    force_T = pose_trans(pose_inv(rotation_BT), force_B)
+    torque_T = pose_trans(pose_inv(rotation_BT), torque_B)
+    return p[force_T[0], force_T[1], force_T[2], torque_T[0], torque_T[1], torque_T[2]]
+end
+
+# ---------- Configuration ----------
+register = 42
+
+# Global variables appear with live values in PolyScope's Variables pane.
+global state_message = "Setting program variables"
+global distance_max = read_input_float_register(43)
+global force_contact = read_input_float_register(44)
+global force_holding = read_input_float_register(45)
+global simulation = read_input_integer_register(46) == 1
+global force_reached = False
+global distance_reached = False
+global measured_force_z = 0.0
+global measured_force_z_signed = 0.0
+
+# Fixed safety settings
+
+max_approach_speed = 0.02
+approach_timeout = 10.0
+if simulation:
+    approach_timeout = 2.0
+end
+
+return_speed = 0.04
+return_acceleration = 0.100
+
+# Status:
+# 0 = initialized / completed
+# 1 = force reached (real or simulated); waiting for Python acknowledgement
+# 2 = maximum distance or real-approach timeout reached without contact
+
+write_output_integer_register(register, 0)
+
+# Reject acknowledgement remaining from an earlier run
+while read_input_integer_register(register) != 0:
+    sync()
+end
+
+start_pose = get_actual_tcp_pose()
+force_frame = start_pose
+
+zero_ftsensor()
+sleep(0.2)
+
+contact_detected = False
+approach_timed_out = False
+approach_elapsed = 0.0
+
+# Approach along the starting TCP Z+ direction
+state_message = "Moving to reach contact force"
+
+while (contact_detected == False) and (distance_reached == False) and (approach_timed_out == False):
+
+    force_mode(
+        force_frame,
+        [0, 0, 1, 0, 0, 0],
+        [0, 0, force_holding, 0, 0, 0],
+        2,
+        [0.010, 0.010, max_approach_speed, 0.10, 0.10, 0.10]
+    )
+
+    current_pose = get_actual_tcp_pose()
+    relative_pose = pose_trans(pose_inv(start_pose), current_pose)
+    travelled_z = relative_pose[2]
+
+    wrench = get_tcp_force_tool()
+    measured_force_z_signed = wrench[2]
+    measured_force_z = measured_force_z_signed
+    if measured_force_z < 0:
+        measured_force_z = -measured_force_z
+    end
+
+    # Simulation deliberately ignores measured force and succeeds through its
+    # two-second timeout instead.
+    if (simulation == False) and (measured_force_z >= force_contact):
+        contact_detected = True
+    elif travelled_z >= distance_max:
+        distance_reached = True
+    end
+
+    approach_elapsed = approach_elapsed + get_steptime()
+    if approach_elapsed >= approach_timeout:
+        approach_timed_out = True
+    end
+
+    sync()
+end
+
+# In simulation, either the 2-second timeout or the distance limit is reported
+# as force reached. Stop force mode before Python performs the simulated hold
+# and acknowledgement sequence.
+force_mode_stopped = False
+
+if contact_detected:
+    force_reached = True
+elif simulation and (distance_reached or approach_timed_out):
+    force_reached = True
+    end_force_mode()
+    stopl(1.0)
+    sleep(0.1)
+    force_mode_stopped = True
+end
+
+if force_reached:
+
+    if contact_detected:
+        state_message = "Z force reached"
+    elif approach_timed_out:
+        state_message = "Simulation timeout reached; simulating force reached"
+    else:
+        state_message = "Maximum displacement reached; simulating force reached"
+    end
+    write_output_integer_register(register, 1)
+
+    acknowledged = False
+
+    # Maintain real force while waiting for Python. In simulation, force mode was
+    # already stopped at maximum distance and this loop only waits for the same
+    # acknowledgement, allowing the rest of the workflow to be tested.
+    if contact_detected:
+        state_message = "Waiting for end of Z-force hold"
+    else:
+        state_message = "Waiting for end of simulated hold"
+    end
+
+    while acknowledged == False:
+
+        if contact_detected:
+            force_mode(
+                force_frame,
+                [0, 0, 1, 0, 0, 0],
+                [0, 0, force_holding, 0, 0, 0],
+                2,
+                [0.010, 0.010, max_approach_speed, 0.10, 0.10, 0.10]
+            )
+        end
+
+        if read_input_integer_register(register) == 1:
+            acknowledged = True
+        end
+
+        sync()
+    end
+
+    state_message = "Force hold completed by Python acknowledgement"
+
+else:
+
+    if approach_timed_out:
+        state_message = "Z-force approach timed out"
+    else:
+        state_message = "Maximum displacement reached"
+    end
+    write_output_integer_register(register, 2)
+
+end
+
+if force_mode_stopped == False:
+    end_force_mode()
+    stopl(1.0)
+    sleep(0.1)
+end
+
+state_message = "Moving back to initial position"
+
+movel(
+    start_pose,
+    a=return_acceleration,
+    v=return_speed
+)
+
+state_message = "Initial position reached"
+
+write_output_integer_register(register, 0)
+
+state_message = "Cycle completed"

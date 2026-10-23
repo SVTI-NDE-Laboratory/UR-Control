@@ -16,7 +16,7 @@
     "speed": 150.0
   },
   "measurement": {
-    "program_path": "Inspection/Programs/Apply_Force/apply_force.urp",
+    "program_path": "/Projects/BAM TTS/Programs/Apply_Force/apply_force.urp",
     "contact_threshold": 200.0,
     "holding_force": 200.0,
     "max_displacement": 50.0,

@@ -26,7 +26,7 @@ from robot_connection import stop_robot
 # ---------------------------------------------------------------------------
 
 ROBOT_IP = "192.168.3.10"
-PROGRAM_PATH = "Benoit/apply_force.urp"
+PROGRAM_PATH = "/Projects/BAM TTS/Programs/Apply_Force/apply_force.urp"
 
 # Distances are millimetres and forces are newtons. The approach direction is the
 # tool Z+ axis at the pose where the controller-side program starts.

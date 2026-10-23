@@ -6,16 +6,17 @@ apart from global declarations and explicit block terminators.
 """
 
 from pathlib import Path
+import re
 import unittest
 
 
 SCRIPT = Path(__file__).resolve().parents[1] / "src/measurement/polyscope_scripts/apply_force.script"
 
 
-def translated_script():
+def translated_script(script=SCRIPT):
     lines = []
     depth = 0
-    for source_line in SCRIPT.read_text(encoding="utf-8").splitlines():
+    for source_line in script.read_text(encoding="utf-8").splitlines():
         line = source_line.strip()
         if not line or line.startswith("#"):
             continue
@@ -26,6 +27,8 @@ def translated_script():
             depth -= 1
         if line.startswith("global "):
             line = line[len("global "):]
+            lines.append("    " * depth + "global " + line.split("=", 1)[0].strip())
+        line = re.sub(r"\bp\[", "[", line)
         lines.append("    " * depth + line)
         if line.endswith(":"):
             depth += 1
@@ -33,7 +36,7 @@ def translated_script():
             raise AssertionError("Unbalanced URScript blocks")
     if depth != 0:
         raise AssertionError("Unbalanced URScript blocks")
-    return compile("\n".join(lines), str(SCRIPT), "exec")
+    return compile("\n".join(lines), str(script), "exec")
 
 
 class RobotStub:
@@ -90,7 +93,7 @@ class RobotStub:
         assert target == [0] * 6, "Return must use the captured start pose"
         self.events.append(("return",))
 
-    def run(self):
+    def run(self, script=SCRIPT, overrides=None):
         namespace = {
             "read_input_integer_register": self.input_integer,
             "read_input_float_register": lambda r: {43: self.max_distance, 44: 5, 45: 10}[r],
@@ -110,7 +113,8 @@ class RobotStub:
             "stopl": lambda acceleration: None,
             "movel": self.movel,
         }
-        exec(translated_script(), namespace)
+        namespace.update(overrides or {})
+        exec(translated_script(script), namespace)
         return namespace
 
     @property
