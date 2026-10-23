@@ -47,8 +47,7 @@ ROUTINES_FILE = ROUTINES_DIR / "routine_files" / "routines_pk-03-prism-a.json"
 TARGET_LINE_POSITION = 310.0
 
 FORCE_PROGRAM_PATH = "/Projects/BAM TTS/Programs/Apply_Force/apply_force.urp"
-CONTACT_THRESHOLD = 140.0
-HOLDING_FORCE = 160.0
+TARGET_FORCE = 160.0
 MAX_DISPLACEMENT = 50.0
 SIMULATION = False
 
@@ -74,8 +73,7 @@ MEASUREMENT_CONFIG = {
     },
     "measurement": {
         "program_path": FORCE_PROGRAM_PATH,
-        "contact_threshold": CONTACT_THRESHOLD,
-        "holding_force": HOLDING_FORCE,
+        "target_force": TARGET_FORCE,
         "max_displacement": MAX_DISPLACEMENT,
         "simulation": SIMULATION,
         "stop_method": "timer",
@@ -200,10 +198,11 @@ def run() -> None:
                 ROBOT_IP,
                 measurement["program_path"],
                 measurement["max_displacement"],
-                measurement["contact_threshold"],
-                measurement["holding_force"],
+                measurement["target_force"],
                 measurement["simulation"],
                 stop_method=measurement_stop_method(MEASUREMENT_CONFIG),
+                settling_time=measurement["settling_time"],
+                simulation_program_path=measurement["simulation_program_path"],
                 hold_duration=measurement.get("hold_duration", 0.5),
             )
             print(f"force_reached = {force_reached}, timestamp = {timestamp}")

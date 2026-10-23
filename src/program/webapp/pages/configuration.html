@@ -168,7 +168,7 @@
       }
       xEndInput.readOnly = !autoFit.checked;
       xEndInput.classList.toggle('optional-disabled', !autoFit.checked);
-      for (const key of ['contact_threshold', 'holding_force']) {
+      for (const key of ['target_force']) {
         const input = document.getElementById(`measurement.${key}`);
         input.readOnly = simulationEnabled.checked;
         input.classList.toggle('simulation-force', simulationEnabled.checked);

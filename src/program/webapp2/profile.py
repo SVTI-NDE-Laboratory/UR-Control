@@ -205,7 +205,7 @@ def initialize(data_dir):
             "results_directory": "../../results",
             "ui_defaults": {"linear_speed": 50, "linear_acceleration": 100,
                             "joint_speed": 0.05, "joint_acceleration": 0.1,
-                            "threshold": 140, "force": 160, "duration": 3},
+                            "force": 200, "settling_time": 1.5, "duration": 3},
         })
     preferences = data_dir / "preferences.json"
     if not preferences.exists():
@@ -277,15 +277,13 @@ def validate_profile(path, data_dir, *, values=None):
         raise ValueError("ui_defaults must be an object.")
     limits = {"linear_speed": 150, "linear_acceleration": 150,
               "joint_speed": 0.5, "joint_acceleration": 0.5,
-              "threshold": float("inf"), "force": float("inf"), "duration": 8}
+              "force": float("inf"), "settling_time": float("inf"), "duration": 8}
     import math
     for name, limit in limits.items():
         value = ui.get(name)
         if value is not None and (type(value) not in (int, float) or not math.isfinite(value)
-                                  or not (0 <= value <= limit) or (name != "duration" and value == 0)):
+                                  or not (0 <= value <= limit) or (name not in ("duration", "settling_time") and value == 0)):
             raise ValueError(f"Invalid ui_defaults.{name}.")
-    if ui.get("force", 160) < ui.get("threshold", 140):
-        raise ValueError("Default force must be at least the threshold.")
     return Profile(Path(data_dir).resolve(), path, values, paths)
 
 
@@ -304,6 +302,18 @@ def load_profile(data_dir=None):
         raise ValueError("Unsupported preferences.json schema_version; expected 1.")
     selected = values.get("configuration_path")
     profile = validate_profile(resolve_path(selected, data_dir), data_dir)
+    from measurement_config import normalize_force_settings
+    defaults = read_object(profile.paths["measurement_defaults"])
+    force_settings = normalize_force_settings(defaults["measurement"])
+    if force_settings != defaults["measurement"]:
+        defaults["measurement"] = force_settings
+        write_object(profile.paths["measurement_defaults"], defaults)
+    ui_defaults = profile.values.get("ui_defaults", {})
+    if "threshold" in ui_defaults:
+        values = {**profile.values, "ui_defaults": {key: value for key, value in ui_defaults.items() if key != "threshold"}}
+        values["ui_defaults"].setdefault("settling_time", 1.5)
+        write_object(profile.path, values)
+        profile = validate_profile(profile.path, data_dir)
     if "routine_scripts_directory" not in profile.values:
         values = {**profile.values, "routine_scripts_directory": "routine_scripts"}
         write_object(profile.path, values)

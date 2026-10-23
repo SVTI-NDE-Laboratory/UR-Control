@@ -61,7 +61,7 @@ def main():
         api.state.uvicorn_server = server
         url = f"http://127.0.0.1:{port}/manual"
         print(f"RTM Cobot Studio: {url}", flush=True)
-        print("Press Ctrl+C here to close the control panel.")
+        print("Close the app tab/browser to stop the app, or press Ctrl+C here.")
         if not args.no_browser:
             threading.Timer(0.4, webbrowser.open, args=(url,)).start()
         server.run(sockets=[listener])

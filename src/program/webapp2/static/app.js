@@ -1,4 +1,17 @@
 /* Shared status polling never opens a robot connection. */
+// Keep the server tied to open app tabs; closing the last tab ends the app.
+let browserSession = null;
+function connectBrowserSession() {
+  if (browserSession === null) browserSession = new EventSource('/api/browser-session');
+}
+function closeBrowserSession() {
+  browserSession?.close();
+  browserSession = null;
+}
+connectBrowserSession();
+window.addEventListener('pagehide', closeBrowserSession);
+window.addEventListener('pageshow', connectBrowserSession);
+
 const $ = id => document.getElementById(id);
 let latest = null, options = null, pending = false, flexibleLimits = null;
 let activePage = 'manual';
@@ -339,10 +352,10 @@ $('routine-form').addEventListener('submit', event => {
 });
 $('force-form').addEventListener('submit', event => {
   event.preventDefault();
-  perform('/api/flexible/command', {action:'force', threshold:Number($('threshold').value), force:Number($('force').value), duration:Number($('force-duration').value), simulation:$('force-simulation').checked});
+  perform('/api/flexible/command', {action:'force', settling_time:Number($('force-settling').value), force:Number($('force').value), duration:Number($('force-duration').value), simulation:$('force-simulation').checked});
 });
 $('force-simulation').addEventListener('change', () => {
-  for (const id of ['threshold', 'force']) {
+  for (const id of ['force']) {
     $(id).readOnly = $('force-simulation').checked;
     $(id).classList.toggle('simulation-force', $('force-simulation').checked);
   }
@@ -387,7 +400,7 @@ $('start-flexible').addEventListener('click', () => perform('/api/flexible/start
 $('end-flexible').addEventListener('click', () => perform('/api/flexible/command', {action:'end'}));
 $('stop').addEventListener('click', () => perform('/api/worker/stop', {}));
 $('close').addEventListener('click', async () => {
-  try { await api('/api/close', {}); document.body.textContent = 'RTM Cobot Studio closed. You can close this tab.'; }
+  try { await api('/api/close', {}); closeBrowserSession(); document.body.textContent = 'RTM Cobot Studio closed. You can close this tab.'; }
   catch(error) { showBlockingError(error.message); }
 });
 async function initialize() {
@@ -407,8 +420,8 @@ async function initialize() {
       $('settings-message').textContent = 'Close and relaunch RTM Cobot Studio to apply the saved settings.';
       $('settings-message').hidden = false;
     }
-    $('threshold').value = uiDefaults.threshold ?? 140;
-    $('force').value = uiDefaults.force ?? 160;
+    $('force-settling').value = uiDefaults.settling_time ?? 1.5;
+    $('force').value = uiDefaults.force ?? 200;
     $('force-duration').value = uiDefaults.duration ?? 3;
   } catch(error) { showBlockingError(error.message); }
   try {

@@ -136,62 +136,41 @@ def wait_for_status(
         time.sleep(STATUS_POLL_INTERVAL)
 
 
-def effective_simulation_mode(
-    contact_threshold: float, holding_force: float, simulation: bool = False
-) -> bool:
-    """Validate force values and enable simulation for the zero/zero pair."""
-
-    if contact_threshold < 0 or holding_force < 0:
-        raise ValueError("contact_threshold and holding_force cannot be negative.")
-    if (contact_threshold == 0) != (holding_force == 0):
-        raise ValueError(
-            "contact_threshold and holding_force must either both be zero "
-            "for simulation or both be positive."
-        )
-    if holding_force < contact_threshold:
-        raise ValueError("holding_force must be at least contact_threshold.")
-    return simulation or (contact_threshold == 0 and holding_force == 0)
-
-
-def apply_force(
-    robot_ip: str,
-    program_path: str,
-    max_distance: float,
-    contact_threshold: float,
-    holding_force: float,
-    simulation: bool = False,
-    acquire_data: Callable[[dict], dict] | None = None,
-    acquisition_context: dict | None = None,
-    stop_method: str = "timer",
-    on_force_success: Callable[[str], None] | None = None,
-    hold_duration: float = 0.5,
-) -> tuple[bool, str]:
+def apply_force(robot_ip: str, program_path: str, max_distance: float, target_force: float,
+                simulation: bool = False, acquire_data: Callable[[dict], dict] | None = None,
+                acquisition_context: dict | None = None, stop_method: str = "timer",
+                on_force_success: Callable[[str], None] | None = None, hold_duration: float = 0.5,
+                settling_time: float = 1.5, simulation_program_path: str | None = None) -> tuple[bool, str]:
     """Run a force cycle and return its result plus measurement timestamp.
 
     ``max_distance`` is configured in millimetres. It is converted to metres
-    only when written to the robot input register.
+    only when written to the robot input register. ``settling_time`` is in
+    seconds. Simulation selects its own stationary URP; both programs signal
+    readiness after settling and wait for the same Python release.
     """
 
-    # Integers: status/ack 42 and simulation 46.
-    # Doubles: distance 43, contact 44, holding force 45.
-    # The robot always waits for Python; stop_method and duration stay on the host.
-    # Force-program motion values remain hardcoded in the controller-side URP.
+    # Input doubles: 43 distance [m], 44 settling [s], 45 target [N].
+    # Input/output integer 42 carries the measurement-release handshake.
     status_register = 42
-    max_distance_register, contact_threshold_register = 43, 44
-    holding_force_register = 45
-    simulation_register = 46
+    max_distance_register, settling_time_register, target_force_register = 43, 44, 45
 
     # Validate values before connecting.
     from measurement_config import measurement_stop_method
     stop_method = measurement_stop_method({"measurement": {"stop_method": stop_method}})
     if stop_method == "client_feedback" and acquire_data is None:
         raise ValueError("client_feedback requires an acquisition callback to release the hold.")
-    if max_distance <= 0: raise ValueError("max_distance must be positive.")
     if isinstance(hold_duration, bool) or not isinstance(hold_duration, (int, float)) or not math.isfinite(hold_duration) or hold_duration <= 0:
         raise ValueError("hold_duration must be positive and finite (seconds).")
-    simulation = effective_simulation_mode(
-        contact_threshold, holding_force, simulation
-    )
+    for name, value in (("target_force", target_force), ("max_distance", max_distance)):
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or value <= 0:
+            raise ValueError(f"{name} must be positive and finite.")
+    if isinstance(settling_time, bool) or not isinstance(settling_time, (int, float)) or not math.isfinite(settling_time) or settling_time < 0:
+        raise ValueError("settling_time must be nonnegative and finite (seconds).")
+    if not isinstance(simulation, bool):
+        raise ValueError("simulation must be true or false.")
+    selected_program = simulation_program_path if simulation else program_path
+    if not isinstance(selected_program, str) or not selected_program.strip():
+        raise ValueError("Specify a simulation_program_path for simulation and program_path for real force.")
 
     # Remote Control is not enough: the arm must also be powered and brake-released.
     assert_robot_running(robot_ip)
@@ -219,17 +198,13 @@ def apply_force(
         # Send physical values before starting the URP.
         parameters = {
             max_distance_register: millimetres_to_metres(max_distance),
-            contact_threshold_register: contact_threshold,
-            holding_force_register: holding_force,
+            settling_time_register: settling_time,
+            target_force_register: target_force,
         }
 
         for register, value in parameters.items():
             if not rtde_io.setInputDoubleRegister(register, value):
                 raise RuntimeError(f"Could not write input double register {register}.")
-
-        # Always overwrite simulation so an earlier True cannot persist.
-        simulation_value = 1 if simulation else 0
-        if not rtde_io.setInputIntRegister(simulation_register, simulation_value): raise RuntimeError(f"Could not write simulation register {simulation_register}.")
 
         # Clear any previous hold acknowledgement.
         if not rtde_io.setInputIntRegister(status_register, 0): raise RuntimeError(f"Could not reset input integer register {status_register}.")
@@ -238,7 +213,7 @@ def apply_force(
         print_force_contact_log(
             "The cobot starts its procedure to apply force.", simulation, acquisition_context,
         )
-        load_and_play_urp(robot_ip, program_path)
+        load_and_play_urp(robot_ip, selected_program)
 
         # Wait for the URP to clear any stale status.
         print("Force program: waiting for initialization.")
@@ -253,15 +228,14 @@ def apply_force(
         force_reached = False
 
         # Wait for success (1), distance/approach limit (2), or hold timeout (3).
-        print("Force program: waiting for contact, distance limit, or timeout.")
+        print("Force program: waiting for target, settling, distance limit, or timeout.")
         status = wait_for_status(
             rtde_receive,
             {1, 2, 3},
-            SIMULATION_STATUS_TIMEOUT if simulation else APPROACH_STATUS_TIMEOUT,
-            "force approach",
-            # A simulation is allowed to remain stationary until its two-second
-            # controller-side timeout reports success.
-            motion_watchdog=not simulation,
+            (SIMULATION_STATUS_TIMEOUT if simulation else APPROACH_STATUS_TIMEOUT) + settling_time,
+            "force approach and settling",
+            # Settling and simulation intentionally wait in place; the URP bounds approach.
+            motion_watchdog=False,
         )
         measurement_timestamp = (
             datetime.now().astimezone().isoformat(timespec="milliseconds")
@@ -272,7 +246,7 @@ def apply_force(
             if on_force_success is not None:
                 on_force_success(measurement_timestamp)
             print_force_contact_log(
-                "The cobot is in contact with the wall (force reached).",
+                "The cobot is ready for measurement (settling completed).",
                 simulation, acquisition_context,
             )
             if stop_method == "client_feedback":
@@ -355,7 +329,6 @@ def apply_force(
     finally:
         # Reset Python-owned inputs and close both connections.
         rtde_io.setInputIntRegister(status_register, 0)
-        rtde_io.setInputIntRegister(simulation_register, 0)
         rtde_receive.disconnect()
         rtde_io.disconnect()
 
@@ -367,8 +340,7 @@ if __name__ == "__main__":
         "192.168.3.10",
         "/Projects/BAM TTS/Programs/Apply_Force/apply_force.urp",
         50.0,
-        15.0,
-        20.0,
+        200.0,
         simulation=False,
     )
     print(f"force_reached = {force_reached}, timestamp = {measurement_timestamp}")

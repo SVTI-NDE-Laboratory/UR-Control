@@ -50,7 +50,7 @@ class ProgramPathTests(unittest.TestCase):
         self.assertEqual(defaults["server"]["measurement"]["stop_method"], "client_feedback")
         for mode in ("server", "timer"):
             self.assertEqual(server.legacy.default_config_path("point_to_point", mode), self.default)
-            self.assertEqual(defaults[mode]["measurement"]["holding_force"], self.config["measurement"]["holding_force"])
+            self.assertEqual(defaults[mode]["measurement"]["target_force"], self.config["measurement"]["target_force"])
         self.default.write_text(json.dumps(defaults["timer"]))
         self.assertEqual(server.legacy.load_default_config("point_to_point")["measurement"]["stop_method"], "timer")
 
@@ -61,6 +61,16 @@ class ProgramPathTests(unittest.TestCase):
             for args in (["3"], ["manual"]):
                 settings, _ = flexible.force_measurement_settings(args)
                 self.assertEqual(settings["program_path"], path)
+
+    def test_simulation_path_is_shared_and_browser_cannot_override_it(self):
+        config = deepcopy(self.config)
+        config["measurement"]["simulation_program_path"] = "Custom/Simulation.urp"
+        self.default.write_text(json.dumps(config))
+        self.assertEqual(measurement_config.read_default_program_path(True), "Custom/Simulation.urp")
+        defaults = server.legacy.load_default_config("point_to_point", "server")
+        self.assertEqual(defaults["measurement"]["simulation_program_path"], "Custom/Simulation.urp")
+        settings, _ = flexible_worker.flexible.force_measurement_settings(["manual"])
+        self.assertEqual(settings["simulation_program_path"], "Custom/Simulation.urp")
 
     def test_stale_hidden_browser_path_cannot_override_current_defaults(self):
         fields = {}

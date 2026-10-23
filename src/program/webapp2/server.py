@@ -11,10 +11,11 @@ from .profile import read_object, resolve_path, select_profile, change_data_dire
 from .dialogs import choose_local_data, choose_routine_script
 from .routine_setup import RoutineSelection, RoutineCreation, routine_directory, selected_routine, select_routine, create_routine, creation_defaults
 from .control import ControlWorkers
+from .browser_session import BrowserSessions
 from .sessions import FolderSelection, MeasurementStartRequest, measurement_folder
 from .waypoint_routes import routine_transitions, waypoint_motion_options
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from webapp import server as legacy
@@ -34,12 +35,23 @@ legacy_launcher.ROBOT_IP = legacy_workers.ROBOT_IP = PROFILE.values["robot_ip"]
 measurement_config.DEFAULT_CONFIG_FILE = PROFILE.paths["measurement_defaults"]
 @asynccontextmanager
 async def lifespan(app):
-    yield
-    if workers.snapshot()["running"]:
-        try:
-            workers.stop("RTM Cobot Studio shutdown")
-        except RuntimeError:
-            pass
+    async def browser_closed():
+        # Serialize shutdown against commands that can start another worker.
+        async with mutation_lock:
+            await asyncio.to_thread(close_app)
+
+    sessions = BrowserSessions(browser_closed)
+    app.state.browser_sessions = sessions
+    try:
+        yield
+    finally:
+        await sessions.stop()
+        del app.state.browser_sessions
+        if workers.snapshot()["running"]:
+            try:
+                await asyncio.to_thread(workers.stop, "RTM Cobot Studio shutdown")
+            except RuntimeError:
+                pass
 
 
 api = FastAPI(title="RTM Cobot Studio", lifespan=lifespan)
@@ -51,6 +63,9 @@ async def serialize_changes(request, call_next):
     """Also cover legacy preflight: no manual command can start during it."""
     if request.method == "POST":
         async with mutation_lock:
+            sessions = getattr(api.state, "browser_sessions", None)
+            if sessions is not None and sessions.closing and request.url.path != "/api/close":
+                return JSONResponse({"detail": "The application is closing."}, status_code=409)
             return await call_next(request)
     return await call_next(request)
 
@@ -58,6 +73,30 @@ async def serialize_changes(request, call_next):
 @api.get("/", include_in_schema=False)
 def root():
     return RedirectResponse("/manual")
+
+
+@api.get("/api/browser-session")
+async def browser_session(request: Request):
+    """A persistent connection follows the tab even while it is in the background."""
+    sessions = request.app.state.browser_sessions
+    if sessions.closing:
+        return HTMLResponse(status_code=204)
+
+    async def events():
+        token = sessions.connect()
+        try:
+            yield "retry: 1000\ndata: connected\n\n"
+            while not await request.is_disconnected():
+                host = getattr(api.state, "uvicorn_server", None)
+                if sessions.closing or (host is not None and host.should_exit):
+                    break
+                yield ": keepalive\n\n"
+                await asyncio.sleep(1)
+        finally:
+            sessions.disconnect(token)
+
+    return StreamingResponse(events(), media_type="text/event-stream",
+                             headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"})
 
 
 @api.get("/manual", response_class=HTMLResponse)
@@ -115,6 +154,7 @@ def start_measurement(request: MeasurementStartRequest):
         # Check before robot preflight, then reserve atomically before any writes.
         folder = measurement_folder(results, name)
         config["measurement"]["program_path"] = legacy.read_default_program_path()
+        config["measurement"]["simulation_program_path"] = legacy.read_default_program_path(True)
         warning = legacy.line_scope_warning(legacy.line_geometry(config, read_routines_file(ROUTINE_FILE)))
         if warning and not request.outside_line_confirmed:
             raise HTTPException(409, warning)
@@ -335,8 +375,8 @@ class FlexibleRequest(BaseModel):
     action: Literal["move", "force", "end"]
     x: float | None = None
     y: float | None = None
-    threshold: float = Field(140, gt=0)
-    force: float = Field(160, gt=0)
+    force: float = Field(200, gt=0)
+    settling_time: float = Field(1.5, ge=0)
     # Preserve the existing operator-facing local hold range.
     duration: float = Field(3, ge=0, le=8)
     simulation: bool = False
@@ -350,8 +390,6 @@ class FlexibleRequest(BaseModel):
                 raise ValueError("Specify both X and Y in millimetres.")
             if (not limits["x_min"] <= self.x <= limits["x_max"] or not limits["y_min"] <= self.y <= limits["y_max"]) and not self.outside_range_confirmed:
                 raise ValueError(f"X must be within 0–{limits['x_max']:.3f} mm and Y within {limits['y_min']}–{limits['y_max']} mm.")
-        elif self.action == "force" and self.force < self.threshold:
-            raise ValueError("Contact force must be at least the contact threshold.")
         return self
 
 
@@ -401,11 +439,14 @@ def stop_worker():
 
 @api.post("/api/close")
 def close_app():
-    if workers.snapshot()["running"]:
-        workers.stop("RTM Cobot Studio close")
-    server = getattr(api.state, "uvicorn_server", None)
-    if server is not None:
-        server.should_exit = True
+    try:
+        if workers.snapshot()["running"]:
+            workers.stop("RTM Cobot Studio close")
+    finally:
+        # Worker termination and hardware-stop errors must not leave a hidden app running.
+        server = getattr(api.state, "uvicorn_server", None)
+        if server is not None:
+            server.should_exit = True
     return {"closed": True}
 
 

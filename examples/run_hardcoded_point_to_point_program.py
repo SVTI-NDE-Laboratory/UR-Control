@@ -72,12 +72,11 @@ MEASUREMENT_CONFIG = {
     },
     "measurement": {
         "program_path": "/Projects/BAM TTS/Programs/Apply_Force/apply_force.urp",
-        "contact_threshold": 0.0,
-        "holding_force": 0.0,
+        "target_force": 200.0,
         "max_displacement": 1.0,
         # With nonzero forces this still performs a physical force approach.
         # Simulation only reports maximum displacement as a successful cycle.
-        "simulation": False,
+        "simulation": True,
     },
 }
 

@@ -20,14 +20,34 @@ DEFAULT_CONFIG_FILE = Path(os.environ.get("UR15_MEASUREMENT_DEFAULTS",
                          Path(__file__).resolve().parents[1] / "program/config/config_default.json"))
 
 
-def read_default_program_path() -> str:
-    """Read the installed force URP path afresh, shared by every stop mode."""
-
+def read_default_program_path(simulation: bool = False) -> str:
+    """Read the selected installed force URP path from the current defaults."""
     config = json.loads(DEFAULT_CONFIG_FILE.read_text(encoding="utf-8"))
-    value = config.get("measurement", {}).get("program_path")
+    measurement = normalize_force_settings(config.get("measurement", {}))
+    key = "simulation_program_path" if simulation else "program_path"
+    value = measurement.get(key)
     if not isinstance(value, str) or not value.strip():
-        raise ValueError("config_default.json must contain a nonempty measurement.program_path.")
+        raise ValueError(f"Measurement defaults must contain a nonempty measurement.{key}.")
     return value.strip()
+
+
+def normalize_force_settings(measurement: dict) -> dict:
+    """Return one target force, settling delay, and separate real/simulation paths."""
+    measurement = dict(measurement)
+    if "target_force" not in measurement:
+        target = measurement.get("holding_force", measurement.get("contact_threshold", 200.0))
+        if target == 0 and measurement.get("contact_threshold", 0) == 0:
+            measurement["simulation"] = True
+            target = 200.0
+        measurement["target_force"] = target
+    measurement.pop("contact_threshold", None)
+    measurement.pop("holding_force", None)
+    measurement.setdefault("settling_time", 1.5)
+    measurement.setdefault("simulation", False)
+    program = measurement.get("program_path", "")
+    directory = program.rsplit("/", 1)[0] + "/" if isinstance(program, str) and "/" in program else ""
+    measurement.setdefault("simulation_program_path", directory + "apply_force_simulation.urp")
+    return measurement
 
 
 def measurement_stop_method(config: dict) -> str:
@@ -56,6 +76,7 @@ def canonical_config(config: dict) -> dict:
     if line_method(config) == POINT_TO_POINT:
         config["line"] = dict(line_parameters(config))
         config["line"].pop("method", None)
+    config["measurement"] = normalize_force_settings(config["measurement"])
     config["measurement"]["stop_method"] = measurement_stop_method(config)
     config["measurement"].setdefault("hold_duration", 0.5)
     config["measurement"].pop("data_server", None)
@@ -71,27 +92,26 @@ def validate_force_config(config: dict) -> None:
     duration = measurement.setdefault("hold_duration", 0.5)
     if isinstance(duration, bool) or not isinstance(duration, (int, float)) or not math.isfinite(duration) or duration <= 0:
         raise ValueError("Measurement hold_duration must be positive and finite (seconds).")
-    contact = measurement["contact_threshold"]
-    holding = measurement["holding_force"]
-    if contact < 0 or holding < 0:
-        raise ValueError("Contact and holding force cannot be negative.")
-    if (contact == 0) != (holding == 0):
-        raise ValueError(
-            "Contact and holding force must either both be zero for simulation "
-            "or both be greater than zero."
-        )
-    if holding < contact:
-        raise ValueError("Holding force must be greater than or equal to contact force.")
-    if measurement["max_displacement"] <= 0:
-        raise ValueError("Maximum displacement must be positive.")
-    if not measurement["program_path"].strip():
-        raise ValueError("Robot program path cannot be empty.")
+    normalized = normalize_force_settings(measurement)
+    measurement.clear()
+    measurement.update(normalized)
+    for key in ("target_force", "max_displacement"):
+        value = measurement[key]
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or value <= 0:
+            raise ValueError(f"Measurement {key} must be positive and finite.")
+    delay = measurement["settling_time"]
+    if isinstance(delay, bool) or not isinstance(delay, (int, float)) or not math.isfinite(delay) or delay < 0:
+        raise ValueError("Measurement settling_time must be nonnegative and finite (seconds).")
+    if not isinstance(measurement["simulation"], bool):
+        raise ValueError("Measurement simulation must be true or false.")
+    for key in ("program_path", "simulation_program_path"):
+        value = measurement.get(key)
+        if not isinstance(value, str) or not value.strip():
+            raise ValueError(f"Measurement {key} must be a nonempty robot program path.")
     if "force_step_distance" in measurement and measurement["force_step_distance"] <= 0:
         raise ValueError("Force step distance must be positive.")
     if "force_direction" in measurement:
         normalize(measurement["force_direction"])
-    if contact == 0 and holding == 0:
-        measurement["simulation"] = True
 
 
 def validate_measurement_config(
@@ -164,8 +184,8 @@ def print_measurement_config_summary(
         origin = geometry.get("x_start", 0.0)
         print(f"  obstacle: start={obstacle[0] + origin} mm, end={obstacle[1] + origin} mm")
     print(
-        f"  measurement: contact_threshold={measurement['contact_threshold']} N, "
-        f"holding_force={measurement['holding_force']} N, "
+        f"  measurement: target_force={measurement['target_force']} N, "
+        f"settling_time={measurement['settling_time']} s, "
         f"max_displacement={measurement['max_displacement']} mm"
     )
     print(

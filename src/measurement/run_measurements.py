@@ -61,7 +61,7 @@ class MeasurementUnavailableError(RuntimeError):
         super().__init__(
             "Could not complete measurement "
             f"{measurement_index} at {line_position:.3f} mm: "
-            "force threshold was not reached."
+            "target force was not reached."
         )
 
 
@@ -263,8 +263,7 @@ def _run_measurements(
             robot_ip,
             measurement["program_path"],
             measurement["max_displacement"],
-            measurement["contact_threshold"],
-            measurement["holding_force"],
+            measurement["target_force"],
             measurement["simulation"],
             acquire_data,
             {
@@ -275,6 +274,8 @@ def _run_measurements(
             stop_method=measurement_stop_method(config),
             on_force_success=publish_force_success,
             hold_duration=measurement.get("hold_duration", 0.5),
+            settling_time=measurement["settling_time"],
+            simulation_program_path=measurement["simulation_program_path"],
         )
         if measurement_plan_path is not None:
             record_measurement_result(
@@ -298,7 +299,7 @@ def _run_measurements(
             message = (
                 f"Could not complete measurement {measurement_index} "
                 f"at {position:.3f} mm: "
-                "force threshold was not reached before maximum displacement. "
+                "target force was not reached before maximum displacement. "
                 "Recovering to the safe high waypoint on this side of the obstacle."
             )
             print(f"\n{message}")

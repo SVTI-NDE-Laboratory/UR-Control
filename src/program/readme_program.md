@@ -37,7 +37,7 @@ python src\program\commands\run_measurement_sequence.py
 By default, it reads:
 
 ```text
-src/program/config/config_mira.json
+src/program/config/config_default.json
 src/routines/routine_files/routines_block.json
 ```
 

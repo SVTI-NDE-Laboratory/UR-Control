@@ -25,9 +25,11 @@ class DashboardLoadTests(unittest.TestCase):
     def test_rejected_quote_reports_both_replies_and_never_plays(self):
         path = "Apply Force/apply_force.urp"
         with patch.object(robot_connection, "dashboard_command", side_effect=["could not understand: raw", "File not found: quoted"]) as command:
-            with self.assertRaisesRegex(RuntimeError, "Unquoted path:.*Quoted path:"):
+            with self.assertRaisesRegex(RuntimeError, "Unquoted path:.*Quoted path:") as raised:
                 robot_connection.load_and_play_urp("robot", path)
         self.assertEqual(command.call_count, 2)
+        self.assertIn("could not find this URP", str(raised.exception))
+        self.assertNotIn("controller rejected the load syntax", str(raised.exception))
 
     def test_file_missing_is_not_treated_as_a_parser_error(self):
         with patch.object(robot_connection, "dashboard_command", return_value="File not found: Apply Force/apply_force.urp") as command:

@@ -68,8 +68,7 @@ MEASUREMENT_CONFIG = {
     },
     "measurement": {
         "program_path": "/Projects/BAM TTS/Programs/Apply_Force/apply_force.urp",
-        "contact_threshold": 30.0,
-        "holding_force": 30.0,
+        "target_force": 30.0,
         "max_displacement": 5.0,
         "simulation": True,
     },

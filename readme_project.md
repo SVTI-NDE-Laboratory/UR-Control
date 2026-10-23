@@ -69,33 +69,28 @@ Test-NetConnection 192.168.3.10 -Port 30002
 The Python program loads a URP on the robot controller for each force cycle.
 The selected URP is configured with `measurement.program_path`.
 
-There are two current force-program variants:
+The real program uses `src/measurement/polyscope_scripts/apply_force_from_ur_settling.script`.
+Set its controller URP in `measurement.program_path`. The identical `apply_force.script`
+is also provided. The stationary simulation uses `apply_force_simulation.script`, with
+its controller URP selected by `measurement.simulation_program_path`.
 
-| Variant | Program path example | Config file | Acquisition behavior |
-|---|---|---|---|
-| Server | `Inspection/Programs/apply_force_with_server.urp` | `config_server.json` | Robot waits while Python coordinates the external TCP acquisition client |
-| MIRA | `Inspection/Programs/apply_force_mira.urp` | `config_mira.json` | Robot program performs the MIRA acquisition action itself |
+Copy each source into its PolyScope Script node and save its URP on the controller.
+Local source changes do not update a controller-side program.
 
-The local script sources are:
-
-```text
-src/measurement/polyscope_scripts/apply_force_with_server.script
-src/measurement/polyscope_scripts/apply_force_mira.script
-```
-
-When one of these scripts changes, copy the script content into the matching
-PolyScope Script node and save the corresponding URP on the controller.
+The real cycle enters force mode once, reaches `target_force`, waits `settling_time`,
+then reports readiness. Python's timer or acquisition client releases the hold.
+Simulation waits one second, then the same settling delay and release handshake;
+it does not issue motion or force commands or read the force sensor.
 
 Force-program registers:
 
 | Register | Direction | Meaning |
 |---|---|---|
-| Integer 42 | Robot -> Python | `0` ready/complete, `1` force reached, `2` distance/time limit, `3` acknowledgement timeout |
-| Integer 42 | Python -> Robot | `1` acquisition completed; release the force hold |
+| Integer 42 | Robot -> Python | 0 initialized/completed, 1 settled/ready, 2 approach/distance failure |
+| Integer 42 | Python -> Robot | 0 before start, 1 measurement completed |
 | Double 43 | Python -> Robot | Maximum approach distance [m] |
-| Double 44 | Python -> Robot | Contact-force threshold [N] |
-| Double 45 | Python -> Robot | Holding force [N] |
-| Integer 46 | Python -> Robot | Simulation flag |
+| Double 44 | Python -> Robot | Settling time [s] |
+| Double 45 | Python -> Robot | Target force [N] |
 
 The force approach uses the positive Z axis of the TCP pose captured at the
 start of the force cycle. Confirm the active TCP orientation before running.
@@ -190,16 +185,15 @@ src/routines/readme_routines.md
 
 ## 5. Configuration Files
 
-Default configurations live in:
+The single measurement default is:
 
 ```text
-src/program/config/config_server.json
-src/program/config/config_mira.json
-src/program/config/config_translation.json
+src/program/config/config_default.json
 ```
 
-For the current point-to-point workflow, use either `config_server.json` or
-`config_mira.json`.
+Select `measurement.stop_method` as `client_feedback` for RTM acquisition or
+`timer` for a local measurement timer. Webapp2 seeds this file into the active
+profile's `measurement_default.json`; both stop modes share that profile.
 
 Important fields:
 
@@ -217,37 +211,37 @@ Important fields:
 | `motion.acceleration` | Linear movement acceleration along the measurement line [mm/s^2] |
 | `motion.speed` | Linear movement speed along the measurement line [mm/s] |
 | `measurement.program_path` | URP loaded for force application |
-| `measurement.contact_threshold` | Force threshold [N] |
-| `measurement.holding_force` | Force maintained during acquisition [N] |
+| `measurement.settling_time` | Settling delay after first reaching target [s] |
+| `measurement.target_force` | Target force for approach and measurement [N] |
+| `measurement.simulation_program_path` | Stationary simulation URP |
 | `measurement.max_displacement` | Maximum force-approach travel [mm] |
 | `measurement.simulation` | Enables simulated force behavior |
 | `measurement.data_server` | Enables the Python TCP acquisition server |
 
 Force values must be valid:
 
-- `contact_threshold` and `holding_force` cannot be negative.
-- `holding_force` must be greater than or equal to `contact_threshold`.
-- `max_displacement` must be positive.
-- Setting both force values to `0` enables zero-force simulation.
-- One zero and one nonzero force value is invalid.
+- `target_force` must be positive and finite.
+- `settling_time` must be nonnegative and finite.
+- `max_displacement` must be positive and finite.
+- `simulation: true` selects the stationary simulation URP.
 
 ### Server Configuration
 
-Use `config_server.json` when the independent data-acquisition client should
-control acquisition timing.
+Use `measurement.stop_method: "client_feedback"` when the independent
+data-acquisition client should control acquisition timing.
 
 Typical values:
 
 ```json
 {
   "measurement": {
-    "program_path": "Inspection/Programs/apply_force_with_server.urp",
-    "data_server": true
+    "program_path": "/Projects/BAM TTS/Programs/Apply_Force/apply_force.urp",
+    "stop_method": "client_feedback"
   }
 }
 ```
 
-When `data_server` is `true`, the measurement worker starts the TCP acquisition
+When `stop_method` is `client_feedback`, the measurement worker starts the TCP acquisition
 server from:
 
 ```text
@@ -281,29 +275,16 @@ Detailed protocol:
 src/program/data_acquisition/server_protocol.md
 ```
 
-Simulation with `data_server=true` still uses the TCP server. Simulation only
+Simulation with `stop_method: "client_feedback"` still uses the TCP server. Simulation only
 simulates the force-contact part; Python still waits for the client `GO` before
 it releases the force program.
 
-### MIRA Configuration
+### Timer Configuration
 
-Use `config_mira.json` when acquisition is handled by the MIRA URP instead of
-the Python TCP server.
-
-Typical values:
-
-```json
-{
-  "measurement": {
-    "program_path": "Inspection/Programs/apply_force_mira.urp",
-    "data_server": false
-  }
-}
-```
-
-When `data_server` is `false`, Python does not start the acquisition TCP server.
-The selected robot-side URP is responsible for the acquisition action and for
-returning to the pre-force pose.
+Set `measurement.stop_method` to `timer` and `measurement.hold_duration` to the
+measurement duration in seconds. Python starts timing after settling/readiness,
+then releases the selected real or simulation URP. No acquisition TCP server is
+started in this mode.
 
 ## 6. Starting With The Web App
 
@@ -347,22 +328,15 @@ For explicit control, call the measurement command directly:
 
 ```powershell
 .\.venv\Scripts\python.exe src\program\commands\run_measurement_sequence.py `
-  --config src\program\config\config_server.json `
+  --config src\program\config\config_default.json `
   --routines-file src\routines\routine_files\routines_wall_275_top.json `
   --output-dir C:\path\to\output
 ```
 
-For MIRA:
-
-```powershell
-.\.venv\Scripts\python.exe src\program\commands\run_measurement_sequence.py `
-  --config src\program\config\config_mira.json `
-  --routines-file src\routines\routine_files\routines_wall_275_top.json `
-  --output-dir C:\path\to\output
-```
-
-Without `--operator-confirmed`, MIRA mode asks for Enter before robot motion.
-Server mode waits for the acquisition client to send `START_FIRST` instead.
+For timer-based operation, set `measurement.stop_method: "timer"` in the
+measurement configuration. Without `--operator-confirmed`, timer mode asks for
+Enter before robot motion. Client-feedback mode waits for the acquisition
+client to send `START_FIRST` instead.
 
 ## 8. What Happens During A Run
 

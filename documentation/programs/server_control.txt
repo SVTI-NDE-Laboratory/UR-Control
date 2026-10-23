@@ -114,14 +114,14 @@ has:
 Start the full measurement program with a server configuration, for example:
 
     .\.venv\Scripts\python.exe src\program\commands\run_measurement_sequence.py ^
-      --config src\program\config\config_server.json ^
+      --config src\program\config\config_default.json ^
       --routines-file src\routines\routine_files\routines_wall_275_top.json ^
       --output-dir C:\path\to\output
 
 In PowerShell, use backticks for line continuation:
 
     .\.venv\Scripts\python.exe src\program\commands\run_measurement_sequence.py `
-      --config src\program\config\config_server.json `
+      --config src\program\config\config_default.json `
       --routines-file src\routines\routine_files\routines_wall_275_top.json `
       --output-dir C:\path\to\output
 

@@ -70,8 +70,8 @@
           <form id="force-form" class="panel">
             <fieldset><legend>Apply force</legend>
               <label class="option-toggle"><input id="force-simulation" type="checkbox">Simulation</label>
-              <div class="parameter-row single"><label for="threshold">Contact threshold [N]</label><input id="threshold" type="number" value="140" min="0.001" step="any" required></div>
-              <div class="parameter-row single"><label for="force">Contact force [N]</label><input id="force" type="number" value="160" min="0.001" step="any" required></div>
+              <div class="parameter-row single"><label for="force">Target force [N]</label><input id="force" type="number" value="200" min="0.001" step="any" required></div>
+              <div class="parameter-row single"><label for="force-settling">Settling [s]</label><input id="force-settling" type="number" value="1.5" min="0" step="any" required></div>
               <div class="parameter-row single"><label for="force-duration">Hold [s]</label><input id="force-duration" type="number" value="3" min="0" max="8" step="any" required></div>
             </fieldset>
             <div class="actions"><button id="apply-force" class="primary action" type="submit" disabled>Apply force</button></div>

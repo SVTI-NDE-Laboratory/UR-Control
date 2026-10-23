@@ -14,8 +14,8 @@ from urp_runner import program_path, run_cycle
 
 # Save scripts/apply_force_from_ur_settling.script in this controller-side URP.
 ROBOT_IP = '192.168.3.10'
-URP_PATH = '/programs/Users/JOBE/Tests Force/test_force_settling.urp'
-TARGET_FORCE_N = 240.0  # Default requested force; the URP must read float register 45.
+URP_PATH = "programs/Projects/BAM TTS/Programs/Apply_Force/apply_force_v2.urp"
+TARGET_FORCE_N = 200.0  # Default requested force; the URP must read float register 45.
 MAX_DISTANCE_MM = 50.0
 SETTLING_TIME_S = 2.5  # Input float register 44; delay after first reaching target force.
 MEASUREMENT_DURATION_S = 3.0  # Starts when the URP reports ready AFTER settling.

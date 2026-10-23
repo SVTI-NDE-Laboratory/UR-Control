@@ -6,7 +6,12 @@ Run from the project root using the existing virtual environment:
 .\.venv\Scripts\python.exe tools\webapp2.py
 ```
 
-The launcher opens a local browser tab. The original `tools/webapp.py` and all
+The launcher opens a local browser tab. Closing the last app tab or browser
+shuts down the local server after a 3-second grace period, stopping any active
+robot worker through the normal stop procedure. Refreshing or reconnecting
+during that grace period keeps the app running; background tabs stay connected.
+With multiple app tabs, the server stays running until the last one closes.
+`--no-browser` waits for a tab to connect before this automatic-close behavior applies. The original `tools/webapp.py` and all
 CLI tools remain available. Run only one
 control application at a time: the shared worker lock belongs to this WebApp
 process and cannot prevent a separately launched CLI or original app from
@@ -254,15 +259,14 @@ The **Flexible measurement** tab reuses the geometry and entry/exit routines in
    taught plane. Moving back and returning Home remain available; force
    application still requires the configured range. The CLI's 100 mm/s and
    100 mm/s² limits apply.
-3. **Apply force** uses the entered threshold, contact force, and local hold
+3. **Apply force** uses the target force, settling time, and local hold
    duration, then returns to the same pose. It never opens an acquisition server.
    The hold defaults to three seconds; the existing 0-to-8-second form range is
    retained. Python runs the hold timer and then releases the feedback-only
    robot script through integer register 42. A zero duration releases immediately.
-   Select **Simulation** beside the force settings to run the controller's
-   simulation mode with the same Apply force button. The force values are
-   blurred and read-only while selected, and their values are preserved.
-   If the contact threshold is not reached, a verified return to the measurement
+   Select **Simulation** beside the force settings to run a separate stationary simulation URP with the same Apply force button. The target-force value is
+   blurred and read-only while selected, and its value is preserved.
+   If the target force is not reached, a verified return to the measurement
    plane leaves the session Ready and reports the error in a popup. Adjust the
    position/settings and retry without restarting the session. Safety, return
    verification and other failures still terminate it. Automatic measurement
@@ -380,16 +384,30 @@ when present, followed by the other waypoints in routine-file order.
 
 The seeded profile selects `routine_bam_at_svti.json` and robot IP `192.168.3.10`.
 The routine selector within measurements stays locked to the active profile.
-Use Settings to select another installation for the next launch. The threshold,
-holding force and duration are set in the flexible form.
-Flexible reads `measurement.program_path` and `max_displacement` from the active
-measurement defaults before each force command; automatic modes use that same
-program path. This URP must contain the
-updated feedback-only Script node. The flexible CLI uses a Python timer for numeric
-positive durations (`force 3`, `force 140 160 3`) and client-feedback mode for
-`force manual`, released by typing `stop`. The script waits for Python's acknowledgement without its own hold timeout. Both paths use the shared force wrapper,
-including its simulation flag, mode/duration registers and return verification.
-Holding force must be positive and at least the threshold.
+Use Settings to select another installation for the next launch. Target force,
+settling time, and measurement duration are set in the flexible form.
+Both measurement modes read `measurement.program_path` and
+`measurement.simulation_program_path` from the active measurement defaults.
+`target_force` is in newtons, `settling_time` is in seconds, and
+`max_displacement` is in millimetres. Shipped defaults use 200 N and 1.5 s.
+
+Install `src/measurement/polyscope_scripts/apply_force_from_ur_settling.script`
+in the real URP selected by `program_path`. Install `apply_force_simulation.script`
+in the separate URP selected by `simulation_program_path` (default:
+`/programs/Projects/BAM TTS/Programs/Apply_Force/apply_force_simulation_v2.urp`). Saving a
+local source file does not update the controller-side URP.
+
+The real URP reaches the target, waits the configured settling delay, signals
+readiness, and maintains force until Python releases it. Simulation issues no
+motion or force commands and reads no force sensor: it waits one second,
+waits the settling delay, then signals readiness. Both wait for Python's timer
+or acquisition client before completing. Flexible numeric holds use the timer;
+automatic measurements with RTM use client feedback. CLI examples:
+`force 3`, `force 200 3`, and `force 200 manual` (release by typing `stop`).
+
+Input double registers are 43 = distance [m], 44 = settling [s], 45 = target [N].
+Integer 42 carries readiness/release; no mode register is needed. Python checks
+program completion and verifies the original TCP pose before continuing.
 
 ## Implementation and verification
 

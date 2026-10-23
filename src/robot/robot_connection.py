@@ -61,7 +61,12 @@ def load_and_play_urp(robot_ip: str, program_path: str) -> None:
         detail = load_response
         if first_response != load_response:
             detail = f"Unquoted path: {first_response}. Quoted path: {load_response}"
-        if "could not understand" in detail.lower():
+        if "file not found" in load_response.lower():
+            detail += (
+                ". The controller could not find this URP. Check the exact folder "
+                "name and filename on the robot and update the active measurement defaults."
+            )
+        elif "could not understand" in load_response.lower():
             detail += (
                 ". The controller rejected the load syntax. Verify the controller-side "
                 "path; if it cannot accept spaces, save the URP in a folder without "

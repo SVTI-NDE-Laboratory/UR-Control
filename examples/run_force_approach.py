@@ -31,8 +31,7 @@ PROGRAM_PATH = "/Projects/BAM TTS/Programs/Apply_Force/apply_force.urp"
 # Distances are millimetres and forces are newtons. The approach direction is the
 # tool Z+ axis at the pose where the controller-side program starts.
 MAX_DISTANCE = 50.0
-CONTACT_THRESHOLD = 15.0
-HOLDING_FORCE = 20.0
+TARGET_FORCE = 20.0
 SIMULATION = True
 
 # Keep this enabled to prevent an editor Run click from moving the robot.
@@ -49,13 +48,13 @@ def run() -> None:
         )
 
     try:
-        force_reached = apply_force(
+        force_reached, _ = apply_force(
             ROBOT_IP,
             PROGRAM_PATH,
             MAX_DISTANCE,
-            CONTACT_THRESHOLD,
-            HOLDING_FORCE,
+            TARGET_FORCE,
             simulation=SIMULATION,
+            simulation_program_path=PROGRAM_PATH.rsplit("/", 1)[0] + "/apply_force_simulation.urp",
         )
     except KeyboardInterrupt:
         stop_robot(ROBOT_IP)

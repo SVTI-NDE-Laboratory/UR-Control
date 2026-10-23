@@ -78,10 +78,10 @@ class FitTests(unittest.TestCase):
     def test_automatic_simulation_preserves_positive_forces(self):
         fields = self.fields()
         fields.update({"measurement.simulation": ["true"],
-                       "measurement.contact_threshold": ["140"], "measurement.holding_force": ["160"]})
+                       "measurement.target_force": ["160"], "measurement.settling_time": ["1.5"]})
         config = edited_config(self.defaults, fields, self.data)
         self.assertTrue(config["measurement"]["simulation"])
-        self.assertEqual((config["measurement"]["contact_threshold"], config["measurement"]["holding_force"]), (140, 160))
+        self.assertEqual(config["measurement"]["target_force"], 160)
         fields["measurement.simulation"] = ["false"]
         self.assertFalse(edited_config(self.defaults, fields, self.data)["measurement"]["simulation"])
 
@@ -90,7 +90,7 @@ class FitTests(unittest.TestCase):
         position = {"measurement_xy": {"X": 0, "Y": 0}}
         with tempfile.TemporaryDirectory() as directory, patch.object(worker, "assert_in_plane", return_value=position), patch.object(worker.flexible, "apply_force", return_value=(True, "test")) as apply:
             worker.perform_action(action, Mock(), self.data, worker.plane_geometry(self.data), Path(directory) / "state.json")
-        self.assertEqual(apply.call_args.args[3:6], (140, 160, True))
+        self.assertEqual(apply.call_args.args[3:5], (200, True))
 
 
 if __name__ == "__main__":

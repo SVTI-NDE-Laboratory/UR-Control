@@ -102,7 +102,7 @@ function synchronizeFields() {
     }
   }
   setInactiveParameter(xEndInput, !autoFit.checked);
-  for (const key of ['contact_threshold', 'holding_force']) {
+  for (const key of ['target_force']) {
     const input = document.getElementById(`measurement.${key}`);
     setInactiveParameter(input, simulationEnabled.checked);
   }

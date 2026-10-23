@@ -117,6 +117,7 @@ def default_config_path(method: str, server_profile: str | None = None) -> Path:
 def load_default_config(method: str, server_profile: str | None = None) -> dict[str, Any]:
     config = canonical_config(json.loads(default_config_path(method, server_profile).read_text(encoding="utf-8")))
     config["measurement"]["program_path"] = read_default_program_path()
+    config["measurement"]["simulation_program_path"] = read_default_program_path(True)
     if server_profile is not None:
         config["measurement"]["stop_method"] = "client_feedback" if server_profile == "server" else "timer"
     return config
@@ -354,6 +355,7 @@ def start_measurement(request: MeasurementStartRequest) -> dict[str, Any]:
         # A validated snapshot or old browser tab must not override a changed
         # installed URP path. The running worker still owns its own snapshot.
         config["measurement"]["program_path"] = read_default_program_path()
+        config["measurement"]["simulation_program_path"] = read_default_program_path(True)
         warning = line_scope_warning(line_geometry(config, read_routines_file(routine_file)))
         if warning and not request.outside_line_confirmed:
             raise HTTPException(status_code=409, detail=warning)

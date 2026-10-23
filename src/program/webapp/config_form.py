@@ -133,7 +133,7 @@ def edited_config(
         if section in {"line", "obstacle"}:
             continue
         for key, template in values.items():
-            if section == "measurement" and key == "program_path":
+            if section == "measurement" and key in ("program_path", "simulation_program_path"):
                 # This hidden deployment setting comes from current defaults,
                 # never from a stale value submitted by an open browser tab.
                 config[section][key] = template
@@ -168,12 +168,6 @@ def edited_config(
     else:
         config.pop("obstacle", None)
 
-    measurement = config["measurement"]
-    if (
-        measurement["contact_threshold"] == 0
-        and measurement["holding_force"] == 0
-    ):
-        measurement["simulation"] = True
     if method == POINT_TO_POINT:
         if routines_data is None:
             routines_data = read_routines_file(ROUTINES_FILE)
@@ -237,7 +231,7 @@ def form_html(
 
     hidden_controls = []
     for section, keys in {
-        "measurement": ("program_path", "simulation", "force_direction", "stop_method"),
+        "measurement": ("program_path", "simulation_program_path", "simulation", "force_direction", "stop_method"),
     }.items():
         for key in keys:
             if key not in defaults.get(section, {}):
@@ -322,8 +316,7 @@ def form_html(
                 f'value="{value_text("motion", key)}">'
             )
 
-    contact = input_html("measurement", "contact_threshold")
-    holding = input_html("measurement", "holding_force")
+    target = input_html("measurement", "target_force")
     maximum = input_html("measurement", "max_displacement")
     server_checked = " checked" if current_value("measurement", "stop_method") == "client_feedback" else ""
     simulation_checked = " checked" if current_value("measurement", "simulation") else ""
@@ -334,7 +327,7 @@ def form_html(
         f'{server_checked}>With RTM Program</label>'
         '<label class="option-toggle">'
         f'<input id="simulation-enabled" type="checkbox"{simulation_checked}>Simulation</label></div>'
-        f'<div class="parameter-row double force-row"><span>Force Contact / Holding [N]</span>{contact}{holding}</div>'
+        f'<div class="parameter-row single force-row"><label for="measurement.target_force">Target Force [N]</label>{target}</div>'
         '<div class="parameter-row single">'
         f'<label for="measurement.max_displacement">Maximum Displacement [mm]</label>{maximum}</div>'
     )
@@ -344,8 +337,8 @@ def form_html(
             "simulation",
             "force_direction",
             "stop_method",
-            "contact_threshold",
-            "holding_force",
+            "target_force",
+            "simulation_program_path",
             "max_displacement",
         }:
             continue

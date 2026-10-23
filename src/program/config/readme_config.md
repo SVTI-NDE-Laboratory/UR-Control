@@ -1,13 +1,16 @@
 # Measurement configuration
 
-`config_default.json` is the initial default for automatic measurement commands
-and both webapp stop modes. Timer mode uses the same defaults and selects
-`measurement.stop_method: "timer"`; `config_mira.json` is an unused legacy preset.
-`config_server.json` and `config_point_to_point.json` remain example presets.
-The webapp writes validated run settings to `config_tmp.json` and each run's
-`config_used.json`. Existing robot program paths are preserved.
+`config_default.json` is the single measurement preset for automatic commands
+and both Webapp2 stop modes. Select `measurement.stop_method: "timer"` or
+`"client_feedback"` rather than maintaining separate preset files.
 
-`config_default.json` is authoritative for `measurement.program_path` in both
+The webapp generates `config_tmp.json` when validating a run. `state.json` stores
+runtime state; neither is a measurement preset. Each run writes its own
+`config_used.json`. Webapp2 stores these runtime files in its local-data folder.
+The acquisition server has a separate, actively used configuration at
+`src/program/data_acquisition/config_server.json`.
+
+`config_default.json` defines both real and simulation program paths for
 automatic stop modes and in Flexible web/CLI commands. The path is read again
 before each automatic start or Flexible force command. A timer preset, an old
 validated snapshot, or a hidden browser field cannot override it. Restart the
@@ -35,9 +38,10 @@ up for new commands without restarting an active Flexible session.
     "speed": 150
   },
   "measurement": {
-    "program_path": "Inspection/Programs/apply_force_with_server.urp",
-    "contact_threshold": 200,
-    "holding_force": 200,
+    "program_path": "/programs/Projects/BAM TTS/Programs/Apply_Force/apply_force_v2.urp",
+    "settling_time": 1.5,
+    "target_force": 200,
+    "simulation_program_path": "/programs/Projects/BAM TTS/Programs/Apply_Force/apply_force_simulation_v2.urp",
     "max_displacement": 50,
     "simulation": false,
     "stop_method": "client_feedback",
@@ -87,11 +91,14 @@ if no sample falls inside the obstacle. Omit `obstacle` to measure every point.
 
 Traversal uses `motion.type: "l"`, speed in mm/s and acceleration in mm/s^2.
 These settings do not change motion inside the controller-side force program.
-`program_path` identifies the installed URP on the robot. Force thresholds and
-holding force are in newtons; holding force must be at least the threshold.
-Maximum displacement is positive and in millimetres. Simulation is explicitly
-selected with `simulation: true`; the zero/zero force pair also enables it.
-Simulation retains the controller's simulated approach and return motion.
+`program_path` identifies the real URP; `simulation_program_path` identifies
+its separate stationary simulation program. `target_force` is positive and in
+newtons; `settling_time` is nonnegative and in seconds. Maximum displacement is
+positive and in millimetres. `simulation: true` selects a timed cycle that stays
+at the current pose and waits for Python's measurement-release acknowledgement.
+The real cycle enters force mode once, reaches target, and waits the configured
+settling delay before signalling readiness. See `documentation/force_application.md`
+for source installation and register mappings.
 
 `measurement.stop_method` accepts exactly two values:
 
@@ -100,11 +107,10 @@ Simulation retains the controller's simulated approach and return motion.
 - `"client_feedback"`: Python waits for the external ISREADY/GO acquisition
   workflow, then releases the robot. Hold Duration is unused and blurred.
 
-The robot always uses the feedback-only `polyscope_scripts/apply_force.script`.
-Python releases it by writing input integer register 42 to 1. The script reads
-no stop mode or duration and has no hold countdown. Integer 46 selects simulation;
-float registers 43-45 contain maximum displacement, contact force and holding
-force. No register 47 is used. Python handles timing, client timeouts, safety
+Both robot programs use the feedback-release handshake. Python releases the
+selected URP by writing input integer register 42 to 1. Float registers 43-45
+contain maximum displacement, settling time and target force. Simulation is
+selected by its URP path, without an integer simulation register. No register 47 is used. Python handles timing, client timeouts, safety
 checks, and the separate 30-second return deadline.
 
 ## Older files
@@ -112,6 +118,4 @@ checks, and the separate 30-second return deadline.
 Nested point-to-point `line.method`/`line.parameters` configurations are still
 readable and are flattened when loaded or saved. The former boolean
 `measurement.data_server` is mapped to `stop_method`: false becomes `"timer"`,
-true becomes `"client_feedback"`. New saved files omit the boolean. The explicitly
-labelled translation example is retained for archived configurations; it is not
-selectable in the webapp and is not used as a default.
+true becomes `"client_feedback"`. Saved files use the current schema.

@@ -41,7 +41,7 @@ class ProfileTests(unittest.TestCase):
         self.assertFalse((self.profile.path.parent / "measurement_mira.json").exists())
         defaults = self.profile.paths["measurement_defaults"]
         config = read_object(defaults)
-        config["measurement"]["holding_force"] = 240
+        config["measurement"]["target_force"] = 240
         write_object(defaults, config)
         before = defaults.read_bytes()
         initialize(self.data)
@@ -55,6 +55,24 @@ class ProfileTests(unittest.TestCase):
         write_object(self.profile.path, values)
         restarted = load_profile(self.data)
         self.assertNotIn("measurement_mira_defaults", restarted.paths)
+
+    def test_force_defaults_migrate_and_preserve_custom_target_and_paths(self):
+        path = self.profile.paths["measurement_defaults"]
+        config = read_object(path)
+        measurement = config["measurement"]
+        for key in ("target_force", "settling_time", "simulation_program_path"):
+            measurement.pop(key)
+        measurement.update(contact_threshold=140, holding_force=250,
+                           program_path="Custom/Force Cycle.urp")
+        write_object(path, config)
+        load_profile(self.data)
+        updated = read_object(path)["measurement"]
+        self.assertEqual(updated["target_force"], 250)
+        self.assertEqual(updated["settling_time"], 1.5)
+        self.assertEqual(updated["program_path"], "Custom/Force Cycle.urp")
+        self.assertEqual(updated["simulation_program_path"], "Custom/apply_force_simulation.urp")
+        self.assertNotIn("contact_threshold", updated)
+        self.assertNotIn("holding_force", updated)
 
     def test_relative_profile_paths_survive_copy_and_restart(self):
         selected = self.alternative()
@@ -319,7 +337,7 @@ class BrandedLocalDataTests(unittest.TestCase):
         result.write_bytes(b'original measurement data')
         defaults = profile.paths['measurement_defaults']
         values = read_object(defaults)
-        values['measurement']['holding_force'] = 250
+        values['measurement']['target_force'] = 250
         write_object(defaults, values)
         original_preferences = profile.preferences_path.read_bytes()
         migrated = load_profile()
@@ -354,7 +372,7 @@ class BrandedLocalDataTests(unittest.TestCase):
         old = load_profile(self.old)
         current = load_profile(self.new)
         values = read_object(current.paths['measurement_defaults'])
-        values['measurement']['holding_force'] = 260
+        values['measurement']['target_force'] = 260
         write_object(current.paths['measurement_defaults'], values)
         expected = current.paths['measurement_defaults'].read_bytes()
         migrate_legacy_directory()

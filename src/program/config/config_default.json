@@ -16,12 +16,13 @@
     "speed": 150.0
   },
   "measurement": {
-    "program_path": "/Projects/BAM TTS/Programs/Apply_Force/apply_force.urp",
-    "contact_threshold": 200.0,
-    "holding_force": 200.0,
+    "program_path": "/programs/Projects/BAM TTS/Programs/Apply_Force/apply_force_v2.urp",
+    "target_force": 200.0,
+    "settling_time": 1.5,
     "max_displacement": 50.0,
-    "simulation": false,
     "stop_method": "client_feedback",
-    "hold_duration": 5
+    "hold_duration": 5,
+    "simulation": false,
+    "simulation_program_path": "/programs/Projects/BAM TTS/Programs/Apply_Force/apply_force_simulation_v2.urp"
   }
 }

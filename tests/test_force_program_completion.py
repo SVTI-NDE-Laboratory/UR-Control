@@ -25,13 +25,14 @@ class Clock:
 
 class ForceProgramCompletionTests(unittest.TestCase):
     def run_cycle(self, feedback=False, completion_delay=3.5, terminal_status=0,
-                  safety_error=False, hold_duration=0.5):
+                  safety_error=False, hold_duration=0.5, simulation=True,
+                  ready_delay=.1, settling_time=1.5):
         clock = Clock()
         io = Mock()
         receiver = Mock()
         receiver.getActualTCPPose.return_value = [0.] * 6
         receiver.getActualTCPSpeed.return_value = [0.] * 6
-        reached_at = .1
+        reached_at = ready_delay
         acknowledged_at = None
 
         def status(register):
@@ -64,14 +65,15 @@ class ForceProgramCompletionTests(unittest.TestCase):
             stack.enter_context(patch.object(force, "RTDEReceiveInterface", return_value=receiver))
             stack.enter_context(patch.object(force, "assert_robot_running"))
             stack.enter_context(patch.object(force, "assert_robot_safe", side_effect=check_safety))
-            stack.enter_context(patch.object(force, "load_and_play_urp"))
+            load = stack.enter_context(patch.object(force, "load_and_play_urp"))
             stop = stack.enter_context(patch.object(force, "stop_robot"))
             verify = stack.enter_context(patch.object(force, "ensure_at_tcp_target", return_value=[0.] * 6))
             stack.enter_context(patch.object(force, "RETURN_TIMEOUT", 6.0))
             stack.enter_context(patch("builtins.print"))
             try:
                 result = force.apply_force(
-                    "test", "test.urp", 50, 140, 160, simulation=True,
+                    "test", "test.urp", 50, 160, simulation=simulation,
+                    simulation_program_path="simulation.urp", settling_time=settling_time,
                     stop_method="client_feedback" if feedback else "timer",
                     acquire_data=(lambda context: {}) if feedback else None,
                     hold_duration=hold_duration,
@@ -82,6 +84,9 @@ class ForceProgramCompletionTests(unittest.TestCase):
                 raise
             else:
                 self.assertTrue(result[0])
+                load.assert_called_once_with("test", "simulation.urp" if simulation else "test.urp")
+                self.assertEqual({item.args[0]: item.args[1] for item in io.setInputDoubleRegister.call_args_list},
+                                 {43: .05, 44: settling_time, 45: 160})
                 self.assertGreaterEqual(clock.now, reached_at + completion_delay)
                 stop.assert_not_called()
                 verify.assert_called_once()
@@ -91,12 +96,15 @@ class ForceProgramCompletionTests(unittest.TestCase):
                 self.assertTrue(all(42 <= call.args[0] <= 46 for call in io.setInputIntRegister.call_args_list))
                 receiver.disconnect.assert_called_once()
                 io.disconnect.assert_called_once()
-                self.assertEqual(io.setInputIntRegister.call_args_list[-2].args, (42, 0))
-                self.assertEqual(io.setInputIntRegister.call_args_list[-1].args, (46, 0))
+                self.assertEqual(io.setInputIntRegister.call_args_list[-1].args, (42, 0))
+                self.assertEqual({item.args[0] for item in io.setInputIntRegister.call_args_list}, {42})
         return clock
 
     def test_timer_mode_completes_without_observable_return_motion(self):
         self.run_cycle()
+
+    def test_real_force_selects_real_urp_and_allows_stationary_settling(self):
+        self.run_cycle(simulation=False, ready_delay=4, settling_time=2.5)
 
     def test_python_timer_can_exceed_return_allowance_before_release(self):
         self.run_cycle(hold_duration=10, completion_delay=0.5)

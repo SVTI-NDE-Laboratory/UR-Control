@@ -84,14 +84,14 @@ def perform_action(action, receiver, data, geometry, state_file):
         flexible.movel_pose(ROBOT_IP, receiver, target, acceleration, speed, flexible.WAIT_TIMEOUT)
         assert_in_plane(receiver, data, allow_outside_range=True)
     elif name == "force":
-        if (not all(math.isfinite(action[key]) for key in ("threshold", "force", "duration"))
-                or action["threshold"] <= 0 or action["force"] < action["threshold"] or not 0 <= action["duration"] <= 8):
-            raise ValueError("Use positive forces, contact force at least the threshold, and a hold from 0 to 8 seconds.")
-        # Reuse force parameter validation and the controller-side return cycle.
-        measurement, _ = flexible.force_measurement_settings([str(action["threshold"]), str(action["force"]), str(action["duration"])])
+        settling = action.get("settling_time", 1.5)
+        if (not all(math.isfinite(value) for value in (action["force"], action["duration"], settling))
+                or action["force"] <= 0 or settling < 0 or not 0 <= action["duration"] <= 8):
+            raise ValueError("Use a positive target force, nonnegative settling time, and a hold from 0 to 8 seconds.")
+        measurement, _ = flexible.force_measurement_settings([str(action["force"]), str(action["duration"])])
         measurement["max_displacement"] = read_object(PROFILE.paths["measurement_defaults"])["measurement"]["max_displacement"]
-        if not math.isfinite(measurement["max_displacement"]) or measurement["max_displacement"] <= 0:
-            raise ValueError("Maximum displacement must be positive and finite.")
+        measurement["settling_time"] = settling
+        flexible.validate_force_config({"measurement": measurement})
 
         def hold(context):
             write_json_atomic(state_file, {"mode": "force_hold"})
@@ -103,7 +103,8 @@ def perform_action(action, receiver, data, geometry, state_file):
             return {"acquisition_time": time.monotonic() - started}
 
         success, _ = flexible.apply_force(ROBOT_IP, measurement["program_path"], measurement["max_displacement"],
-            measurement["contact_threshold"], measurement["holding_force"], action.get("simulation", False),
+            measurement["target_force"], action.get("simulation", False),
+            settling_time=measurement["settling_time"], simulation_program_path=measurement["simulation_program_path"],
             acquire_data=hold if measurement["stop_method"] == "client_feedback" else None,
             stop_method=measurement["stop_method"],
             hold_duration=measurement["hold_duration"],
@@ -112,7 +113,7 @@ def perform_action(action, receiver, data, geometry, state_file):
                                  "y_coordinate": position["measurement_xy"]["Y"], "acquisition_label": "local force hold"})
         assert_in_plane(receiver, data)
         if not success:
-            return {"force_reached": False, "action_error": "Contact threshold was not reached before the approach limit. The robot has returned to the measurement plane. You can adjust the settings or position and try again."}
+            return {"force_reached": False, "action_error": "Target force was not reached before the approach limit. The robot has returned to the measurement plane. You can adjust the settings or position and try again."}
         return {"force_reached": True}
     elif name == "end":
         flexible.run_exit_sequence(receiver, data, geometry, acceleration, speed)

@@ -7,8 +7,6 @@ then waits for operator commands:
     force <seconds>       apply default force, hold, then return
     force <newtons> <seconds|manual>
                           apply that force until timeout or stop
-    force <contact_n> <holding_n> <seconds|manual>
-                          apply separate contact and holding forces
     pose                  print the current measurement-frame XY estimate
     end                   return to the entry endpoint and run the home routine
 
@@ -66,8 +64,7 @@ ENTRY_SIDE = "start"
 
 # Force parameters
 FORCE_PROGRAM_PATH = read_default_program_path()
-CONTACT_THRESHOLD = 140.0
-HOLDING_FORCE = 160.0
+TARGET_FORCE = 200.0
 MAX_DISPLACEMENT = 50.0
 SIMULATION = False
 
@@ -103,8 +100,9 @@ MEASUREMENT_CONFIG = {
     },
     "measurement": {
         "program_path": FORCE_PROGRAM_PATH,
-        "contact_threshold": CONTACT_THRESHOLD,
-        "holding_force": HOLDING_FORCE,
+        "target_force": TARGET_FORCE,
+        "settling_time": 1.5,
+        "simulation_program_path": read_default_program_path(True),
         "max_displacement": MAX_DISPLACEMENT,
         "simulation": SIMULATION,
         "stop_method": "timer",
@@ -273,37 +271,14 @@ def force_measurement_settings(args: list[str]) -> tuple[dict[str, Any], Any]:
 
     measurement = dict(MEASUREMENT_CONFIG["measurement"])
     measurement["program_path"] = read_default_program_path()
+    measurement["simulation_program_path"] = read_default_program_path(True)
     if len(args) == 1:
         callback = force_hold_callback(args)
     elif len(args) == 2:
-        try:
-            requested_force = float(args[0])
-        except ValueError as error:
-            raise ValueError(
-                "Usage: force <seconds>, force manual, "
-                "force <newtons> <seconds|manual>, or "
-                "force <contact_n> <holding_n> <seconds|manual>"
-            ) from error
-        measurement["contact_threshold"] = requested_force
-        measurement["holding_force"] = requested_force
+        measurement["target_force"] = float(args[0])
         callback = force_hold_callback(args[1:])
-    elif len(args) == 3:
-        try:
-            contact_threshold = float(args[0])
-            holding_force = float(args[1])
-        except ValueError as error:
-            raise ValueError(
-                "Contact and holding force must be numeric newton values."
-            ) from error
-        measurement["contact_threshold"] = contact_threshold
-        measurement["holding_force"] = holding_force
-        callback = force_hold_callback(args[2:])
     else:
-        raise ValueError(
-            "Usage: force <seconds>, force manual, "
-            "force <newtons> <seconds|manual>, or "
-            "force <contact_n> <holding_n> <seconds|manual>"
-        )
+        raise ValueError("Usage: force <seconds|manual> or force <newtons> <seconds|manual>")
 
     if args[-1].lower() == "manual":
         measurement["stop_method"] = "client_feedback"
@@ -330,8 +305,6 @@ def print_help() -> None:
         "  force manual          apply default force until you type stop\n"
         "  force <N> <seconds>   apply N newtons, hold that long, then return\n"
         "  force <N> manual      apply N newtons until you type stop\n"
-        "  force <contact_N> <holding_N> <seconds|manual>\n"
-        "                        use separate contact and holding forces\n"
         "  pose                  print current X/Y estimate\n"
         "  help                  show this help\n"
         "  end                   return to endpoint and run home routine\n"
@@ -537,8 +510,7 @@ def run_interactive_loop(
                 ROBOT_IP,
                 force_measurement["program_path"],
                 force_measurement["max_displacement"],
-                force_measurement["contact_threshold"],
-                force_measurement["holding_force"],
+                force_measurement["target_force"],
                 force_measurement["simulation"],
                 acquire_data=acquire_measurement,
                 acquisition_context={
@@ -549,6 +521,8 @@ def run_interactive_loop(
                 },
                 stop_method=force_measurement["stop_method"],
                 hold_duration=force_measurement["hold_duration"],
+                settling_time=force_measurement["settling_time"],
+                simulation_program_path=force_measurement["simulation_program_path"],
             )
             print(f"force_reached={force_reached}, timestamp={timestamp}")
             continue

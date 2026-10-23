@@ -271,7 +271,7 @@ class SessionTests(unittest.TestCase):
             def apply_force(*args, **kwargs):
                 nonlocal force_attempts
                 force_attempts += 1
-                self.assertEqual(args[3:6], (140, 160, False))
+                self.assertEqual(args[3:5], (160, False))
                 feedback = read_json(directory / "feedback.json")
                 self.assertTrue(feedback["force_mode"])
                 self.assertTrue(feedback["moving"])
@@ -306,7 +306,7 @@ class SessionTests(unittest.TestCase):
                     with patch.object(server, "workers", owner):
                         status = server.status()
                     self.assertTrue(status["worker"]["running"])
-                    self.assertIn("Contact threshold", status["error"])
+                    self.assertIn("Target force", status["error"])
                     stop.assert_not_called()
                     owner.send_flexible({"action": "force", "threshold": 140, "force": 160, "duration": .01})
                     self.wait_mode(directory, "waiting_for_command")

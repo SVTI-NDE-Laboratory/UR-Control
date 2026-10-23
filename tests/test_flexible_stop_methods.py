@@ -16,7 +16,7 @@ flexible = worker.flexible
 
 class FlexibleStopMethodTests(unittest.TestCase):
     def test_numeric_durations_select_python_timer(self):
-        for args in (["2.75"], ["160", "2.75"], ["140", "160", "2.75"]):
+        for args in (["2.75"], ["160", "2.75"]):
             with self.subTest(args=args):
                 settings, callback = flexible.force_measurement_settings(args)
                 self.assertEqual(settings["stop_method"], "timer")
@@ -46,18 +46,18 @@ class FlexibleStopMethodTests(unittest.TestCase):
                 flexible.run_interactive_loop(Mock(), {}, {}, Path("unused.json"), 100, 100, (0, 0))
                 self.assertEqual(apply.call_args.kwargs["stop_method"], "client_feedback" if feedback else "timer")
                 self.assertEqual(apply.call_args.kwargs["hold_duration"], duration)
-                self.assertEqual(apply.call_args.args[5], flexible.SIMULATION)
+                self.assertEqual(apply.call_args.args[4], flexible.SIMULATION)
 
     def test_webapp_passes_python_timer_duration_and_simulation(self):
         data = read_routines_file(ROUTINE_FILE)
         position = {"measurement_xy": {"X": 100, "Y": -20}}
         for simulation in (False, True):
             with self.subTest(simulation=simulation), patch.object(worker, "assert_in_plane", return_value=position), patch.object(flexible, "apply_force", return_value=(True, "test")) as apply:
-                worker.perform_action({"action": "force", "threshold": 140, "force": 160, "duration": 2.75, "simulation": simulation}, Mock(), data, worker.plane_geometry(data), Path("unused.json"))
+                worker.perform_action({"action": "force", "force": 160, "duration": 2.75, "simulation": simulation}, Mock(), data, worker.plane_geometry(data), Path("unused.json"))
                 self.assertEqual(apply.call_args.kwargs["stop_method"], "timer")
                 self.assertEqual(apply.call_args.kwargs["hold_duration"], 2.75)
                 self.assertIsNone(apply.call_args.kwargs["acquire_data"])
-                self.assertEqual(apply.call_args.args[5], simulation)
+                self.assertEqual(apply.call_args.args[4], simulation)
 
 
 if __name__ == "__main__":
