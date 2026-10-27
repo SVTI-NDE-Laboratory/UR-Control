@@ -77,6 +77,13 @@ becomes true and output 42 = 1. Python releases through input 42 = 1, then the
 script returns at up to 20 mm/s and clears output 42. Python's approach deadline
 includes the configured travel time and settling delay.
 
+After completion, Python observes the return for up to 2 seconds and requires
+0.2 seconds continuously within 1 mm position error, 0.01 rad orientation
+error, 2 mm/s linear speed and 0.01 rad/s angular speed. This passive check
+allows pose/speed feedback to settle after the completion status arrives.
+It sends no corrective movement. A failed verification reports all measured
+errors and their limits, stops the program and leaves automatic correction disabled.
+
 The resultant XYZ force is checked every control step during travel, settling,
 measurement and return. At 40 N the script stops and latches status 5, without
 an automatic return. The sensor is not zeroed, so existing contact is visible.

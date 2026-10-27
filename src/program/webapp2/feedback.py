@@ -13,6 +13,25 @@ from webapp.launcher import write_json_atomic
 from data_acquisition.server_control import AcquisitionControlServer
 
 
+# Display thresholds only: TCP translation is in m/s and rotation is in rad/s.
+# Lower release thresholds keep small speed fluctuations from flickering the LED.
+MOTION_LINEAR_ON = 0.002
+MOTION_LINEAR_OFF = 0.001
+MOTION_ANGULAR_ON = 0.01
+MOTION_ANGULAR_OFF = 0.005
+
+
+def tcp_is_moving(speed, was_moving=False):
+    """Ignore stationary noise using separate linear/angular norms and hysteresis."""
+    if len(speed) != 6 or not all(math.isfinite(value) for value in speed):
+        raise ValueError("TCP speed must contain six finite values.")
+    linear = math.sqrt(sum(value * value for value in speed[:3]))
+    angular = math.sqrt(sum(value * value for value in speed[3:]))
+    linear_limit = MOTION_LINEAR_OFF if was_moving else MOTION_LINEAR_ON
+    angular_limit = MOTION_ANGULAR_OFF if was_moving else MOTION_ANGULAR_ON
+    return linear > linear_limit or angular > angular_limit
+
+
 def classify_position(pose, joints, data):
     """Identify a taught waypoint and the bounded low measurement segment.
 
@@ -115,7 +134,7 @@ class Feedback:
                     assert_robot_safe(self.receiver)
                     result.update(self.classifier(self.receiver.getActualTCPPose(), self.receiver.getActualQ(), self.data))
                     speed = self.receiver.getActualTCPSpeed()
-                    result["moving"] = result["force_mode"] or any(abs(v) > 1e-4 for v in speed)
+                    result["moving"] = tcp_is_moving(speed, self.last.get("moving") is True)
                     result["observed_at"] = datetime.now().astimezone().isoformat(timespec="seconds")
                     result.pop("feedback_error", None)
                 except Exception as error:

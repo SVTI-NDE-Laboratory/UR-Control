@@ -262,15 +262,18 @@ The **Flexible measurement** tab reuses the geometry and entry/exit routines in
 
 1. **Start program** requires the robot at Home, runs `home_to_start`, and
    descends to `p_start_l`.
-2. **Move** goes linearly to the entered X/Y coordinates in the measurement
-   frame. X runs from `p_start_l` towards `p_end_l`; Y follows the CLI's plane
-   axis derived from the high/low direction. The configured range is X within
-   the taught line length and Y within −400 to 0 mm. Values outside that range
-   can be entered; Move warns about singularities and unexpected movement and
-   defaults to No. Explicit confirmation permits that requested move in the
-   taught plane. Moving back and returning Home remain available; force
-   application still requires the configured range. The CLI's 100 mm/s and
-   100 mm/s² limits apply.
+2. **Move** goes linearly to the entered wall X/Y coordinates in millimetres.
+   The separate `wall_coordinates.json` defines the wall coordinates of
+   `p_start_l`. X follows `p_start_l` towards `p_end_l`; positive wall Y points
+   upward and is opposite the robot's local measurement Y axis. The permitted
+   Y side is `up` or `down`, with a configured maximum distance from `p_start_l`.
+   Status **Plane (X, Y)** uses the same wall coordinates, including origin offsets.
+   Values outside the taught X interval or configured Y range require the
+   existing explicit confirmation. Force application requires the configured
+   range. The CLI's 100 mm/s and 100 mm/s squared limits apply.
+   Settings shows the reference file path; edit it with the application closed
+   and restart. See [measurement configuration](../config/readme_config.md)
+   for the file format, conversion rules and saved-configuration migration.
 3. **Apply force** uses the target force, settling time, and local hold
    duration, then returns to the same pose. It never opens an acquisition server.
    The hold defaults to three seconds; the existing 0-to-8-second form range is
@@ -330,7 +333,13 @@ X Start and X End (including the calculated End with fit off) may extend up to
 the taught range requires an explicit confirmation with No focused by default;
 the backend rejects an unconfirmed start before connecting to the robot.
 The controls are labelled **Step Size [mm]** and **Nb. Points**. The visualization
-updates on every edit and displays the current X range and Y offset.
+updates on every edit. Its fixed summary displays the wall endpoints as `Line: (X start, Y) ->
+(X end, Y)` and the selected point count with the discarded count in parentheses.
+Obstacle and unselected points are discarded from that count. Obstacles span both sides
+of the line. More than 21 points use a horizontal scrollbar; during a run,
+the view follows each newly active point and its number is bold. Completed
+points are green, remaining points blue, unselected points grey, and obstacle
+points red. Manual scrolling is preserved until the active point changes.
 Y Offset is a fixed perpendicular shift and never changes the X spacing.
 Obstacle center and calculated Start/End use the same taught X origin as X Start/End, including when
 X Start is nonzero. Obstacles only mark existing samples as skipped; they
@@ -339,8 +348,9 @@ same coordinate system. Plans include explicit X/Y coordinates in millimetres
 alongside the existing distance-from-X-Start and TCP fields.
 Automatic mode publishes live plane X/Y from the same taught frame as Flexible
 mode, including confirmed positions beyond the line endpoints. Plane coordinates
-are hidden during entry, obstacle detours, exit, or whenever the TCP is outside
-the measurement plane. Status identifies Entry routine, Obstacle Avoidance,
+are hidden during entry, obstacle detours and exit. During force mode, wall
+X/Y remain visible as the TCP projects onto the plane, including while force
+moves it away from the plane. Outside force mode, off-plane coordinates are hidden. Status identifies Entry routine, Obstacle Avoidance,
 Exit Routine, or the active Point number. The active point remains displayed
 through acquisition and the verified return to its pre-force pose, even when
 the acquisition protocol advances its next point counter. The visualization
@@ -362,7 +372,10 @@ It reports the taught waypoint
 (or —), TCP X/Y/Z, error, observed motion, force-program activity,
 and acquisition client connection. The Indicators show grey labels with LEDs
 only: Error is grey/red; Moving, Force mode and Acquisition are grey/green.
-Force-program activity also turns Moving green during a stationary force hold.
+Moving follows measured TCP motion independently of Force mode. It activates
+above 2 mm/s translation or 0.01 rad/s rotation and releases below 1 mm/s and
+0.005 rad/s. These display thresholds suppress stationary noise and do not
+change robot motion limits or movement-completion checks.
 The Webapp connection-status row is omitted.
 Position values retain the last observation while idle; the cobot is not polled
 while idle. The Feedback row is omitted. At first launch position is unknown.
@@ -375,14 +388,15 @@ navigation stays on its page. Other mode links and Settings are greyed out;
 browser history and direct page URLs also return to the running program.
 Navigation unlocks after the program finishes or is stopped.
 Flexible measurements show measurement-frame X/Y only when the robot is in the
-taught plane; entry and exit routines show — in both plane coordinate displays.
+taught plane or in force mode; entry and exit routines show — in both plane coordinate displays.
 The panel remains
 300 px wide across tabs, and scrollbar space is reserved so switching to a
 longer page does not shift it. Tabs switch within the same page and preserve
 the status panel and form values.
 
 During Move in plane, TCP and plane coordinates refresh about every 200 ms;
-plane coordinates still remain hidden during entry/exit and outside the plane.
+plane coordinates remain hidden during entry/exit and outside the plane except
+while force mode is active.
 JSON publishing retries brief Windows destination locks, uses a separate staging
 file per writer, and keeps the feedback sampler alive if a publish fails.
 

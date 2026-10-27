@@ -5,6 +5,8 @@ import math
 import os
 from pathlib import Path
 
+from wall_coordinates import local_to_wall, wall_reference, wall_limits
+
 from line_planner import (
     POINT_TO_POINT,
     high_low_movement,
@@ -105,6 +107,19 @@ def canonical_config(config: dict) -> dict:
     config["obstacle_width"] = width
     if "position" in obstacle:
         obstacle.update(start=position - width / 2.0, end=position + width / 2.0)
+    # Convert archived local coordinates once, preserving their physical positions.
+    reference = wall_reference()
+    if reference is not None and line_method(config) == POINT_TO_POINT and config["line"].get("coordinate_system") != "wall":
+        line = config["line"]
+        for key in ("x_start", "offset_x", "x_end"):
+            if key in line and not (key == "x_end" and line[key] == 0 and line.get("auto_fit", True)):
+                line[key] = local_to_wall(line[key], 0.0)[0]
+        if line.get("x_end") == 0 and line.get("auto_fit", True):
+            line.pop("x_end")
+        line["offset_y"] = local_to_wall(0.0, line.get("offset_y", 0.0))[1]
+        for key in ("position", "start", "end"):
+            obstacle[key] = local_to_wall(obstacle[key], 0.0)[0]
+        line["coordinate_system"] = "wall"
     return config
 
 
@@ -131,6 +146,59 @@ def configuration_file(config: dict) -> dict:
     result.update({key: value for key, value in config.items()
                    if key not in {"line", "obstacle", "obstacle_width", "points_selection", "measurement", "motion"}})
     return result
+
+
+def installation_defaults(config: dict, routines_data: dict) -> dict:
+    """Keep installation defaults aligned when the wall reference is edited."""
+    from copy import deepcopy
+
+    defaults = canonical_config(config)
+    reference = wall_reference()
+    if reference is None or line_method(defaults) != POINT_TO_POINT:
+        return defaults
+
+    line = defaults["line"]
+    previous = line.get("wall_reference")
+
+    def shifted_defaults(previous_origin):
+        candidate = deepcopy(defaults)
+        candidate_line = candidate["line"]
+        origin = reference["p_start_l"]
+        delta_x = origin["x"] - previous_origin["x"]
+        delta_y = origin["y"] - previous_origin["y"]
+
+        # Preserve the taught-relative X section and obstacle location.
+        for key in ("x_start", "offset_x", "x_end"):
+            if key in candidate_line:
+                candidate_line[key] += delta_x
+        for key in ("position", "start", "end"):
+            candidate["obstacle"][key] += delta_x
+
+        # Keep the Y displacement, bounded by the newly configured side/range.
+        lower, upper = wall_limits(0)[2:]
+        y = candidate_line.get("offset_y", previous_origin["y"]) + delta_y
+        candidate_line["offset_y"] = min(upper, max(lower, y))
+        return candidate
+
+    if previous is not None and previous != reference:
+        defaults = shifted_defaults(previous["p_start_l"])
+
+    # Wall defaults saved without reference metadata may still use the zero
+    # origin. Adopt the new origin only when the existing defaults are invalid
+    # and the translated defaults pass the complete measurement validation.
+    elif previous is None and reference["p_start_l"] != {"x": 0, "y": 0}:
+        try:
+            validate_measurement_config(defaults, routines_data)
+        except ValueError as original_error:
+            candidate = shifted_defaults({"x": 0.0, "y": 0.0})
+            try:
+                validate_measurement_config(candidate, routines_data)
+            except ValueError:
+                raise original_error
+            defaults = candidate
+
+    defaults["line"]["wall_reference"] = deepcopy(reference)
+    return defaults
 
 
 def validate_force_config(config: dict) -> None:
@@ -216,9 +284,9 @@ def print_measurement_config_summary(
         )
         print(
             "  point segment: "
-            f"x_start={geometry['x_start']:.3f} mm, "
-            f"x_end={geometry['x_end']:.3f} mm, "
-            f"y_offset={geometry['offset_y']:.3f} mm"
+            f"x_start={local_to_wall(geometry['x_start'], 0.0)[0]:.3f} mm, "
+            f"x_end={local_to_wall(geometry['x_end'], 0.0)[0]:.3f} mm, "
+            f"y_position={local_to_wall(0.0, geometry['offset_y'])[1]:.3f} mm"
         )
     else:
         print(
@@ -235,7 +303,7 @@ def print_measurement_config_summary(
     if obstacle is None:
         print("  obstacle: none")
     else:
-        origin = geometry.get("x_start", 0.0)
+        origin = local_to_wall(geometry.get("x_start", 0.0), 0.0)[0]
         print(f"  obstacle: start={obstacle[0] + origin} mm, end={obstacle[1] + origin} mm")
     print(
         f"  measurement: target_force={measurement['target_force']} N, "

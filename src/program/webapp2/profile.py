@@ -128,7 +128,7 @@ def copy_local_data(profile, destination):
         copied_config = destination / selected.relative_to(source)
         preferences["configuration_path"] = str(copied_config.relative_to(destination))
         values = read_object(copied_config)
-        for key in ("routine_file", "measurement_defaults", "acquisition_config",
+        for key in ("routine_file", "measurement_defaults", "wall_coordinates", "acquisition_config",
                     "robot_programs_directory", "results_directory", "routine_scripts_directory"):
             if key not in values:
                 continue
@@ -190,6 +190,7 @@ def initialize(data_dir):
 
     profile = data_dir / "profiles/default"
     sources = [(ROOT / "src/program/config/config_default.json", profile / "measurement_default.json"),
+               (ROOT / "src/program/config/wall_coordinates.json", profile / "wall_coordinates.json"),
                (ROOT / "src/program/data_acquisition/config_server.json", profile / "acquisition.json")]
     starter = ROOT / "src/program/webapp2/default_profile"
     for name in ("robot_programs", "routine_scripts", "routines"):
@@ -207,6 +208,7 @@ def initialize(data_dir):
             "routine_file": "routines/routine.json",
             "routine_scripts_directory": "routine_scripts",
             "measurement_defaults": "measurement_default.json",
+            "wall_coordinates": "wall_coordinates.json",
             "acquisition_config": "acquisition.json",
             "robot_programs_directory": "robot_programs",
             "results_directory": "../../results",
@@ -259,20 +261,29 @@ def validate_profile(path, data_dir, *, values=None):
     for folder in (ROOT / "src/measurement", ROOT / "src/routines"):
         if str(folder) not in sys.path:
             sys.path.insert(0, str(folder))
-    from measurement_config import canonical_config, validate_measurement_config
+    from wall_coordinates import DEFAULT_WALL_FILE, read_wall_coordinates, wall_file
+    paths["wall_coordinates"] = resolve_path(values.get("wall_coordinates", "wall_coordinates.json"), path.parent)
+    reference_path = paths["wall_coordinates"]
+    # Profiles without a reference setting adopt the bundled zero origin.
+    if "wall_coordinates" not in values and not reference_path.exists():
+        reference_path = DEFAULT_WALL_FILE
+    read_wall_coordinates(reference_path)
+    from measurement_config import canonical_config, installation_defaults, validate_measurement_config
     for key in ("measurement_defaults",):
         stored = read_object(paths[key])
         if (not all(isinstance(stored.get(section), dict) for section in ("line", "motion"))
                 or not isinstance(stored.get("force", stored.get("measurement")), dict)):
             raise ValueError(f"{key} must contain line, force and motion objects.")
-        defaults = canonical_config(stored)
+        with wall_file(reference_path):
+            defaults = installation_defaults(stored, routines)
         if not isinstance(defaults["measurement"].get("program_path"), str) or not defaults["measurement"]["program_path"].strip():
             raise ValueError(f"{key} must specify force.program_path on the robot controller.")
         for name in ("start_point", "end_point"):
             if defaults["line"].get(name) not in routines["waypoints"]:
                 raise ValueError(f"{key}: {name} is missing from the selected routine file.")
         try:
-            validate_measurement_config(canonical_config(defaults), routines)
+            with wall_file(reference_path):
+                validate_measurement_config(canonical_config(defaults), routines)
         except (KeyError, TypeError, AttributeError) as error:
             raise ValueError(f"Invalid {key}: {error}") from error
     acquisition = read_object(paths["acquisition_config"])
@@ -309,10 +320,20 @@ def load_profile(data_dir=None):
     if values.get("schema_version") != 1:
         raise ValueError("Unsupported preferences.json schema_version; expected 1.")
     selected = values.get("configuration_path")
-    profile = validate_profile(resolve_path(selected, data_dir), data_dir)
-    from measurement_config import configuration_file
+    selected_path = resolve_path(selected, data_dir)
+    profile = validate_profile(selected_path, data_dir)
+    if "wall_coordinates" not in profile.values:
+        reference_path = profile.paths["wall_coordinates"]
+        if not reference_path.exists():
+            write_object(reference_path, read_object(ROOT / "src/program/config/wall_coordinates.json"))
+        updated_values = {**profile.values, "wall_coordinates": str(reference_path)}
+        write_object(profile.path, updated_values)
+        profile = validate_profile(profile.path, data_dir)
+    from wall_coordinates import wall_file
+    from measurement_config import configuration_file, installation_defaults
     defaults = read_object(profile.paths["measurement_defaults"])
-    updated = configuration_file(defaults)
+    with wall_file(profile.paths["wall_coordinates"]):
+        updated = configuration_file(installation_defaults(defaults, read_object(profile.paths["routine_file"])))
     if updated != defaults or list(updated) != list(defaults):
         write_object(profile.paths["measurement_defaults"], updated)
     ui_defaults = profile.values.get("ui_defaults", {})
@@ -344,6 +365,7 @@ def activate_environment(profile):
     for key, env in {"measurement_defaults": "UR15_MEASUREMENT_DEFAULTS",
                      "acquisition_config": "UR15_ACQUISITION_CONFIG",
                      "results_directory": "UR15_RESULTS_DIR",
+                     "wall_coordinates": "UR15_WALL_COORDINATES",
                      "routine_file": "UR15_ROUTINE_FILE"}.items():
         os.environ[env] = str(profile.paths[key])
     # Profile validation may have imported this module before environment setup.

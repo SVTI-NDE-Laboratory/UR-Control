@@ -20,7 +20,10 @@ def protocol_state_response(snapshot: dict[str, Any]) -> dict[str, Any]:
 
     program_state = snapshot.get("state") or {}
     context = snapshot.get("context") or {}
-    tcp_position = program_state.get("tcp_position") or {}
+    # Production runs provide projected wall X/Y; standalone testers retain
+    # their explicit coordinates. An empty wall position means not yet known.
+    tcp_position = (program_state.get("wall_position") if "wall_position" in program_state
+                    else program_state.get("tcp_position")) or {}
     mode = program_state.get("mode")
     ready = bool(snapshot.get("ready", False))
     error = "ok"

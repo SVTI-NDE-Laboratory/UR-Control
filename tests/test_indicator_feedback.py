@@ -35,10 +35,10 @@ class IndicatorFeedbackTests(unittest.TestCase):
         self.assertFalse(self.feedback.last["force_mode"])
         self.assertFalse(self.feedback.last["moving"])
 
-    def test_force_cycle_enables_moving_even_with_zero_tcp_speed(self):
+    def test_stationary_force_cycle_only_enables_force_indicator(self):
         with self.feedback.force_cycle():
             self.assertTrue(self.feedback.last["force_mode"])
-            self.assertTrue(self.feedback.last["moving"])
+            self.assertFalse(self.feedback.last["moving"])
         self.assertFalse(self.feedback.last["force_mode"])
         self.assertFalse(self.feedback.last["moving"])
 
@@ -56,6 +56,29 @@ class IndicatorFeedbackTests(unittest.TestCase):
         self.assertTrue(self.feedback.last["moving"])
         self.assertFalse(self.feedback.last["force_mode"])
 
+    def test_stationary_speed_noise_does_not_enable_moving(self):
+        self.receiver.getActualTCPSpeed.return_value = [.0003, -.0004, .0002, .001, -.002, .001]
+        self.feedback.sample()
+        self.assertFalse(self.feedback.last["moving"])
+
+    def test_motion_threshold_hysteresis_and_return_to_rest(self):
+        for speed, expected in ((.0015, False), (.0025, True), (.0015, True), (.0008, False)):
+            self.receiver.getActualTCPSpeed.return_value = [speed, 0, 0, 0, 0, 0]
+            self.feedback.sample()
+            self.assertEqual(self.feedback.last["moving"], expected)
+
+    def test_angular_speed_has_its_own_threshold_and_release(self):
+        for speed, expected in ((.008, False), (.012, True), (.008, True), (.004, False)):
+            self.receiver.getActualTCPSpeed.return_value = [0, 0, 0, 0, speed, 0]
+            self.feedback.sample()
+            self.assertEqual(self.feedback.last["moving"], expected)
+
+    def test_actual_motion_during_force_enables_both_indicators(self):
+        self.receiver.getActualTCPSpeed.return_value = [.01, 0, 0, 0, 0, 0]
+        with self.feedback.force_cycle():
+            self.assertTrue(self.feedback.last["force_mode"])
+            self.assertTrue(self.feedback.last["moving"])
+
     def test_disconnect_during_force_clears_reported_indicators(self):
         with self.feedback.force_cycle():
             self.feedback.detach()
@@ -70,7 +93,7 @@ class IndicatorFeedbackTests(unittest.TestCase):
 
         def force(*args, **kwargs):
             self.assertTrue(self.feedback.last["force_mode"])
-            self.assertTrue(self.feedback.last["moving"])
+            self.assertFalse(self.feedback.last["moving"])
             return True, "test"
 
         def workflow():

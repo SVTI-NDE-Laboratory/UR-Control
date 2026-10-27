@@ -41,6 +41,13 @@ FORCE_MOTION_START_TIMEOUT = 2.0
 FORCE_MOTION_STALL_TIMEOUT = 2.0
 FORCE_POSITION_PROGRESS_THRESHOLD = 0.00005
 FORCE_ROTATION_PROGRESS_THRESHOLD = 0.001
+# Passive simulation verification: no Python motion commands are issued.
+SIMULATION_RETURN_VERIFY_TIMEOUT = 2.0
+SIMULATION_RETURN_SETTLE_TIME = 0.2
+SIMULATION_RETURN_POSITION_TOLERANCE = 0.001  # m
+SIMULATION_RETURN_ROTATION_TOLERANCE = 0.01  # rad
+SIMULATION_RETURN_LINEAR_SPEED_TOLERANCE = 0.002  # m/s
+SIMULATION_RETURN_ANGULAR_SPEED_TOLERANCE = 0.01  # rad/s
 
 
 def force_contact_log_prefix(
@@ -138,6 +145,53 @@ def wait_for_status(
             raise TimeoutError(
                 f"Force program timed out during {phase} after {timeout:.1f} s; "
                 f"last status was {last_status}."
+            )
+        time.sleep(STATUS_POLL_INTERVAL)
+
+
+def verify_simulation_return(rtde_receive, target_pose: list[float]) -> list[float]:
+    """Observe a stable returned pose after URP completion without correcting it."""
+    deadline = time.monotonic() + SIMULATION_RETURN_VERIFY_TIMEOUT
+    stable_since = None
+    while True:
+        assert_robot_safe(rtde_receive)
+        returned_pose = rtde_receive.getActualTCPPose()
+        speed = rtde_receive.getActualTCPSpeed()
+        if len(returned_pose) != 6 or len(speed) != 6 or not all(math.isfinite(value) for value in [*returned_pose, *speed]):
+            raise RuntimeError("Simulation return verification failed: invalid TCP feedback; automatic correction disabled.")
+
+        position_error, rotation_error = tcp_target_errors(returned_pose, target_pose)
+        linear_speed = math.sqrt(sum(value * value for value in speed[:3]))
+        angular_speed = math.sqrt(sum(value * value for value in speed[3:]))
+        within_limits = (position_error <= SIMULATION_RETURN_POSITION_TOLERANCE
+            and rotation_error <= SIMULATION_RETURN_ROTATION_TOLERANCE
+            and linear_speed <= SIMULATION_RETURN_LINEAR_SPEED_TOLERANCE
+            and angular_speed <= SIMULATION_RETURN_ANGULAR_SPEED_TOLERANCE)
+        now = time.monotonic()
+
+        # Completion status and pose/speed samples can arrive at different times.
+        # Require consecutive in-tolerance feedback rather than one sample.
+        if within_limits:
+            if stable_since is None:
+                stable_since = now
+            if now - stable_since >= SIMULATION_RETURN_SETTLE_TIME:
+                return returned_pose
+        else:
+            stable_since = None
+
+        if now >= deadline:
+            raise RuntimeError(
+                "Simulation return verification failed after "
+                f"{SIMULATION_RETURN_VERIFY_TIMEOUT:g} s: "
+                f"position error {position_error * 1000:.3f} mm "
+                f"(limit {SIMULATION_RETURN_POSITION_TOLERANCE * 1000:g} mm), "
+                f"rotation error {rotation_error:.6f} rad "
+                f"(limit {SIMULATION_RETURN_ROTATION_TOLERANCE:g} rad), "
+                f"linear speed {linear_speed * 1000:.3f} mm/s "
+                f"(limit {SIMULATION_RETURN_LINEAR_SPEED_TOLERANCE * 1000:g} mm/s), "
+                f"angular speed {angular_speed:.6f} rad/s "
+                f"(limit {SIMULATION_RETURN_ANGULAR_SPEED_TOLERANCE:g} rad/s); "
+                "automatic correction disabled."
             )
         time.sleep(STATUS_POLL_INTERVAL)
 
@@ -308,11 +362,7 @@ def apply_force(robot_ip: str, program_path: str, max_distance: float, target_fo
         if simulation:
             # Simulation motion stays inside the guarded URP. Do not issue an
             # unguarded corrective move if its reported return is inaccurate.
-            returned_pose = rtde_receive.getActualTCPPose()
-            position_error, rotation_error = tcp_target_errors(returned_pose, pre_force_pose)
-            linear_speed = math.sqrt(sum(value * value for value in rtde_receive.getActualTCPSpeed()[:3]))
-            if position_error > 0.001 or rotation_error > 0.01 or linear_speed > 0.002:
-                raise RuntimeError("Simulation return verification failed; automatic correction disabled.")
+            returned_pose = verify_simulation_return(rtde_receive, pre_force_pose)
         else:
             returned_pose = ensure_at_tcp_target(
                 robot_ip,

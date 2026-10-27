@@ -30,7 +30,8 @@ class ForceProgramCompletionTests(unittest.TestCase):
         clock = Clock()
         io = Mock()
         receiver = Mock()
-        receiver.getActualTCPPose.side_effect = [[0.] * 6, [return_error, 0., 0., 0., 0., 0.]]
+        receiver.getActualTCPPose.side_effect = lambda: ([0.] * 6 if receiver.getActualTCPPose.call_count == 1
+            else [return_error, 0., 0., 0., 0., 0.])
         receiver.getActualTCPSpeed.return_value = [0.] * 6
         reached_at = ready_delay
         acknowledged_at = None
@@ -145,6 +146,56 @@ class ForceProgramCompletionTests(unittest.TestCase):
     def test_protective_stop_during_stationary_hold_still_aborts(self):
         with self.assertRaisesRegex(RuntimeError, "protective stop"):
             self.run_cycle(safety_error=True)
+
+
+class SimulationReturnVerificationTests(unittest.TestCase):
+    def verify(self, pose_at, speed_at, safety_at=None):
+        clock = Clock()
+        receiver = Mock()
+        receiver.getActualTCPPose.side_effect = lambda: pose_at(clock.now)
+        receiver.getActualTCPSpeed.side_effect = lambda: speed_at(clock.now)
+        with patch.object(force, "time", clock), patch.object(force, "assert_robot_safe", side_effect=lambda _: safety_at(clock.now) if safety_at else None), patch.object(force, "ensure_at_tcp_target") as correct:
+            try:
+                result = force.verify_simulation_return(receiver, [0.] * 6)
+            finally:
+                correct.assert_not_called()
+        return result, clock.now
+
+    def test_delayed_pose_and_speed_feedback_settle_without_motion_commands(self):
+        pose = lambda now: ([.003, 0, 0, 0, 0, 0] if now < .1 else [0.] * 6)
+        speed = lambda now: ([.005, 0, 0, 0, 0, 0] if now < .15 else [0.] * 6)
+        result, elapsed = self.verify(pose, speed)
+        self.assertEqual(result, [0.] * 6)
+        self.assertGreaterEqual(elapsed, .15 + force.SIMULATION_RETURN_SETTLE_TIME)
+        self.assertLess(elapsed, force.SIMULATION_RETURN_VERIFY_TIMEOUT)
+
+    def test_bad_sample_resets_the_settling_window(self):
+        speed = lambda now: ([.003, 0, 0, 0, 0, 0] if .1 <= now < .15 else [0.] * 6)
+        _, elapsed = self.verify(lambda _: [0.] * 6, speed)
+        self.assertGreaterEqual(elapsed, .15 + force.SIMULATION_RETURN_SETTLE_TIME)
+
+    def test_persistent_return_errors_report_measurements_and_preserve_limits(self):
+        cases = (([.002, 0, 0, 0, 0, 0], [0.] * 6, "position error 2.000 mm"),
+                 ([0, 0, 0, .02, 0, 0], [0.] * 6, "rotation error 0.020000 rad"),
+                 ([0.] * 6, [.003, 0, 0, 0, 0, 0], "linear speed 3.000 mm/s"),
+                 ([0.] * 6, [0, 0, 0, 0, .02, 0], "angular speed 0.020000 rad/s"))
+        for pose, speed, message in cases:
+            with self.subTest(message=message), self.assertRaises(RuntimeError) as caught:
+                self.verify(lambda _, pose=pose: pose, lambda _, speed=speed: speed)
+            self.assertIn(message, str(caught.exception))
+            self.assertIn("automatic correction disabled", str(caught.exception))
+            self.assertIn("limit 1 mm", str(caught.exception))
+
+    def test_safety_checks_remain_active_during_verification(self):
+        def safety(now):
+            if now >= .1:
+                raise RuntimeError("Robot protective stop")
+        with self.assertRaisesRegex(RuntimeError, "protective stop"):
+            self.verify(lambda _: [0.] * 6, lambda _: [0.] * 6, safety)
+
+    def test_nonfinite_feedback_is_rejected(self):
+        with self.assertRaisesRegex(RuntimeError, "invalid TCP feedback"):
+            self.verify(lambda _: [0.] * 6, lambda _: [float("nan")] * 6)
 
 
 if __name__ == "__main__":

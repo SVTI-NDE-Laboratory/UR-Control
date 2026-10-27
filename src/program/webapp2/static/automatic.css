@@ -2,3 +2,19 @@
 .inactive-parameter { filter: blur(3px); opacity: .5; }
 #measurement-folder-name { width: 100%; }
 #measurement-folder-name[readonly] { background: #edf2f6; color: #52606d; }
+
+/* Keep the wall summary visible while the measurement line scrolls below it. */
+.visualization-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; }
+.visualization-summary { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 5px 14px; margin: 0 0 4px; font-size: .9rem; }
+.visualization-summary dt { color: #52606d; }
+.visualization-summary dd { margin: 0; font-weight: 600; }
+.line-viewport { width: 100%; overflow-x: auto; overflow-y: hidden; }
+.measurement-panel > fieldset { min-width: 0; }
+.line-viewport .line-visualization { max-width: none; min-height: 0; }
+.line-scroll-note { margin: 4px 0; color: #52606d; font-size: .8rem; }
+.point-legend { display: flex; flex-wrap: wrap; gap: 8px 16px; margin-top: 4px; font-size: .8rem; color: #52606d; }
+.point-legend > span { display: inline-flex; align-items: center; gap: 6px; }
+.point-color { width: 9px; height: 9px; border-radius: 50%; background: #2474a9; }
+.point-color.complete { background: #159447; }
+.point-color.excluded { background: #9aa9b8; }
+.point-color.skipped { background: #eca3a3; }

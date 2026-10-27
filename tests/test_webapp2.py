@@ -152,6 +152,17 @@ class ApiTests(unittest.IsolatedAsyncioTestCase):
         for asset in ("dialogs.js", "dialogs.css"):
             self.assertEqual((await self.client.get('/v2-static/' + asset)).status_code, 200)
 
+    async def test_automatic_visualization_has_wall_summary_and_scrollable_view(self):
+        page = (await self.client.get('/configuration')).text
+        for element in ('summary-line', 'summary-point-count', 'line-viewport'):
+            self.assertEqual(page.count(f'id="{element}"'), 1)
+        self.assertEqual(page.count('id="show-points-list"'), 1)
+        self.assertIn('Nb. points:', page)
+        self.assertIn('scroll horizontally', page)
+        self.assertLess(page.index('/v2-static/measurement_visualization.js'), page.index('/v2-static/automatic.js'))
+        response = await self.client.get('/v2-static/measurement_visualization.js')
+        self.assertEqual(response.status_code, 200)
+
     async def test_request_validation_rejects_invalid_actions(self):
         invalid = [{"action": "waypoint", "waypoint": "missing"},
                    {"action": "waypoint", "waypoint": "Home", "motion": "l"},

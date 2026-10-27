@@ -124,7 +124,9 @@ def configuration(defaults: bool = False, method: str = "point_to_point", server
                         '<script src="/v2-static/dialogs.js" defer></script></head>')
     page = re.sub(r'<fieldset class="run-measurement-fieldset">.*?</fieldset>',
                   lambda _: (DIRECTORY / "automatic_run.html").read_text(encoding="utf-8"), page, count=1, flags=re.S)
-    page = re.sub(r'<script>.*?</script>', '<script src="/v2-static/automatic.js" defer></script>',
+    page = re.sub(r'<div class="summary-tools">.*?</svg>',
+                  lambda _: (DIRECTORY / "automatic_visualization.html").read_text(encoding="utf-8"), page, count=1, flags=re.S)
+    page = re.sub(r'<script>.*?</script>', '<script src="/v2-static/measurement_visualization.js" defer></script><script src="/v2-static/automatic.js" defer></script>',
                   page, count=1, flags=re.S)
     # Retain the tested original form/visualization, embedded in the new shell.
     routine_row = ('<div class="parameter-row routine-file-row"><label for="routine-file">Routine file</label>'
@@ -250,6 +252,7 @@ def installation_settings():
             "paths": {name: str(path) for name, path in PROFILE.paths.items()},
             "display_paths": {"app_config": display_path(PROFILE.path, PROFILE.data_dir),
                               "measurement_defaults": display_path(PROFILE.paths["measurement_defaults"], PROFILE.data_dir),
+                              "wall_coordinates": display_path(PROFILE.paths["wall_coordinates"], PROFILE.data_dir),
                               "results_directory": display_path(PROFILE.paths["results_directory"], PROFILE.data_dir),
                               "routine_directory": display_path(routine_directory(PROFILE), PROFILE.data_dir),
                               "routine_file": display_path(PROFILE.paths["routine_file"], PROFILE.data_dir)},
@@ -399,8 +402,10 @@ def flexible_options_data():
     """Read the fixed frame and CLI motion limits without contacting the robot."""
     from .flexible_worker import flexible, plane_geometry
     geometry = plane_geometry(read_routines_file(ROUTINE_FILE))
-    return {"x_min": 0, "x_max": geometry["taught_length"], "y_min": flexible.MIN_MANUAL_Y,
-            "y_max": flexible.MAX_MANUAL_Y, "speed": flexible.LINEAR_SPEED, "acceleration": flexible.LINEAR_ACCELERATION}
+    from wall_coordinates import wall_limits, wall_reference
+    x_min, x_max, y_min, y_max = wall_limits(geometry["taught_length"])
+    return {"x_min": x_min, "x_max": x_max, "y_min": y_min, "y_max": y_max,
+            "wall_coordinates": wall_reference(), "speed": flexible.LINEAR_SPEED, "acceleration": flexible.LINEAR_ACCELERATION}
 
 
 class FlexibleRequest(BaseModel):
@@ -423,7 +428,7 @@ class FlexibleRequest(BaseModel):
             if self.x is None or self.y is None:
                 raise ValueError("Specify both X and Y in millimetres.")
             if (not limits["x_min"] <= self.x <= limits["x_max"] or not limits["y_min"] <= self.y <= limits["y_max"]) and not self.outside_range_confirmed:
-                raise ValueError(f"X must be within 0–{limits['x_max']:.3f} mm and Y within {limits['y_min']}–{limits['y_max']} mm.")
+                raise ValueError(f"X must be within {limits['x_min']:.3f}–{limits['x_max']:.3f} mm and Y within {limits['y_min']}–{limits['y_max']} mm.")
         return self
 
 

@@ -16,6 +16,7 @@ from .feedback import Feedback, classify_position
 from .control import read_json
 from webapp.launcher import write_json_atomic
 from src.program.commands import run_flexible_measurement as flexible
+from wall_coordinates import wall_limits
 from robot_connection import assert_at_home, assert_robot_running, assert_robot_safe, get_rtde_receive, stop_robot
 from robot_move import tcp_target_errors, wait_until_tcp_stops
 from read_routines import read_routines_file
@@ -34,8 +35,9 @@ def validate_target(x, y, geometry, outside_range_confirmed=False):
         raise ValueError("X and Y must be finite numbers.")
     if not outside_range_confirmed:
         flexible.validate_manual_y(y)
-        if not 0 <= x <= geometry["taught_length"]:
-            raise ValueError(f"X must be between 0 and {geometry['taught_length']:.3f} mm, or confirm the out-of-range movement.")
+        x_min, x_max, _, _ = wall_limits(geometry["taught_length"])
+        if not x_min <= x <= x_max:
+            raise ValueError(f"X must be between {x_min:.3f} and {x_max:.3f} mm, or confirm the out-of-range movement.")
 
 
 def classify_plane(pose, joints, data):
@@ -47,9 +49,10 @@ def classify_plane(pose, joints, data):
     distance, rotation = tcp_target_errors(pose, target)
     tolerance_mm = POSITION_TOLERANCE * 1000
     result["in_measurement_plane"] = distance <= POSITION_TOLERANCE and rotation <= ROTATION_TOLERANCE
+    x_min, x_max, y_min, y_max = wall_limits(geometry["taught_length"])
     result["measurement_zone"] = (result["in_measurement_plane"]
-        and -tolerance_mm <= x <= geometry["taught_length"] + tolerance_mm
-        and flexible.MIN_MANUAL_Y - tolerance_mm <= y <= flexible.MAX_MANUAL_Y + tolerance_mm)
+        and x_min - tolerance_mm <= x <= x_max + tolerance_mm
+        and y_min - tolerance_mm <= y <= y_max + tolerance_mm)
     result["measurement_xy"] = {"X": x, "Y": y}
     return result
 

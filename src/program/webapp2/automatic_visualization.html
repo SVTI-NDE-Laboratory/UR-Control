@@ -1,0 +1,17 @@
+          <div class="visualization-heading">
+            <dl class="visualization-summary" aria-label="Wall coordinate summary">
+              <dt>Line:</dt><dd id="summary-line">—</dd>
+              <dt>Nb. points:</dt><dd id="summary-point-count">—</dd>
+            </dl>
+            <button id="show-points-list" type="button">Points list</button>
+          </div>
+          <div id="line-viewport" class="line-viewport" tabindex="0" role="region" aria-label="Measurement points; scroll horizontally to see all points">
+            <svg id="line-visualization" class="line-visualization" viewBox="0 0 640 150" role="img" aria-label="Configured measurement line"></svg>
+          </div>
+          <p id="line-scroll-note" class="line-scroll-note" hidden>Scroll horizontally to see all points. During a run, the view follows the current point.</p>
+          <div class="point-legend" aria-label="Point colors">
+            <span><i class="point-color complete"></i>Done</span>
+            <span><i class="point-color pending"></i>Remaining</span>
+            <span><i class="point-color excluded"></i>Not selected</span>
+            <span><i class="point-color skipped"></i>Obstacle</span>
+          </div>

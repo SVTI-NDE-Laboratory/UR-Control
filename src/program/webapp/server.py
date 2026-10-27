@@ -47,6 +47,7 @@ else:
     from worker_manager import WorkerBusyError, WorkerManager
 
 from measurement_plan import create_measurement_plan
+from wall_coordinates import local_to_wall, wall_limits
 from line_planner import line_geometry, line_scope_warning
 from measurement_config import canonical_config, read_default_program_path, configuration_file
 from read_routines import get_waypoint, read_routines_file
@@ -311,6 +312,8 @@ def configuration_geometry() -> dict[str, Any]:
         "safe_point": "p_start_h",
         "line_length": line_length,
         "safe_height": safe_height,
+        "wall_origin": local_to_wall(0.0, 0.0),
+        "wall_limits": wall_limits(line_length),
     }
 
 

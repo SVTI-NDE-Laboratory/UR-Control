@@ -1,6 +1,7 @@
 """Hardware-free regression checks for independent spacing and simulation."""
 
 import sys
+import os
 import tempfile
 import unittest
 from copy import deepcopy
@@ -20,6 +21,10 @@ from read_routines import read_routines_file
 
 class FitTests(unittest.TestCase):
     def setUp(self):
+        environment = patch.dict(os.environ)
+        environment.start()
+        self.addCleanup(environment.stop)
+        os.environ.pop("UR15_WALL_COORDINATES", None)
         self.data = read_routines_file(ROUTINE_FILE)
         self.defaults = server.legacy.load_default_config("point_to_point", "server")
         self.config = deepcopy(self.defaults)

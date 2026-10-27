@@ -1,6 +1,7 @@
 """Hardware-free checks for the flexible session, geometry and command interlocks."""
 
 import json
+import os
 import math
 import sys
 import tempfile
@@ -23,6 +24,10 @@ from read_routines import read_routines_file
 
 class PlaneTests(unittest.TestCase):
     def setUp(self):
+        environment = patch.dict(os.environ)
+        environment.start()
+        self.addCleanup(environment.stop)
+        os.environ.pop("UR15_WALL_COORDINATES", None)
         self.data = read_routines_file(ROUTINE_FILE)
         self.geometry = worker.plane_geometry(self.data)
 
@@ -133,6 +138,10 @@ class PlaneTests(unittest.TestCase):
 
 class FlexibleApiTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
+        environment = patch.dict(os.environ)
+        environment.start()
+        self.addCleanup(environment.stop)
+        os.environ.pop("UR15_WALL_COORDINATES", None)
         self.workers = ControlWorkers()
         for item in (patch.object(server, "workers", self.workers), patch.object(server.legacy.state, "workers", self.workers)):
             item.start()
@@ -221,6 +230,10 @@ class FlexibleApiTests(unittest.IsolatedAsyncioTestCase):
 
 class SessionTests(unittest.TestCase):
     def setUp(self):
+        environment = patch.dict(os.environ)
+        environment.start()
+        self.addCleanup(environment.stop)
+        os.environ.pop("UR15_WALL_COORDINATES", None)
         self.data = read_routines_file(ROUTINE_FILE)
         self.geometry = worker.plane_geometry(self.data)
         self.pose = list(self.data["waypoints"]["p_start_h"]["p"])
@@ -285,7 +298,7 @@ class SessionTests(unittest.TestCase):
                 self.assertEqual(args[3:5], (160, False))
                 feedback = read_json(directory / "feedback.json")
                 self.assertTrue(feedback["force_mode"])
-                self.assertTrue(feedback["moving"])
+                self.assertFalse(feedback["moving"])
                 self.assertEqual(kwargs["acquisition_context"]["acquisition_label"], "local force hold")
                 if force_attempts == 1:
                     return False, "first-attempt"

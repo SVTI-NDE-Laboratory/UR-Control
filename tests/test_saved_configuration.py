@@ -1,5 +1,6 @@
 """Saved runs load as editable parameters without changing Results or defaults."""
 import json
+import os
 from pathlib import Path
 import tempfile
 import unittest
@@ -14,6 +15,10 @@ from fastapi import HTTPException
 
 class SavedConfigurationTests(unittest.TestCase):
     def setUp(self):
+        environment = patch.dict(os.environ)
+        environment.start()
+        self.addCleanup(environment.stop)
+        os.environ.pop("UR15_WALL_COORDINATES", None)
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.results = Path(self.temp.name)/'results'

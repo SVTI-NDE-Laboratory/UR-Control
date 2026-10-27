@@ -45,7 +45,8 @@ from robot_connection import (
 )
 from run_measurements import MeasurementUnavailableError, run_measurements
 from run_routine import run_routine
-from line_planner import line_geometry, line_parameters, start_entry_crosses_obstacle, selected_line_positions
+from line_planner import line_geometry, line_parameters, start_entry_crosses_obstacle, selected_line_positions, cross, normalize, line_method, POINT_TO_POINT
+from wall_coordinates import tcp_to_wall_xy
 from data_acquisition.server_control import (
     AcquisitionControlServer,
     read_server_config,
@@ -160,7 +161,7 @@ def read_state_snapshot(state_file: Path) -> dict[str, Any]:
 
 
 def configured_y_offset(measurement_config: dict[str, Any]) -> float:
-    """Return the configured STATE Y offset in millimetres."""
+    """Return configured Y for legacy state providers without a taught plane."""
 
     parameters = line_parameters(measurement_config) if "line" in measurement_config else {}
     return float(parameters.get("offset_y", 0.0))
@@ -170,10 +171,14 @@ def read_live_state_snapshot(
     state_file: Path,
     rtde_receive,
     y_offset: float | None = None,
+    wall_plane: dict | None = None,
 ) -> dict[str, Any]:
-    """Return file state enriched with live robot TCP position when available."""
+    """Return file state with live TCP feedback and projected wall X/Y."""
 
     state = read_state_snapshot(state_file)
+    if wall_plane is not None:
+        # Unknown wall coordinates must not fall back to robot base coordinates.
+        state["wall_position"] = {}
     if y_offset is not None:
         state.setdefault("tcp_position", {})["Y"] = y_offset
     if rtde_receive is None:
@@ -182,6 +187,9 @@ def read_live_state_snapshot(
     try:
         pose = rtde_receive.getActualTCPPose()
         speed = rtde_receive.getActualTCPSpeed()
+        if wall_plane is not None:
+            x, y = tcp_to_wall_xy(pose, wall_plane["start_pose"], wall_plane["x_axis"], wall_plane["y_axis"])
+            state["wall_position"] = {"X": x, "Y": y}
     except Exception as error:
         state["rtde_error"] = str(error)
         return state
@@ -199,6 +207,7 @@ def start_acquisition_if_enabled(
     state_file: Path,
     initial_measurement_index: int | None = None,
     rtde_receive_provider: Callable[[], Any] | None = None,
+    routines_data: dict | None = None,
 ) -> AcquisitionResources:
     """Start data acquisition communication when the run configuration needs it."""
 
@@ -206,12 +215,20 @@ def start_acquisition_if_enabled(
         print("Data acquisition control server disabled by measurement.stop_method=timer.")
         return None, None
 
+    # Resolve the same taught plane as the app's wall-coordinate display.
+    wall_plane = None
+    if "line" in measurement_config and line_method(measurement_config) == POINT_TO_POINT:
+        geometry = line_geometry(measurement_config, routines_data)
+        wall_plane = {"start_pose": get_waypoint(routines_data, geometry["start_name"])["p"],
+                      "x_axis": geometry["x_axis"], "y_axis": normalize(cross(geometry["z_axis"], geometry["x_axis"]))}
+
     def state_provider() -> dict[str, Any]:
         rtde_receive = rtde_receive_provider() if rtde_receive_provider else None
         state = read_live_state_snapshot(
             state_file,
             rtde_receive,
             configured_y_offset(measurement_config),
+            wall_plane,
         )
         if (
             initial_measurement_index is not None
@@ -520,6 +537,7 @@ def main() -> None:
             state_file,
             initial_measurement_index,
             lambda: rtde_receive,
+            routines_data,
         )
 
     # =================== Robot preflight ===================
@@ -591,4 +609,6 @@ def main() -> None:
 
 
 if __name__ == "__main__":
+    from wall_coordinates import DEFAULT_WALL_FILE
+    os.environ.setdefault("UR15_WALL_COORDINATES", str(DEFAULT_WALL_FILE))
     main()

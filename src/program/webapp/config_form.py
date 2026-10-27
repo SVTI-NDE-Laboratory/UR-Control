@@ -18,6 +18,7 @@ else:
     )
 
 from measurement_config import validate_measurement_config, canonical_config
+from wall_coordinates import local_to_wall, wall_reference
 from line_planner import POINT_TO_POINT, line_geometry
 from read_routines import read_routines_file
 
@@ -112,6 +113,11 @@ def edited_config(
         except ValueError as error:
             raise ValueError(f"{FIELD_LABELS.get(key, key)}: {error}") from error
     config["line"] = parameters
+    # Submitted coordinates already use the wall reference shown in the form.
+    if wall_reference() is not None or defaults["line"].get("coordinate_system") == "wall":
+        parameters["coordinate_system"] = "wall"
+    if "wall_reference" in defaults["line"]:
+        parameters["wall_reference"] = deepcopy(wall_reference() or defaults["line"]["wall_reference"])
     parameters["auto_fit"] = parse_value(fields.get("line.auto_fit", ["true"])[0], True)
     if parameters["auto_fit"] and parameters["x_end"] <= parameters["x_start"]:
         raise ValueError("X End must be larger than X Start when Automatic fit is enabled.")
@@ -178,7 +184,7 @@ def edited_config(
             "number_of_measurements"
         ]
         config["line"]["increment"] = geometry["increment"]
-        config["line"]["x_end"] = geometry["x_end"]
+        config["line"]["x_end"] = local_to_wall(geometry["x_end"], 0.0)[0]
     validate_config(config, routines_data)
     return config
 
@@ -259,9 +265,9 @@ def form_html(
         "increment": parameters.get("increment", 100.0),
         "number_of_measurements": parameters.get("number_of_measurements", 5),
         "spacing_source": parameters.get("spacing_source", "increment"),
-        "x_start": parameters.get("x_start", parameters.get("offset_x", 0.0)),
+        "x_start": parameters.get("x_start", parameters.get("offset_x", local_to_wall(0.0, 0.0)[0])),
         "x_end": parameters.get("x_end", 0.0),
-        "offset_y": parameters.get("offset_y", 0.0),
+        "offset_y": parameters.get("offset_y", local_to_wall(0.0, 0.0)[1]),
     }
     hidden_controls.append(
         '<input id="line.line_length" type="hidden" value="0.000">'
@@ -293,7 +299,7 @@ def form_html(
         f'<span>X start / X end [mm]</span>{line_input("x_start", point_values["x_start"], point_offset_attributes)}'
         f'{line_input("x_end", point_values["x_end"], point_offset_attributes)}</div>'
         '<div class="parameter-row single">'
-        f'<label for="line.offset_y">Y offset [mm]</label>{line_input("offset_y", point_values["offset_y"], point_offset_attributes)}</div>'
+        f'<label for="line.offset_y">Y position [mm]</label>{line_input("offset_y", point_values["offset_y"], point_offset_attributes)}</div>'
         '</fieldset>'
     ]
 

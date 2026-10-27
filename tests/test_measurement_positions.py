@@ -2,6 +2,7 @@
 
 import math
 import json
+import os
 import sys
 import tempfile
 import unittest
@@ -21,6 +22,10 @@ from webapp.config_form import edited_config, display_field_value, form_html
 
 class MeasurementPositionTests(unittest.TestCase):
     def setUp(self):
+        environment = patch.dict(os.environ)
+        environment.start()
+        self.addCleanup(environment.stop)
+        os.environ.pop("UR15_WALL_COORDINATES", None)
         self.data = {"waypoints": {
             "p_start_l": {"p": [0, 0, 0, 0, 0, 0]},
             "p_end_l": {"p": [1, 0, 0, 0, 0, 0]},
@@ -50,7 +55,7 @@ class MeasurementPositionTests(unittest.TestCase):
             with self.subTest(y=y):
                 self.parameters.update(x_start=200.0, x_end=600.0, offset_y=y)
                 results = create_measurement_plan(self.config, self.data)
-                self.assertEqual(results["schema_version"], 6)
+                self.assertEqual(results["schema_version"], 7)
                 self.assertEqual(results["units"]["plane_position_x"], "mm")
                 self.assertEqual(results["units"]["plane_position_y"], "mm")
                 self.assertEqual([point["plane_position_x"] for point in results["points"]], [200, 300, 400, 500, 600])

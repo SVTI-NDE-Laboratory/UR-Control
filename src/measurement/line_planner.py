@@ -2,6 +2,8 @@
 
 import math
 
+from wall_coordinates import local_to_wall, wall_to_local, wall_reference, validate_wall_y
+
 
 TRANSLATION = "translation"
 POINT_TO_POINT = "point_to_point"
@@ -61,7 +63,7 @@ def line_parameters(config: dict) -> dict:
 def obstacle_interval(config: dict) -> tuple[float, float] | None:
     """Return obstacle bounds relative to the selected segment's start.
 
-    Point-to-point obstacle entries use the taught X origin, like X Start/End.
+    Point-to-point obstacle entries use wall X coordinates, like X Start/End.
     Motion planning uses distance from X Start, so convert at this boundary.
     """
 
@@ -91,14 +93,15 @@ def obstacle_interval(config: dict) -> tuple[float, float] | None:
         end = obstacle["end"]
     if not all(math.isfinite(value) for value in (start, end)):
         raise ValueError("Obstacle positions must be finite numbers.")
-    if start < 0:
-        raise ValueError("Obstacle start must not be negative.")
+    wall_origin_x = local_to_wall(0.0, 0.0)[0] if "line" in config and line_method(config) == POINT_TO_POINT else 0.0
+    if start < wall_origin_x:
+        raise ValueError("Obstacle start must not precede the taught start X.")
     if start > end:
         raise ValueError("Obstacle start must not be greater than obstacle end.")
     origin = 0.0
     if "line" in config and line_method(config) == POINT_TO_POINT:
         parameters = line_parameters(config)
-        origin = float(parameters.get("x_start", parameters.get("offset_x", 0.0)))
+        origin = float(parameters.get("x_start", parameters.get("offset_x", wall_origin_x)))
     return start - origin, end - origin
 
 
@@ -153,13 +156,19 @@ def _waypoint_pose(routines_data: dict | None, name: str) -> list[float]:
 
 
 def point_to_point_offsets(parameters: dict, line_length: float) -> tuple[float, float, float]:
-    """Return configured point-to-point X start/end and Y offset in millimetres."""
+    """Convert configured wall X start/end and Y position to local millimetres."""
 
-    x_start = float(parameters.get("x_start", parameters.get("offset_x", 0.0)))
-    x_end = float(parameters.get("x_end", line_length))
-    if x_end == 0 and parameters.get("auto_fit", True):
-        x_end = line_length
-    return x_start, x_end, float(parameters.get("offset_y", 0.0))
+    origin_x, origin_y = local_to_wall(0.0, 0.0)
+    x_start = float(parameters.get("x_start", parameters.get("offset_x", origin_x)))
+    x_end = float(parameters.get("x_end", origin_x + line_length))
+    if x_end == 0 and parameters.get("auto_fit", True) and wall_reference() is None:
+        x_end = origin_x + line_length
+    wall_y = float(parameters.get("offset_y", origin_y))
+    if wall_reference() is not None:
+        validate_wall_y(wall_y)
+    local_start, local_y = wall_to_local(x_start, wall_y)
+    local_end = wall_to_local(x_end, wall_y)[0]
+    return local_start, local_end, local_y
 
 
 def point_to_point_offset_geometry(
@@ -185,8 +194,8 @@ def point_to_point_offset_geometry(
            value > line_length + X_SCOPE_ALLOWANCE_MM + 1e-9
            for value in (x_start, x_end)):
         raise ValueError(
-            f"X Start and X End must be between {-X_SCOPE_ALLOWANCE_MM:g} and "
-            f"{line_length + X_SCOPE_ALLOWANCE_MM:g} mm "
+            f"X Start and X End must be between {local_to_wall(-X_SCOPE_ALLOWANCE_MM, 0.0)[0]:g} and "
+            f"{local_to_wall(line_length + X_SCOPE_ALLOWANCE_MM, 0.0)[0]:g} mm "
             f"(at most {X_SCOPE_ALLOWANCE_MM:g} mm beyond the taught line)."
         )
     single_point = parameters.get("auto_fit", True) is False and parameters.get("number_of_measurements") == 1
@@ -234,13 +243,18 @@ def line_scope_warning(geometry: dict) -> str | None:
     start, end, taught = (geometry[key] for key in ("x_start", "x_end", "taught_length"))
     if start >= -1e-9 and end <= taught + 1e-9:
         return None
+    start = local_to_wall(start, 0.0)[0]
+    end = local_to_wall(end, 0.0)[0]
+    lower = local_to_wall(0.0, 0.0)[0]
+    upper = local_to_wall(taught, 0.0)[0]
+
     def shown(value):
         text = f"{value:.2f}".rstrip("0").rstrip(".")
         return "0" if text == "-0" else text
 
     return (
         f"The measurement line goes slightly outside the taught range "
-        f"(0 to {shown(taught)} mm). X Start is {shown(start)} mm and X End is {shown(end)} mm. "
+        f"({shown(lower)} to {shown(upper)} mm). X Start is {shown(start)} mm and X End is {shown(end)} mm. "
         "Moving beyond the taught endpoints could reach a singularity or cause "
         "unexpected movements. Do you want to start this automatic program?"
     )
@@ -302,7 +316,7 @@ def line_geometry(config: dict, routines_data: dict | None = None) -> dict:
         if requested_increment is None or not math.isfinite(requested_increment) or requested_increment <= 0:
             raise ValueError("Point-to-point increment must be positive and finite.")
         parameters = dict(parameters)
-        parameters["x_end"] = float(parameters.get("x_start", parameters.get("offset_x", 0.0))) + (count - 1) * requested_increment
+        parameters["x_end"] = float(parameters.get("x_start", parameters.get("offset_x", local_to_wall(0.0, 0.0)[0]))) + (count - 1) * requested_increment
     offset_geometry = point_to_point_offset_geometry(
         parameters,
         taught_safe_pose,

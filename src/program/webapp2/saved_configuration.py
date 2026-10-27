@@ -3,6 +3,7 @@
 from pathlib import Path
 
 from measurement_config import read_measurement_config
+from wall_coordinates import local_to_wall
 from line_planner import line_geometry
 
 
@@ -52,5 +53,5 @@ def read_saved_configuration(results: Path, directory: str, routines: dict) -> d
     if geometry["method"] == "point_to_point":
         # Show the effective saved line, including full-span CLI defaults.
         config["line"].update(increment=geometry["increment"], number_of_measurements=geometry["number_of_measurements"],
-                              x_end=geometry["x_end"])
+                              x_end=local_to_wall(geometry["x_end"], 0.0)[0])
     return config

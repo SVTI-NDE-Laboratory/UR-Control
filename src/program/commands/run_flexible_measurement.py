@@ -3,11 +3,11 @@
 The command starts from Home, enters either side of the taught measurement line,
 then waits for operator commands:
 
-    move <x_mm> <y_mm>    move linearly to a measurement-frame XY point
+    move <x_mm> <y_mm>    move linearly to an absolute wall XY point
     force <seconds>       apply default force, hold, then return
     force <newtons> <seconds|manual>
                           apply that force until timeout or stop
-    pose                  print the current measurement-frame XY estimate
+    pose                  print the current wall XY estimate
     end                   return to the entry endpoint and run the home routine
 
 The force URP path comes from config_default.json and is refreshed for each
@@ -33,6 +33,7 @@ for folder in [PROGRAM_DIR, MEASUREMENT_DIR, ROBOT_DIR, ROUTINES_DIR]:
     if str(folder) not in sys.path:
         sys.path.insert(0, str(folder))
 
+from wall_coordinates import DEFAULT_WALL_FILE, local_to_wall, wall_to_local, wall_limits, validate_wall_y, tcp_to_wall_xy
 from apply_force import apply_force
 from line_planner import cross, line_geometry, millimetres_to_metres, normalize
 from measurement_config import validate_force_config, validate_measurement_config, read_default_program_path
@@ -74,8 +75,6 @@ LINEAR_SPEED = 100.0
 JOINT_TOLERANCE = 0.01
 HOME_JOINT_TOLERANCE = 0.005
 WAIT_TIMEOUT = 30.0
-MIN_MANUAL_Y = -400.0
-MAX_MANUAL_Y = 0.0
 
 HOME_TO_START_ROUTINE = "home_to_start"
 START_TO_HOME_ROUTINE = "start_to_home"
@@ -91,7 +90,6 @@ MEASUREMENT_CONFIG = {
         "end_point": "p_end_l",
         "spacing_source": "count",
         "number_of_measurements": 2,
-        "offset_y": 0.0,
     },
     "motion": {
         "type": "l",
@@ -152,13 +150,14 @@ def measurement_pose(
 ) -> list[float]:
     """Return a TCP pose at one flexible XY measurement-frame coordinate."""
 
+    x_mm, y_mm = wall_to_local(x_mm, y_mm)
     if (
         not allow_x_outside_taught_range
         and (x_mm < -1e-9 or x_mm > geometry["taught_length"] + 1e-9)
     ):
         raise ValueError(
-            "X must be between 0 and the taught line length "
-            f"({geometry['taught_length']:.3f} mm)."
+            "X must be within the taught wall range "
+            f"({wall_limits(geometry['taught_length'])[0]:.3f} to {wall_limits(geometry['taught_length'])[1]:.3f} mm)."
         )
 
     start_pose = get_waypoint(routines_data, geometry["start_name"])["p"]
@@ -184,19 +183,16 @@ def pose_to_measurement_xy(
 
     start_pose = get_waypoint(routines_data, geometry["start_name"])["p"]
     x_axis, y_axis = measurement_axes(geometry)
-    delta = [pose[index] - start_pose[index] for index in range(3)]
-    x_mm = sum(delta[index] * x_axis[index] for index in range(3)) * 1000.0
-    y_mm = sum(delta[index] * y_axis[index] for index in range(3)) * 1000.0
-    return x_mm, y_mm
+    return tcp_to_wall_xy(pose, start_pose, x_axis, y_axis)
 
 
 def endpoint_x(geometry: dict[str, Any], side: str) -> float:
     """Return the X coordinate for the selected endpoint."""
 
     if side == "start":
-        return 0.0
+        return local_to_wall(0.0, 0.0)[0]
     if side == "end":
-        return float(geometry["taught_length"])
+        return local_to_wall(float(geometry["taught_length"]), 0.0)[0]
     raise ValueError("ENTRY_SIDE must be 'start' or 'end'.")
 
 
@@ -204,24 +200,21 @@ def confirm_outside_taught_x(x_mm: float, geometry: dict[str, Any]) -> bool:
     """Ask the operator to confirm an X target outside the taught interval."""
 
     taught_length = float(geometry["taught_length"])
-    if -1e-9 <= x_mm <= taught_length + 1e-9:
+    x_min, x_max, _, _ = wall_limits(taught_length)
+    if x_min - 1e-9 <= x_mm <= x_max + 1e-9:
         return True
     print(
         "Warning: requested X is outside the taught range "
-        f"[0.000, {taught_length:.3f}] mm: X={x_mm:.3f} mm."
+        f"[{x_min:.3f}, {x_max:.3f}] mm: X={x_mm:.3f} mm."
     )
     answer = input("Type 'yes' to move there anyway: ").strip().lower()
     return answer == "yes"
 
 
 def validate_manual_y(y_mm: float) -> None:
-    """Reject manual Y targets outside the traditional allowed range."""
+    """Reject wall Y targets outside the configured up/down movement range."""
 
-    if y_mm > MAX_MANUAL_Y or y_mm < MIN_MANUAL_Y:
-        raise ValueError(
-            "Y must stay between "
-            f"{MIN_MANUAL_Y:.3f} and {MAX_MANUAL_Y:.3f} mm."
-        )
+    validate_wall_y(y_mm)
 
 
 def timed_force_hold(duration_seconds: float):
@@ -300,7 +293,7 @@ def print_help() -> None:
 
     print(
         "\nCommands:\n"
-        "  move <x_mm> <y_mm>    move linearly to measurement-frame X/Y\n"
+        "  move <x_mm> <y_mm>    move to wall X/Y [mm]; positive Y points upward\n"
         "  force <seconds>       apply default force, hold that long, then return\n"
         "  force manual          apply default force until you type stop\n"
         "  force <N> <seconds>   apply N newtons, hold that long, then return\n"
@@ -342,16 +335,16 @@ def run_entry_sequence(
     )
 
     x_mm = endpoint_x(geometry, side)
-    print(f"Moving from high side to low endpoint at X={x_mm:.3f} mm, Y=0.000 mm.")
+    print(f"Moving from high side to low endpoint at X={x_mm:.3f} mm, Y={local_to_wall(0.0, 0.0)[1]:.3f} mm.")
     movel_pose(
         ROBOT_IP,
         rtde_receive,
-        measurement_pose(routines_data, geometry, x_mm, 0.0, "low"),
+        measurement_pose(routines_data, geometry, x_mm, local_to_wall(0.0, 0.0)[1], "low"),
         acceleration,
         speed,
         WAIT_TIMEOUT,
     )
-    return x_mm, 0.0
+    return x_mm, local_to_wall(0.0, 0.0)[1]
 
 
 def run_exit_sequence(
@@ -365,11 +358,11 @@ def run_exit_sequence(
 
     side = ENTRY_SIDE.lower()
     x_mm = endpoint_x(geometry, side)
-    print(f"Returning linearly to {side} endpoint at X={x_mm:.3f} mm, Y=0.000 mm.")
+    print(f"Returning linearly to {side} endpoint at X={x_mm:.3f} mm, Y={local_to_wall(0.0, 0.0)[1]:.3f} mm.")
     movel_pose(
         ROBOT_IP,
         rtde_receive,
-        measurement_pose(routines_data, geometry, x_mm, 0.0, "low"),
+        measurement_pose(routines_data, geometry, x_mm, local_to_wall(0.0, 0.0)[1], "low"),
         acceleration,
         speed,
         WAIT_TIMEOUT,
@@ -378,7 +371,7 @@ def run_exit_sequence(
     movel_pose(
         ROBOT_IP,
         rtde_receive,
-        measurement_pose(routines_data, geometry, x_mm, 0.0, "high"),
+        measurement_pose(routines_data, geometry, x_mm, local_to_wall(0.0, 0.0)[1], "high"),
         acceleration,
         speed,
         WAIT_TIMEOUT,
@@ -539,6 +532,7 @@ def run_interactive_loop(
 def run() -> None:
     """Run the flexible interactive measurement command."""
 
+    os.environ.setdefault("UR15_WALL_COORDINATES", str(DEFAULT_WALL_FILE))
     MEASUREMENT_CONFIG["measurement"]["program_path"] = read_default_program_path()
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     state_file = OUTPUT_DIR / "state.json"
@@ -622,4 +616,5 @@ def run() -> None:
 
 
 if __name__ == "__main__":
+    os.environ.setdefault("UR15_WALL_COORDINATES", str(DEFAULT_WALL_FILE))
     run()

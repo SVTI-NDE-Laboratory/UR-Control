@@ -4,6 +4,9 @@ const configurationControls = document.getElementById('configuration-controls');
 const saveDefaultButton = document.getElementById('save-default');
 const svg = document.getElementById('line-visualization');
 const svgNS = 'http://www.w3.org/2000/svg';
+const lineViewport = document.getElementById('line-viewport');
+const lineView = MeasurementVisualization;
+let followedPoint = null;
 const lineMethod = {value:'point_to_point'};
 const obstacleEnabled = document.getElementById('obstacle-enabled');
 const totalLengthInput = document.getElementById('line.line_length');
@@ -179,6 +182,47 @@ function synchronizeSpacingFromSource() {
   }
 }
 
+function renderLine({points, length, increment, origin, end, y, obstacle, activePoint = null, followKey = null}) {
+  const layout = lineView.layout(points.length, length, increment);
+  const {left, right, lowY, scale} = layout;
+  const pixelScale = (lineViewport.clientWidth || 640) / 640;
+  svg.setAttribute('viewBox', `0 0 ${layout.width} ${layout.height}`);
+  svg.style.width = `${layout.width * pixelScale}px`;
+  svg.style.height = `${layout.height * pixelScale}px`;
+  document.getElementById('summary-line').textContent = `(${formatNumber(origin)}, ${formatNumber(y)}) → (${formatNumber(end)}, ${formatNumber(y)}) mm`;
+  const selectedCount = points.filter(point => !['excluded', 'skipped'].includes(point.state)).length;
+  document.getElementById('summary-point-count').textContent = `${selectedCount} (${points.length - selectedCount} discarded)`;
+  document.getElementById('line-scroll-note').hidden = points.length <= 21;
+
+  svg.replaceChildren();
+  // Draw the obstacle first so the line, points and numbers remain in front.
+  if (obstacle && obstacle.end >= 0 && obstacle.start <= length && obstacle.end >= obstacle.start) {
+    const start = Math.max(0, obstacle.start), end = Math.min(length, obstacle.end);
+    addSvg('rect', {x:scale(start), y:lowY-50, width:Math.max(2, scale(end)-scale(start)), height:100, rx:5, fill:lineView.colors.skipped});
+    addSvg('text', {x:(scale(start)+scale(end))/2, y:lowY-25, 'text-anchor':'middle', fill:'white', 'font-size':14}, 'Obstacle');
+  }
+
+  addSvg('line', {x1:left, y1:lowY, x2:length > 0 ? right : left, y2:lowY, stroke:'#17212b', 'stroke-width':5});
+
+  for (const point of points) {
+    const current = point.id === activePoint?.id;
+    addSvg('circle', {cx:scale(point.position), cy:lowY, r:current ? 10 : 7, fill:lineView.colors[point.state], stroke:'white', 'stroke-width':2});
+    addSvg('text', {x:scale(point.position), y:lowY+27, 'text-anchor':'middle', fill:'#334e60', 'font-size':12,
+      'font-weight':current ? 700 : 400}, String(point.id));
+  }
+  if (activePoint) {
+    addSvg('text', {x:scale(activePoint.position), y:lowY+70, 'text-anchor':'middle', fill:'#1769aa', 'font-size':14, 'font-weight':700},
+      formatMillimetres(origin + activePoint.position));
+  }
+
+  // Follow a newly active point, while allowing manual scrolling between points.
+  if (followKey !== null && followKey !== followedPoint && activePoint) {
+    lineViewport.scrollLeft = lineView.scrollTarget(scale(activePoint.position) * pixelScale,
+      lineViewport.clientWidth, layout.width * pixelScale, lineViewport.scrollLeft);
+  }
+  followedPoint = followKey;
+}
+
 function drawVisualization() {
   synchronizeFields();
   synchronizeSpacingFromSource();
@@ -186,43 +230,23 @@ function drawVisualization() {
   const translation = lineMethod.value === 'translation';
   const requestedCount = Number(measurementCountInput?.value || '1');
   const count = Number.isInteger(requestedCount) && requestedCount >= 1 ? requestedCount : 1;
-  const length = translation
-    ? numberValue('line.line_length')
-    : selectedPointLength();
+  const length = translation ? numberValue('line.line_length') : selectedPointLength();
   const requestedIncrement = numberValue('line.increment');
   const increment = autoFit.checked && !translation && spacingSourceInput.value === 'count' && count >= 2 && length > 0
-    ? length / (count - 1)
-    : requestedIncrement;
+    ? length / (count - 1) : requestedIncrement;
   const origin = translation ? 0 : numberValue('line.x_start');
   const obstacleStart = numberValue('obstacle.start') - origin;
   const obstacleEnd = numberValue('obstacle.end') - origin;
-  const hasObstacle = obstacleEnabled.checked && obstacleStart + origin >= 0 && obstacleEnd >= obstacleStart;
-  const left = 55, right = 585, lowY = 170;
-  const obstacleHeight = 62, obstacleBottomY = lowY - 3;
-  const width = right - left;
-  const scale = value => left + (length > 0 ? value / length : 0) * width;
-
-  svg.replaceChildren();
-  addSvg('line', {x1:left, y1:lowY, x2:length > 0 ? right : left, y2:lowY, stroke:'#17212b', 'stroke-width':5});
-
-  if (hasObstacle && length > 0 && obstacleEnd >= 0 && obstacleStart <= length) {
-    const start = Math.max(0, Math.min(length, obstacleStart));
-    const end = Math.max(start, Math.min(length, obstacleEnd));
-    addSvg('rect', {x:scale(start), y:obstacleBottomY-obstacleHeight, width:Math.max(2, scale(end)-scale(start)), height:obstacleHeight, rx:5, fill:'#e05252', opacity:.72});
-    addSvg('text', {x:(scale(start)+scale(end))/2, y:obstacleBottomY-32, 'text-anchor':'middle', fill:'white', 'font-size':14}, 'Obstacle');
-  }
-
+  const hasObstacle = obstacleEnabled.checked && obstacleEnd >= obstacleStart;
+  const points = [];
   for (let index = 0; index < count; index++) {
     const position = index * increment;
     if (position > length + 1e-9) break;
     const blocked = hasObstacle && position >= obstacleStart - 1e-9 && position <= obstacleEnd + 1e-9;
-    addSvg('circle', {cx:scale(position), cy:lowY, r:6, fill:blocked ? '#b85b5b' : isPreviewPointSelected(index + 1) ? '#2474a9' : '#9aa9b8', stroke:'white', 'stroke-width':2});
-    addSvg('text', {x:scale(position), y:lowY+25, 'text-anchor':'middle', fill:'#334e60', 'font-size':12}, String(index + 1));
+    points.push({id:index + 1, position, state:blocked ? 'skipped' : isPreviewPointSelected(index + 1) ? 'pending' : 'excluded'});
   }
-  addSvg('text', {x:left, y:285, fill:'#334e60', 'font-size':14}, translation ? '0 mm' : `X start: ${formatMillimetres(numberValue('line.x_start'))}`);
-  addSvg('text', {x:right, y:285, 'text-anchor':'end', fill:'#334e60', 'font-size':14}, translation ? formatMillimetres(length) : `X end: ${formatMillimetres(numberValue('line.x_end'))}`);
-  if (!translation) addSvg('text', {x:(left+right)/2, y:55, 'text-anchor':'middle', fill:'#334e60', 'font-size':14}, `Y offset: ${formatMillimetres(numberValue('line.offset_y'))}`);
-
+  renderLine({points, length, increment, origin, end:origin + length, y:numberValue('line.offset_y'),
+    obstacle:hasObstacle ? {start:obstacleStart, end:obstacleEnd} : null});
 }
 
 async function loadPointGeometry(resetLineEnd = autoFit.checked) {
@@ -233,8 +257,8 @@ async function loadPointGeometry(resetLineEnd = autoFit.checked) {
     pointGeometry = result;
     pointMethodNote.textContent = 'Fixed: p_start_l → p_end_l';
     if (resetLineEnd && autoFit.checked && lineMethod.value === 'point_to_point' && xEndInput) {
-      setNumericInput(xStartInput, 0);
-      setNumericInput(xEndInput, pointGeometry.line_length);
+      setNumericInput(xStartInput, pointGeometry.wall_origin?.[0] || 0);
+      setNumericInput(xEndInput, (pointGeometry.wall_origin?.[0] || 0) + pointGeometry.line_length);
       spacingSourceInput.value = 'increment';
     }
     synchronizeSpacingFromSource();
@@ -403,30 +427,8 @@ document.getElementById('close-app').addEventListener('click', async () => {
   document.body.innerHTML = '<main><h1>Application closed</h1><p>You can close this tab.</p></main>';
 });
 
-function completedState(point, programState, points, origin = 0) {
-  if (point.scheduled === false) return point.skip_reason === 'not_selected' ? 'excluded' : 'skipped';
-  if (['measured', 'simulation'].includes(point.data?.status)) return 'complete';
-  if (point.data?.status != null) return 'failed';
-  const mode = programState.mode || '';
-  const current = programState.active_point ?? programState.measurement_index;
-  if (['measurements_done', 'end_routine', 'idle'].includes(mode)) return 'complete';
-  if (typeof current !== 'number') return 'pending';
-  if (point.point_number < current) return 'complete';
-  if (point.point_number > current) return 'pending';
-  if (programState.last_measurement_success === false) return 'failed';
-  if (
-    programState.last_measurement_success === true
-    && programState.point_completed === true
-    && !points.some(nextPoint =>
-      nextPoint.scheduled !== false && nextPoint.point_number > current
-    )
-  ) {
-    return 'complete';
-  }
-  const reachedPosition = programState.line_position;
-  const isReached = typeof reachedPosition === 'number'
-    && Math.abs(reachedPosition - (point.plane_position_x - origin)) < 1e-6;
-  return isReached || point.point_number === current ? 'current' : 'pending';
+function completedState(point, programState) {
+  return lineView.pointState(point, programState);
 }
 
 function humanizePhase(mode) {
@@ -450,41 +452,27 @@ function drawProgress(data) {
   const programState = data.program_state || {};
   const points = plan?.points || [];
   const parameters = config?.line || {};
-  const pointToPoint = true;
-  const origin = pointToPoint ? (parameters.x_start || 0) : 0;
-  const configuredLength = pointToPoint ? parameters.x_end - origin : parameters.line_length;
+  const origin = parameters.x_start ?? points[0]?.plane_position_x ?? pointGeometry?.wall_origin?.[0] ?? 0;
+  const configuredEnd = parameters.x_end ?? (pointGeometry ? (pointGeometry.wall_origin?.[0] || 0) + pointGeometry.line_length : NaN);
+  const configuredLength = configuredEnd - origin;
   const lastPosition = points.length ? Math.max(...points.map(point => (point.plane_position_x - origin))) : 0;
   const length = Number.isFinite(configuredLength) && configuredLength >= 0 ? configuredLength : lastPosition;
   const reachedPosition = typeof programState.line_position === 'number' ? programState.line_position : null;
   const activePoint = activePlanPoint(points, programState);
   const currentPosition = activePoint ? (activePoint.plane_position_x - origin) : reachedPosition;
   const obstacle = config?.obstacle;
-  const left = 55, right = 585, lowY = 170;
-  const obstacleHeight = 62, obstacleBottomY = lowY - 3;
-  const scale = value => left + (length > 0 ? Math.max(0, Math.min(1, value / length)) : 0) * (right - left);
-
-  svg.replaceChildren();
-  addSvg('line', {x1:left, y1:lowY, x2:length > 0 ? right : left, y2:lowY, stroke:'#17212b', 'stroke-width':5});
-  if (obstacle && obstacle.present !== false && obstacle.end >= obstacle.start && obstacle.end >= origin && obstacle.start <= origin + length) {
-    const start = obstacle.start - origin, end = obstacle.end - origin;
-    addSvg('rect', {x:scale(start), y:obstacleBottomY-obstacleHeight, width:Math.max(2, scale(end)-scale(start)), height:obstacleHeight, rx:5, fill:'#e05252', opacity:.72});
-    addSvg('text', {x:(scale(start)+scale(end))/2, y:obstacleBottomY-32, 'text-anchor':'middle', fill:'white', 'font-size':14}, 'Obstacle');
-  }
-
-  let complete = 0;
+  const renderedPoints = points.map(point => ({id:point.point_number, position:point.plane_position_x - origin,
+    state:completedState(point, programState)}));
+  const complete = renderedPoints.filter(point => point.state === 'complete').length;
   const scheduledTotal = points.filter(point => point.scheduled !== false).length;
-  for (const point of points) {
-    const pointState = completedState(point, programState, points, origin);
-    if (pointState === 'complete') complete += 1;
-    const colors = {pending:'#9aa9b8', current:'#1769aa', complete:'#159447', failed:'#b42318', skipped:'#b85b5b', excluded:'#9aa9b8'};
-    addSvg('circle', {cx:scale((point.plane_position_x - origin)), cy:lowY, r:pointState === 'current' ? 10 : 7, fill:colors[pointState], stroke:'white', 'stroke-width':2});
-    addSvg('text', {x:scale((point.plane_position_x - origin)), y:lowY+25, 'text-anchor':'middle', fill:'#334e60', 'font-size':12}, String(point.point_number));
-  }
-  if (currentPosition !== null) {
-    addSvg('text', {x:scale(currentPosition), y:lowY-20, 'text-anchor':'middle', fill:'#1769aa', 'font-size':14, 'font-weight':700}, `Current: ${formatMillimetres(origin + currentPosition)}`);
-  }
-  addSvg('text', {x:left, y:285, fill:'#334e60', 'font-size':14}, `X start: ${formatMillimetres(origin)}`);
-  addSvg('text', {x:right, y:285, 'text-anchor':'end', fill:'#334e60', 'font-size':14}, `X end: ${formatMillimetres(origin + length)}`);
+  const increment = points.length > 1 ? points[1].plane_position_x - points[0].plane_position_x : 0;
+  const renderedActive = activePoint ? {id:activePoint.point_number, position:activePoint.plane_position_x - origin} : null;
+  const followKey = data.worker?.running && activePoint
+    ? `${data.session_id || data.worker.state_file || 'run'}:${activePoint.point_number}` : null;
+  renderLine({points:renderedPoints, length, increment, origin, end:origin + length,
+    y:points[0]?.plane_position_y ?? parameters.offset_y ?? 0,
+    obstacle:obstacle && obstacle.present !== false ? {start:obstacle.start - origin, end:obstacle.end - origin} : null,
+    activePoint:renderedActive, followKey});
 
   document.getElementById('ongoing-mode').textContent = humanizePhase(programState.mode);
   document.getElementById('ongoing-current').textContent = currentPosition === null ? '—' : formatNumber(origin + currentPosition);
@@ -694,3 +682,16 @@ loadConfigurationButton.addEventListener('click', async () => {
     loadConfigurationButton.disabled = false;
   }
 });
+
+// Keep point spacing and horizontal following consistent after a window resize.
+let lineViewportWidth = 0;
+new ResizeObserver(() => {
+  if (lineViewport.clientWidth === lineViewportWidth) return;
+  lineViewportWidth = lineViewport.clientWidth;
+  followedPoint = null;
+  if (latestMeasurement && (latestMeasurement.worker.running || (latestMeasurement.validated && !formDirty))) {
+    drawProgress(latestMeasurement);
+  } else {
+    drawVisualization();
+  }
+}).observe(lineViewport);

@@ -292,7 +292,7 @@
       const origin = translation ? 0 : numberValue('line.x_start');
       const obstacleStart = numberValue('obstacle.start') - origin;
       const obstacleEnd = numberValue('obstacle.end') - origin;
-      const hasObstacle = obstacleEnabled.checked && obstacleStart + origin >= 0 && obstacleEnd >= obstacleStart;
+      const hasObstacle = obstacleEnabled.checked && obstacleStart + origin >= (pointGeometry?.wall_origin?.[0] || 0) && obstacleEnd >= obstacleStart;
       const left = 55, right = 585, lowY = 170;
       const obstacleHeight = 62, obstacleBottomY = lowY - 3;
       const width = right - left;
@@ -317,7 +317,7 @@
       }
       addSvg('text', {x:left, y:285, fill:'#334e60', 'font-size':14}, translation ? '0 mm' : `X start: ${formatMillimetres(numberValue('line.x_start'))}`);
       addSvg('text', {x:right, y:285, 'text-anchor':'end', fill:'#334e60', 'font-size':14}, translation ? formatMillimetres(length) : `X end: ${formatMillimetres(numberValue('line.x_end'))}`);
-      if (!translation) addSvg('text', {x:(left+right)/2, y:55, 'text-anchor':'middle', fill:'#334e60', 'font-size':14}, `Y offset: ${formatMillimetres(numberValue('line.offset_y'))}`);
+      if (!translation) addSvg('text', {x:(left+right)/2, y:55, 'text-anchor':'middle', fill:'#334e60', 'font-size':14}, `Y position: ${formatMillimetres(numberValue('line.offset_y'))}`);
 
     }
 
@@ -329,8 +329,8 @@
         pointGeometry = result;
         pointMethodNote.textContent = 'Fixed: p_start_l → p_end_l';
         if (resetLineEnd && autoFit.checked && lineMethod.value === 'point_to_point' && xEndInput) {
-          setNumericInput(xStartInput, 0);
-          setNumericInput(xEndInput, pointGeometry.line_length);
+          setNumericInput(xStartInput, pointGeometry.wall_origin?.[0] || 0);
+          setNumericInput(xEndInput, (pointGeometry.wall_origin?.[0] || 0) + pointGeometry.line_length);
           spacingSourceInput.value = 'increment';
         }
         synchronizeSpacingFromSource();

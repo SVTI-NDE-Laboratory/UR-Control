@@ -1,6 +1,7 @@
 """The flat config schema preserves planning, obstacles, and force stop modes."""
 
 import json
+import os
 import sys
 import tempfile
 import unittest
@@ -21,6 +22,10 @@ from webapp.config_form import edited_config, form_html
 
 class ConfigSchemaTests(unittest.TestCase):
     def setUp(self):
+        environment = patch.dict(os.environ)
+        environment.start()
+        self.addCleanup(environment.stop)
+        os.environ.pop("UR15_WALL_COORDINATES", None)
         self.data = read_routines_file(ROUTINE_FILE)
         self.config = server.legacy.load_default_config("point_to_point")
 

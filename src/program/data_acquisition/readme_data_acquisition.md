@@ -95,6 +95,14 @@ response length:
 `STATE` and non-trivial/error responses use `[4 Byte I32][Data]`: first read
 the 4-byte length, then read exactly that many payload bytes.
 
+In robot measurement runs, `STATE.X` and `STATE.Y` are live wall coordinates
+in millimetres, using the selected `wall_coordinates.json` reference. They
+include the wall coordinates of `p_start_l`, with positive Y upward, and
+match the application's Plane X/Y display. TCP travel normal to the taught
+plane during force or simulation is excluded by projection. Before live
+position is available, X is `-9999` and Y is `null`. Point, Moving, Error,
+readiness and message framing retain their existing protocol meanings.
+
 ## Testing Without Starting the Full Robot Program
 
 From the project root, start the standalone acquisition server tester:

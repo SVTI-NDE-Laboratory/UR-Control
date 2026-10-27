@@ -71,10 +71,57 @@ Line fields are stored directly in `line`: there is no `method` selector or
 `p_start_l` to `p_end_l` direction and keeps the start orientation. Clearance is
 derived from `p_start_h` to `p_start_l`.
 
-Distances are in millimetres. X Start is relative to the taught start; X End
-uses the same origin. With Automatic Fit on, `x_end: 0` in a default file means
-the full taught length. The webapp initializes Start to zero and End to the
-exact taught length at startup and whenever Automatic Fit is enabled.
+Distances are in millimetres. With a wall reference selected, X Start and X End
+are absolute wall X coordinates. `offset_y` is the absolute wall Y position,
+shown as **Y position [mm]**. Positive wall Y points upward. Omitting `x_end`
+uses the taught end X; zero is a valid wall coordinate.
+The webapp initializes Start and End to the wall coordinates of the taught
+endpoints at startup and whenever Automatic Fit is enabled.
+
+### Installation wall reference
+
+`wall_coordinates.json` is separate from the robot routines. The installed
+profile selects it with `"wall_coordinates": "wall_coordinates.json"` in
+`app_config.json`; Settings shows its location. CLI programs use
+`src/program/config/wall_coordinates.json`, or the file selected through
+`UR15_WALL_COORDINATES`. Edit the reference with the application closed, then
+restart. The bundled origin is `(0, 0)`; enter the client's measured wall
+coordinates for `p_start_l` before using a nonzero reference.
+
+```json
+{
+  "p_start_l": {"x": 1200.0, "y": -500.0},
+  "movement_limits": {"y_direction": "up", "y_max_distance": 400.0}
+}
+```
+
+X follows `p_start_l -> p_end_l`. Positive wall Y is opposite the local
+`z cross x` axis: `local_x = wall_x - origin_x` and
+`local_y = origin_y - wall_y`. With the example reference, `(1500, -300)`
+means local `(300, -200)` mm. Robot base poses and taught clearance remain
+in their existing frames.
+
+`up` allows wall Y from `origin_y` to `origin_y + y_max_distance`; `down`
+allows `origin_y - y_max_distance` to `origin_y`. Both automatic and flexible
+measurements validate this range. Flexible moves outside the range retain
+the existing explicit confirmation; force application requires the range.
+
+Saved wall configurations carry `line.coordinate_system: "wall"`.
+Configurations without that marker are treated as archived local inputs and
+converted once when read, preserving physical positions. Their full-span
+`x_end: 0` becomes an omitted end. Do not omit the marker when writing wall
+coordinates manually. Exported plans use schema version 7, include the wall
+reference, and store wall coordinates in `plane_position_x/y`. TCP poses
+retain robot base coordinates. Existing result files are not rewritten.
+If `p_start_l` is retaught elsewhere, update its wall reference too.
+
+Installation defaults also retain `line.wall_reference`. On restart, editing
+the wall origin shifts default X/Y coordinates and obstacle positions by the
+same amount, preserving their positions relative to the taught line. Changes
+to the permitted Y side or distance bound the default Y position to the new
+range. Defaults saved without reference metadata are adopted from the zero
+origin when necessary to recover an otherwise invalid installation. Saved
+measurement results are not modified.
 
 With `auto_fit: true` and `spacing_source: "steps"`, Step Size is preserved
 and Nb. Points is `floor((End - Start) / Step) + 1`. With source `"nb_points"`,
@@ -84,7 +131,7 @@ as `Start + (Count - 1) * Step` (Count >= 1).
 
 Start and End may extend up to 100 mm beyond the taught endpoints. The webapp
 requires explicit confirmation before starting an automatic run in that range.
-`offset_y` is a fixed perpendicular offset; it never changes the X grid.
+`offset_y` selects a constant wall Y position; it never changes the X grid.
 Displayed numbers use up to two decimal places; calculations retain precision.
 
 ## Optional obstacles
@@ -102,8 +149,7 @@ The backend also calculates the bounds for CLI runs. Set `present` to false
 to disable exclusions while retaining width and position. Imported explicit
 start/end intervals retain their center and width.
 
-Obstacle positions are in millimetres from the same taught X origin as Start
-and End. When present, the calculated bounds must be ordered and within the taught line.
+Obstacle positions use the same absolute wall X coordinates as Start and End. When present, the calculated bounds must be ordered and within the taught line.
 Obstacles mark existing points as skipped without changing coordinates or
 spacing. Path crossings between samples also use the taught Home detour, even
 if no sample falls inside the obstacle. Set `obstacle.present` to false to remove obstacle exclusions.

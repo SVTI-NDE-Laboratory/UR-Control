@@ -60,14 +60,15 @@
             </fieldset>
             <div class="actions"><button id="start-flexible" class="primary" type="button">Start program</button><button id="end-flexible" type="button" disabled>End and return Home</button></div>
           </section>
-          <form id="plane-form" class="panel">
+          <form id="plane-form" class="panel compact-parameters">
             <fieldset><legend>Move in plane</legend>
-              <div class="parameter-row single"><label for="plane-x">X [mm]</label><input id="plane-x" type="number" value="0" step="any" required></div>
-              <div class="parameter-row single"><label for="plane-y">Y [mm]</label><input id="plane-y" type="number" value="0" step="any" required></div>
+              <div class="parameter-row single"><label for="plane-x">X [mm]</label><input id="plane-x" type="number" value="0" step="any" aria-describedby="wall-coordinate-note" required></div>
+              <div class="parameter-row single"><label for="plane-y">Y [mm]</label><input id="plane-y" type="number" value="0" step="any" aria-describedby="wall-coordinate-note" required></div>
+              <p id="wall-coordinate-note" class="coordinate-note">Positions use the wall coordinate system. Positive Y points upward.</p>
             </fieldset>
             <div class="actions"><button id="move-plane" class="primary" type="submit" disabled>Move</button></div>
           </form>
-          <form id="force-form" class="panel">
+          <form id="force-form" class="panel compact-parameters">
             <fieldset><legend>Apply force</legend>
               <label class="option-toggle"><input id="force-simulation" type="checkbox">Simulation</label>
               <div class="parameter-row single"><label for="force">Target force [N]</label><input id="force" type="number" value="200" min="0.001" step="any" required></div>
@@ -91,6 +92,7 @@
               <p class="settings-section-title">Useful files and directories</p>
               <div class="parameter-row settings-path-row"><label for="settings-app-config">App configuration</label><input id="settings-app-config" class="optional-disabled" type="text" readonly></div>
               <div class="parameter-row settings-path-row"><label for="settings-measurement-defaults">Meas. defaults</label><input id="settings-measurement-defaults" class="optional-disabled" type="text" readonly></div>
+              <div class="parameter-row settings-path-row"><label for="settings-wall-coordinates">Wall coordinates</label><input id="settings-wall-coordinates" class="optional-disabled" type="text" readonly></div>
               <div class="parameter-row settings-path-row"><label for="settings-results-directory">Results</label><input id="settings-results-directory" class="optional-disabled" type="text" readonly></div>
               <div class="parameter-row settings-path-row"><label for="settings-routine-directory">Routine directory</label><input id="settings-routine-directory" class="optional-disabled" type="text" readonly></div>
               <p id="settings-message" role="status" hidden></p>

@@ -2,6 +2,7 @@
 
 import json
 import sys
+import os
 import tempfile
 import time
 import unittest
@@ -62,6 +63,12 @@ class AtomicPublishingTests(unittest.TestCase):
 
 
 class LiveFeedbackTests(unittest.TestCase):
+    def setUp(self):
+        environment = patch.dict(os.environ)
+        environment.start()
+        self.addCleanup(environment.stop)
+        os.environ.pop("UR15_WALL_COORDINATES", None)
+
     def test_automatic_plane_feedback_tracks_motion_and_rejects_high_plane(self):
         data = read_routines_file(ROUTINE_FILE)
         geometry = worker.plane_geometry(data)

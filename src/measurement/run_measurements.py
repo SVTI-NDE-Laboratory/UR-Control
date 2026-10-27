@@ -15,6 +15,7 @@ ROBOT_DIR = PROJECT_ROOT / "src" / "robot"
 if str(ROBOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROBOT_DIR))
 
+from wall_coordinates import local_to_wall
 from line_planner import (
     crosses_obstacle,
     high_low_movement,
@@ -272,7 +273,8 @@ def _run_measurements(
                 {
                     "measurement_index": measurement_index,
                     "line_position": position,
-                    "x_coordinate": geometry.get("x_start", 0.0) + position,
+                    "x_coordinate": local_to_wall(geometry.get("x_start", 0.0) + position, 0.0)[0],
+                    "y_coordinate": local_to_wall(0.0, geometry.get("offset_y", 0.0))[1],
                 },
                 stop_method=measurement_stop_method(config),
                 on_force_success=publish_force_success,

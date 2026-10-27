@@ -56,6 +56,10 @@ body { padding: 18px; }
 .cards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; }
 .cards > .panel { display: flex; flex-direction: column; }
 .flexible-session { grid-column: 1 / -1; }
+/* Keep flexible labels and inputs aligned with the same compact spacing. */
+.compact-parameters .parameter-row { grid-template-columns: minmax(0, 8rem) minmax(0, 9rem); column-gap: 10px; }
+.compact-parameters .parameter-row.single::after { display: none; }
+.coordinate-note { margin: 12px 0 0; color: #52606d; font-size: .85rem; }
 .cards .actions { margin-top: auto; padding-top: 14px; flex-wrap: wrap; }
 .cards .status:last-child { margin-bottom: 0; }
 .cards .state-grid { margin-top: 14px; font-size: .9rem; }

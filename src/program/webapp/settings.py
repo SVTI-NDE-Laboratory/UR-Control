@@ -9,6 +9,7 @@ WEBAPP_DIR = Path(__file__).resolve().parent
 PROGRAM_DIR = WEBAPP_DIR.parent
 PROJECT_ROOT = PROGRAM_DIR.parent.parent
 CONFIG_DIR = PROGRAM_DIR / "config"
+os.environ.setdefault("UR15_WALL_COORDINATES", str(CONFIG_DIR / "wall_coordinates.json"))
 DEFAULT_CONFIG_FILE = Path(os.environ.get("UR15_MEASUREMENT_DEFAULTS", CONFIG_DIR / "config_default.json"))
 SERVER_CONFIG_FILE = DEFAULT_CONFIG_FILE
 HTML_TEMPLATE_FILE = WEBAPP_DIR / "pages" / "configuration.html"
@@ -57,5 +58,5 @@ FIELD_LABELS = {
     "number_of_measurements": "Nb. points",
     "x_start": "X start [mm]",
     "x_end": "X end [mm]",
-    "offset_y": "Y offset [mm]",
+    "offset_y": "Y position [mm]",
 }

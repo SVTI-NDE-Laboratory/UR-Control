@@ -36,6 +36,68 @@ class ProfileTests(unittest.TestCase):
         write_object(path, values)
         return path
 
+    def test_wall_origin_changes_rebase_defaults_and_restart_without_drift(self):
+        defaults_path = self.profile.paths["measurement_defaults"]
+        defaults = read_object(defaults_path)
+        defaults["line"].update(x_start=100, x_end=500, offset_y=120)
+        defaults["obstacle"].update(position=300, start=200, end=400)
+        write_object(defaults_path, defaults)
+        reference = read_object(self.profile.paths["wall_coordinates"])
+        reference["p_start_l"].update(x=1200, y=600)
+        write_object(self.profile.paths["wall_coordinates"], reference)
+
+        load_profile(self.data)
+        updated = read_object(defaults_path)
+        self.assertEqual(updated["line"]["x_start"], 1300)
+        self.assertEqual(updated["line"]["x_end"], 1700)
+        self.assertEqual(updated["line"]["offset_y"], 720)
+        self.assertEqual(updated["obstacle"]["position"], 1500)
+        self.assertEqual(updated["line"]["wall_reference"], reference)
+        load_profile(self.data)
+        self.assertEqual(read_object(defaults_path), updated)
+
+        reference["p_start_l"].update(x=-300, y=-800)
+        write_object(self.profile.paths["wall_coordinates"], reference)
+        load_profile(self.data)
+        shifted = read_object(defaults_path)
+        self.assertEqual(shifted["line"]["x_start"], -200)
+        self.assertEqual(shifted["line"]["x_end"], 200)
+        self.assertEqual(shifted["line"]["offset_y"], -680)
+        self.assertEqual(shifted["obstacle"]["position"], 0)
+
+    def test_wall_direction_and_distance_changes_keep_defaults_in_new_range(self):
+        defaults_path = self.profile.paths["measurement_defaults"]
+        defaults = read_object(defaults_path)
+        defaults["line"]["offset_y"] = 300
+        write_object(defaults_path, defaults)
+        reference = read_object(self.profile.paths["wall_coordinates"])
+        reference["p_start_l"].update(x=-1200, y=600)
+        reference["movement_limits"].update(y_direction="down", y_max_distance=200)
+        write_object(self.profile.paths["wall_coordinates"], reference)
+
+        load_profile(self.data)
+        updated = read_object(defaults_path)
+        self.assertEqual(updated["line"]["x_start"], -1200)
+        self.assertEqual(updated["line"]["offset_y"], 600)
+        from wall_coordinates import wall_file, wall_limits
+        with wall_file(self.profile.paths["wall_coordinates"]):
+            self.assertEqual(wall_limits(1000), (-1200, -200, 400, 600))
+
+    def test_wall_defaults_without_reference_metadata_recover_from_zero_origin(self):
+        defaults_path = self.profile.paths["measurement_defaults"]
+        defaults = read_object(defaults_path)
+        defaults["line"].pop("wall_reference")
+        write_object(defaults_path, defaults)
+        reference = read_object(self.profile.paths["wall_coordinates"])
+        reference["p_start_l"].update(x=1200, y=600)
+        reference["movement_limits"].update(y_direction="down", y_max_distance=200)
+        write_object(self.profile.paths["wall_coordinates"], reference)
+
+        load_profile(self.data)
+        updated = read_object(defaults_path)
+        self.assertEqual(updated["line"]["x_start"], 1200)
+        self.assertEqual(updated["line"]["offset_y"], 600)
+
     def test_first_launch_seeds_files_and_preserves_user_changes(self):
         self.assertNotIn("measurement_mira_defaults", self.profile.values)
         self.assertFalse((self.profile.path.parent / "measurement_mira.json").exists())

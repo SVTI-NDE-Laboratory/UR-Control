@@ -227,6 +227,21 @@ function updateControls() {
   $('choose-routine-script').disabled = busy;
 }
 
+function renderFeedbackIndicators(f, s, running) {
+  const forceActive = running && f.force_mode === true;
+  led('moving', running && f.moving === true);
+  led('force', forceActive);
+  led('server', f.acquisition_connected === true);
+  const xy = f.measurement_xy;
+  const entryOrExit = ['starting','start_routine','end_routine','measurements_done','entry_routine','exit_routine'].includes(s.mode)
+    || ['entry_routine','exit_routine','obstacle_avoidance'].includes(s.activity)
+    || (s.mode === 'command_pending' && ['start','end'].includes(s.action));
+  const planeText = xy && (f.in_measurement_plane === true || forceActive) && !entryOrExit && !f.feedback_error
+    ? positionTuple(xy, ['X','Y']) : '—';
+  $('plane-coordinates').textContent = planeText;
+  $('flexible-position').textContent = planeText;
+}
+
 async function refresh() {
   try {
     latest = await api('/api/status');
@@ -238,18 +253,7 @@ async function refresh() {
     $('position').textContent = f.waypoint || '—';
     $('coordinates').textContent = f.tcp_position ? positionTuple(f.tcp_position, ['X','Y','Z']) : '—';
     reportWorkerError(latest);
-    const forceActive = latest.worker.running && f.force_mode === true;
-    led('moving', latest.worker.running && (forceActive || f.moving === true));
-    led('force', forceActive);
-    led('server', f.acquisition_connected === true);
-    const xy = f.measurement_xy;
-    const entryOrExit = ['starting','start_routine','end_routine','measurements_done','entry_routine','exit_routine'].includes(s.mode)
-      || ['entry_routine','exit_routine','obstacle_avoidance'].includes(s.activity)
-      || (s.mode === 'command_pending' && ['start','end'].includes(s.action));
-    const planeText = xy && f.in_measurement_plane === true && !entryOrExit && !f.feedback_error
-      ? positionTuple(xy, ['X','Y']) : '—';
-    $('plane-coordinates').textContent = planeText;
-    $('flexible-position').textContent = planeText;
+    renderFeedbackIndicators(f, s, latest.worker.running);
     $('flexible-state').textContent = latest.worker.kind === 'flexible' ? (!latest.worker.running && s.mode === 'idle' ? 'Finished' : (s.mode || 'starting').replaceAll('_', ' ')) : 'Not started';
     renderWaypointChoices();
     updateControls();
@@ -410,7 +414,7 @@ async function initialize() {
     const settings = await api('/api/settings');
     uiDefaults = settings.ui_defaults;
     $('local-data-path').value = settings.data_directory;
-    for (const key of ['app_config', 'measurement_defaults', 'results_directory', 'routine_directory']) {
+    for (const key of ['app_config', 'measurement_defaults', 'wall_coordinates', 'results_directory', 'routine_directory']) {
       $('settings-' + key.replaceAll('_', '-')).value = settings.display_paths[key];
     }
     $('settings-routine-file').value = settings.routine_filename;
@@ -435,6 +439,12 @@ async function initialize() {
   } catch(error) { showBlockingError(error.message); }
   try {
     flexibleLimits = await api('/api/flexible/options');
+    $('plane-x').value = flexibleLimits.wall_coordinates?.p_start_l.x ?? 0;
+    $('plane-y').value = flexibleLimits.wall_coordinates?.p_start_l.y ?? 0;
+    const origin = flexibleLimits.wall_coordinates?.p_start_l;
+    if (origin) {
+      $('wall-coordinate-note').textContent = `Positions use the wall coordinate system, where p_start_l is at (${formatNumber(origin.x)}, ${formatNumber(origin.y)}) mm. Positive Y points upward.`;
+    }
   } catch(error) { showBlockingError(error.message); }
   await refresh();
   // Schedule after completion so slow requests cannot pile up.

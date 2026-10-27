@@ -4,6 +4,7 @@ import json
 from datetime import datetime
 from pathlib import Path
 
+from wall_coordinates import local_to_wall, wall_reference
 from atomic_json import write_json_atomic
 from line_planner import POINT_TO_POINT, is_obstacle, line_geometry, line_positions, point_pose, point_is_selected, selected_line_positions
 
@@ -22,8 +23,8 @@ def create_measurement_plan(config: dict, routines_data: dict | None = None) -> 
 
     ``point_number`` is the original one-based sample number. Obstructed
     and unselected points remain with ``scheduled=false`` and a skip reason.
-    Plane X/Y are in millimetres from p_start_l, matching flexible measurement:
-    X follows p_start_l -> p_end_l and Y follows the taught plane's lateral axis.
+    Plane X/Y use the installation wall reference when configured, matching
+    flexible measurement. Positive wall Y points upward; TCP poses stay in base coordinates.
     """
 
     points = []
@@ -33,8 +34,8 @@ def create_measurement_plan(config: dict, routines_data: dict | None = None) -> 
         selected = point_is_selected(sample_index + 1, config)
         point = {
             "point_number": sample_index + 1,
-            "plane_position_x": round(geometry.get("x_start", 0.0) + line_position, 12),
-            "plane_position_y": geometry.get("offset_y", 0.0),
+            "plane_position_x": round(local_to_wall(geometry.get("x_start", 0.0) + line_position, geometry.get("offset_y", 0.0))[0], 12),
+            "plane_position_y": local_to_wall(0.0, geometry.get("offset_y", 0.0))[1],
             "scheduled": selected and not blocked,
             "data": {
                 "timestamp": None,
@@ -57,7 +58,9 @@ def create_measurement_plan(config: dict, routines_data: dict | None = None) -> 
         units["tcp_pose"] = ["mm", "mm", "mm", "rad", "rad", "rad"]
 
     return {
-        "schema_version": 6,
+        "schema_version": 7,
+        "coordinate_system": "wall" if wall_reference() else "local",
+        "wall_coordinates": wall_reference(),
         "created_at": datetime.now().isoformat(timespec="seconds"),
         "line_method": geometry["method"],
         "units": units,

@@ -19,6 +19,7 @@ for folder in folders:
             continue
         files.append(path)
 files.append(root / "src/program/config/config_default.json")
+files.append(root / "src/program/config/wall_coordinates.json")
 datas = [(str(path), str(path.parent.relative_to(root))) for path in files]
 
 # Local modules use __file__ to find adjacent assets and are imported dynamically.
