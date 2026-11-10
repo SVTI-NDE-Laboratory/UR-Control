@@ -1,0 +1,11 @@
+{
+  "round": 5,
+  "name": "bec",
+  "mode": "idle",
+  "started_utc": "2026-11-10T15:36:17.084028+00:00",
+  "samples": 646,
+  "peak_abs_tool_z_N": 129.5713548569925,
+  "controller_timestamp_s": 6792.188,
+  "robot_ip": "192.168.3.10",
+  "updated_utc": "2026-11-10T15:36:26.162983+00:00"
+}

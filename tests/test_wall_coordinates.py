@@ -60,6 +60,22 @@ class WallCoordinateTests(unittest.TestCase):
         self.assertEqual([point["plane_position_y"] for point in plan["points"]], [-300] * 3)
         self.assertEqual(point_pose(geometry, 0), target)
 
+    def test_obstacle_can_extend_beyond_negative_wall_x_endpoints(self):
+        # Match a wall line from -1000 to 1000 mm with an obstacle at X Start.
+        self.reference["p_start_l"]["x"] = -1000.
+        self.save_reference()
+        self.data["waypoints"]["p_end_l"]["p"][:3] = [2., 0., 0.]
+        self.config["line"].update(x_start=-1000., x_end=1000., spacing_source="increment", increment=20.)
+        for center, skipped in [(-1000., [-1000, -980, -960, -940, -920, -900]),
+                                (1000., [900, 920, 940, 960, 980, 1000]),
+                                (-1200., []), (1200., [])]:
+            with self.subTest(center=center):
+                self.config["obstacle"].update(present=True, position=center, width=200.)
+                validate_measurement_config(self.config, self.data)
+                points = create_measurement_plan(self.config, self.data)["points"]
+                self.assertEqual(len(points), 101)
+                self.assertEqual([p["plane_position_x"] for p in points if not p["scheduled"]], skipped)
+
     def test_up_and_down_limits_follow_wall_y_for_both_modes(self):
         geometry = flexible_worker.plane_geometry(self.data)
         self.assertEqual(wall_limits(1000), (1200, 2200, -500, -100))

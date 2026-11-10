@@ -217,6 +217,7 @@ function updateControls() {
   const session = latest?.worker.running && latest.worker.kind === 'flexible';
   const ready = session && latest.program_state.mode === 'waiting_for_command' && !pending;
   $('start-flexible').disabled = busy || !flexibleLimits;
+  $('flexible-entry-side').disabled = busy;
   $('end-flexible').disabled = !ready;
   $('move-plane').disabled = !ready;
   $('apply-force').disabled = !ready;
@@ -402,7 +403,7 @@ $('plane-form').addEventListener('submit', event => {
   event.preventDefault();
   moveInPlane();
 });
-$('start-flexible').addEventListener('click', () => perform('/api/flexible/start', {}));
+$('start-flexible').addEventListener('click', () => perform('/api/flexible/start', {entry_side:$('flexible-entry-side').value}));
 $('end-flexible').addEventListener('click', () => perform('/api/flexible/command', {action:'end'}));
 $('stop').addEventListener('click', () => perform('/api/worker/stop', {}));
 $('close').addEventListener('click', async () => {

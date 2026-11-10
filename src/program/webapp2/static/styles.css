@@ -56,6 +56,10 @@ body { padding: 18px; }
 .cards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; }
 .cards > .panel { display: flex; flex-direction: column; }
 .flexible-session { grid-column: 1 / -1; }
+/* Keep the entrance selector compact beside the session start button. */
+.flexible-entry-control { display: flex; align-items: center; gap: 8px; }
+.flexible-entry-control label { margin: 0; white-space: nowrap; }
+#flexible-entry-side { width: 8rem; min-width: 0; }
 /* Keep flexible labels and inputs aligned with the same compact spacing. */
 .compact-parameters .parameter-row { grid-template-columns: minmax(0, 8rem) minmax(0, 9rem); column-gap: 10px; }
 .compact-parameters .parameter-row.single::after { display: none; }

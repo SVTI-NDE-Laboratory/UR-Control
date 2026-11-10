@@ -58,7 +58,6 @@ RTM Cobot Studio/
     routine_scripts/*.script
     robot_programs/*.script
   runtime/
-  logs/
   results/                     created when automatic measurements are saved
 ```
 
@@ -139,7 +138,13 @@ installation files required by the controller separately.
 Manual and flexible files go into `runtime/<session-id>/`. Automatic state,
 feedback, logs and measurement files remain in the selected results/session
 folder. `results_directory` in the active app configuration is the base Results
-folder. Automatic runs always create a new child folder: either a date/time name
+folder. Each automatic run retains `worker.log` there, including when **Show
+terminal** is enabled. The log contains Python stdout, stderr and uncaught errors;
+with the terminal enabled, Python output is also displayed live. Completed-run
+cleanup preserves this file. `program.log` is the measurement sequence's timestamped
+log and starts when its output directory is prepared. The two logs overlap;
+`worker.log` also captures earlier worker startup failures. There is no separate
+application `logs/` directory. Automatic runs always create a new child folder: either a date/time name
 generated on Start program, or an operator-entered name. The automatic field
 shows a template until the run starts. Existing folders/files, paths and Windows
 reserved names are rejected. Creation is atomic to prevent concurrent overwrites.
@@ -260,8 +265,10 @@ have not changed. This inference does not certify clearance of a direct path.
 The **Flexible measurement** tab reuses the geometry and entry/exit routines in
 `src/program/commands/run_flexible_measurement.py`:
 
-1. **Start program** requires the robot at Home, runs `home_to_start`, and
-   descends to `p_start_l`.
+1. Select **Entrance side** before **Start program**. **From start** (default)
+   runs `home_to_start` and descends to `p_start_l`; **From end** runs
+   `home_to_end` and descends to `p_end_l`. Both require the robot at Home.
+   The selection is fixed for the session and also determines its return side.
 2. **Move** goes linearly to the entered wall X/Y coordinates in millimetres.
    The separate `wall_coordinates.json` defines the wall coordinates of
    `p_start_l`. X follows `p_start_l` towards `p_end_l`; positive wall Y points
@@ -287,7 +294,8 @@ The **Flexible measurement** tab reuses the geometry and entry/exit routines in
    verification and other failures still terminate it. Automatic measurement
    failure handling is unchanged.
 4. **End and return Home** returns to the entry endpoint, rises to the high
-   endpoint, and runs `start_to_home`. **Stop current action** instead aborts
+   endpoint, and runs `start_to_home` or `end_to_home` for the selected side.
+   **Stop current action** instead aborts
    the session and sends a robot stop; it does not initiate a return motion.
    Stop is available while the flexible session is Ready as well as during
    motion or force. It terminates the session and reports an error popup,
@@ -409,7 +417,8 @@ when present, followed by the other waypoints in routine-file order.
 
 ## Active installation settings
 
-The seeded profile selects `routine.json` and robot IP `192.168.3.10`.
+The seeded profile includes the Top/Bottom routines and teaching scripts, selects
+`routine_top.json`, uses wall Y direction `up`, and sets robot IP `192.168.3.10`.
 The routine selector within measurements stays locked to the active profile.
 Use Settings to select another installation for the next launch. Target force,
 settling time, and measurement duration are set in the flexible form.

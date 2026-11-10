@@ -1,0 +1,169 @@
+﻿<!doctype html>
+<html lang="de">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Kraft Wettkampf</title>
+<style>
+  :root {color-scheme:dark;font-family:system-ui,sans-serif;background:#101b25;color:#edf5fa}
+  * {box-sizing:border-box} body {max-width:1400px;margin:auto;padding:24px}
+  header {display:flex;justify-content:space-between;align-items:center;gap:16px;margin-bottom:22px}
+  h1 {font-size:28px;margin:0} .muted {color:#afc0ce}
+  #status {color:#ffbb9f;font-size:14px;text-align:right}
+  .layout {display:grid;grid-template-columns:minmax(0,1fr) minmax(300px,370px);gap:22px;align-items:start}
+  .controls,article,.chart,.ranking {background:#192a39;border:1px solid #304759;border-radius:14px;padding:20px}
+  .controls {display:flex;align-items:end;gap:14px;flex-wrap:wrap}
+  .participant {display:flex;flex-direction:column;gap:8px;flex:1;min-width:150px}
+  .free {display:flex;align-items:center;gap:7px;min-height:46px}
+  #mode {flex-basis:100%;font-size:14px}
+  .cards {display:grid;grid-template-columns:1fr 1fr;gap:16px;margin:16px 0}
+  article {padding:14px 20px} h2 {font-size:16px;font-weight:500;color:#afc0ce;margin:0 0 8px}
+  .number {font-size:clamp(36px,5vw,56px);font-weight:650;font-variant-numeric:tabular-nums;line-height:1.15}
+  .unit {font-size:20px;color:#afc0ce} #peak {color:#5fe0ba}
+  button {height:46px;background:#5fe0ba;color:#10291f;border:0;border-radius:8px;padding:0 25px;font:inherit;cursor:pointer}
+  button:disabled,input:disabled {opacity:.5} button:disabled {cursor:default}
+  input[type=text] {height:46px;background:#101b25;color:#edf5fa;border:1px solid #647687;border-radius:8px;padding:0 12px;font:inherit;width:100%}
+  input[type=checkbox] {width:20px;height:20px;accent-color:#5fe0ba}
+  button:focus-visible,input:focus-visible {outline:3px solid white;outline-offset:4px}
+  canvas {width:100%;height:270px;display:block} #error {color:#ffbb9f;min-height:20px;font-size:14px}
+  .ranking {position:sticky;top:24px;max-height:calc(100vh - 48px);overflow:auto}
+  table {width:100%;border-collapse:collapse;text-align:left;table-layout:fixed}
+  th,td {padding:13px 6px;border-bottom:1px solid #304759;overflow-wrap:anywhere}
+  th {font-size:13px;color:#afc0ce} th:first-child {width:50px} th:last-child {width:100px}
+  th:last-child,td:last-child {text-align:right;font-variant-numeric:tabular-nums}
+  footer {margin-top:16px;font-size:13px;line-height:1.5}
+  @media(max-width:750px) {body {padding:16px}.layout {grid-template-columns:minmax(0,1fr)}.ranking {position:static;max-height:400px}h1 {font-size:24px}}
+</style>
+<header><h1>Kraft Wettkampf</h1><span id="status" role="status" hidden>Monitor nicht verf&uuml;gbar</span></header>
+<div class="layout">
+<main>
+  <div class="controls">
+    <label class="participant">Teilnehmername<input id="name" type="text" maxlength="80" autocomplete="off" placeholder="Dein Name"></label>
+    <button id="toggle" disabled>Start</button>
+    <label class="free"><input id="free" type="checkbox"> Freies Spielen</label>
+    <span class="muted" id="mode" role="status">Name eingeben und Start dr&uuml;cken</span>
+  </div>
+  <div class="cards">
+    <article><h2>Aktuelle Kraft</h2><span class="number" id="force">&mdash;</span> <span class="unit">N</span></article>
+    <article><h2>Maximale Kraft</h2><span class="number" id="peak">0,0</span> <span class="unit">N</span></article>
+  </div>
+  <section class="chart" aria-label="Kraftverlauf"><h2 id="graph-title">Kraftverlauf ab Messbeginn</h2><canvas id="graph" role="img" aria-label="Gesamter Verlauf der absoluten Kraft entlang der Werkzeug-Z-Achse"></canvas></section>
+  <p id="error" role="alert"></p>
+  <footer class="muted">Start beginnt die Messung. Stopp speichert das Ergebnis in der Rangliste. Freies Spielen zeigt die Kraft ohne Wertung.<br>Die Anzeige misst die absolute Kraft entlang der Werkzeug-Z-Achse. Start und Stopp steuern nur die Aufzeichnung.</footer>
+</main>
+<aside class="ranking"><h2>Rangliste</h2><p class="muted" id="empty">Noch keine Ergebnisse.</p>
+<table><thead><tr><th scope="col">Rang</th><th scope="col">Name</th><th scope="col">Maximum (N)</th></tr></thead><tbody id="results"></tbody></table></aside>
+</div>
+<script>
+const $ = id => document.getElementById(id);
+const history = [];
+const format = value => value.toLocaleString('de-DE', {minimumFractionDigits:1, maximumFractionDigits:1});
+let previous = null, state = null, busy = false, actionError = '', graphKey = '';
+
+function plot() {
+  const canvas = $('graph'), ratio = window.devicePixelRatio || 1;
+  canvas.width = Math.round(canvas.clientWidth * ratio); canvas.height = Math.round(270 * ratio);
+  const ctx = canvas.getContext('2d'); ctx.scale(ratio, ratio);
+  const width = canvas.clientWidth, height = 270, left = 50, right = width - 12;
+  let maximum = 10;
+  for (const p of history) maximum = Math.max(maximum, p.force);
+  const limit = maximum * 1.15;
+  const free = state?.mode === 'free';
+  const end = free ? Date.now() / 1000 : Math.max(1, history.length ? history[history.length - 1].time : 1);
+  const begin = free ? end - 20 : 0;
+  const y = f => height - 35 - f / limit * (height - 55);
+  ctx.font = '12px system-ui'; ctx.fillStyle = '#afc0ce'; ctx.strokeStyle = '#355064';
+  for (const f of [0, limit / 2, limit]) {
+    ctx.beginPath(); ctx.moveTo(left, y(f)); ctx.lineTo(right, y(f)); ctx.stroke(); ctx.fillText(f.toFixed(0), 0, y(f) + 4);
+  }
+  for (const part of [0, 0.5, 1]) {
+    const x = left + part * (right - left);
+    ctx.textAlign = part === 1 ? 'right' : part === 0 ? 'left' : 'center';
+    ctx.fillText(`${format((end - begin) * part)} s`, x, height - 8);
+  }
+  ctx.strokeStyle = '#5fe0ba'; ctx.lineWidth = 2; ctx.beginPath();
+  let last = null;
+  for (const p of history) {
+    const x = left + (p.time - begin) / (end - begin) * (right - left);
+    if (last === null || p.time - last > 1) ctx.moveTo(x, y(p.force));
+    else ctx.lineTo(x, y(p.force));
+    last = p.time;
+  }
+  ctx.stroke();
+}
+
+function controls() {
+  const active = state?.mode === 'attempt', free = state?.mode === 'free';
+  $('toggle').textContent = active ? 'Stopp' : 'Start';
+  // Stopp bleibt auch ohne aktuelle Messdaten zum Speichern verfuegbar.
+  $('toggle').disabled = busy || !state || (!active && (free || !state.fresh || !$('name').value.trim()));
+  $('name').disabled = busy || active || free;
+  $('free').disabled = busy || active || !state;
+  $('free').checked = free;
+}
+
+function render(data) {
+  state = data;
+  const active = data.mode === 'attempt', free = data.mode === 'free';
+  const key = free ? 'free' : data.started_utc || 'idle';
+  if (key !== graphKey) { history.length = 0; previous = null; graphKey = key; }
+  $('status').hidden = data.fresh;
+  $('mode').textContent = active ? `Messung: ${data.name}` : free ? 'Freies Spielen ohne Wertung' : 'Name eingeben und Start dr\u00fccken';
+  $('peak').textContent = free ? '\u2014' : format(data.peak_N);
+  $('error').textContent = actionError || (data.error ? 'Messung unterbrochen. Bitte die Anwendung neu starten.' : data.warning || '');
+  const sample = data.fresh && (active || free) ? data.sample : null;
+  $('force').textContent = sample ? format(sample.tool_z_abs_N) : '\u2014';
+  $('graph-title').textContent = free ? 'Kraftverlauf - letzte 20 Sekunden' : 'Kraftverlauf ab Messbeginn';
+  if (!free) {
+    // Der Server behaelt alle Versuchswerte, auch beim Neuladen der Seite.
+    history.length = 0;
+    for (const [time, force] of data.history) history.push({time, force});
+  } else if (sample && sample.timestamp_s !== previous) {
+    history.push({time:Date.now() / 1000, force:sample.tool_z_abs_N}); previous = sample.timestamp_s;
+  }
+  const rows = data.results.map((result, index) => {
+    const row = document.createElement('tr');
+    for (const value of [index + 1, result.name, format(result.peak_abs_tool_z_N)]) {
+      const cell = document.createElement('td'); cell.textContent = value; row.append(cell);
+    }
+    return row;
+  });
+  $('results').replaceChildren(...rows); $('empty').hidden = rows.length > 0;
+  controls();
+}
+
+async function poll() {
+  try {
+    const response = await fetch('/api/force', {cache:'no-store'});
+    if (!response.ok) throw new Error('Messdaten konnten nicht geladen werden.');
+    const data = await response.json();
+    if (!busy) render(data);
+  } catch (error) {
+    $('status').hidden = false;
+    $('force').textContent = '\u2014'; $('error').textContent = 'Keine Verbindung zur Anzeige.';
+    state = null; controls();
+  } finally {
+    if (state?.mode === 'free') {
+      while (history.length && Date.now() / 1000 - history[0].time > 20) history.shift();
+    }
+    plot(); setTimeout(poll, 100);
+  }
+}
+
+async function action(payload) {
+  busy = true; actionError = ''; controls();
+  try {
+    const response = await fetch('/api/action', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)});
+    if (!response.ok) throw new Error(await response.text());
+    const refreshed = await fetch('/api/force', {cache:'no-store'});
+    if (!refreshed.ok) throw new Error('Anzeige konnte nicht aktualisiert werden.');
+    render(await refreshed.json());
+    if (payload.action === 'stop') $('name').value = '';
+  } catch(error) { actionError = error.message; $('error').textContent = actionError; }
+  finally { busy = false; controls(); }
+}
+$('name').oninput = controls;
+$('toggle').onclick = () => action({action:state?.mode === 'attempt' ? 'stop' : 'start', name:$('name').value});
+$('free').onchange = () => action({action:'free', enabled:$('free').checked});
+poll();
+</script>
+</html>

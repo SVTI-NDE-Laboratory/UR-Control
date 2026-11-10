@@ -30,8 +30,8 @@ end
 # Speeds are m/s; resultant XYZ force is N. Do not zero existing contact away.
 # The 40 N guard leaves margin below 50 N; sampling/stopping may cause overshoot.
 register = 42
-approach_speed = 0.005
-return_speed = 0.020
+approach_speed = 0.02
+return_speed = 0.04
 acceleration = 0.1
 stop_acceleration = 1.0
 force_guard = 40.0

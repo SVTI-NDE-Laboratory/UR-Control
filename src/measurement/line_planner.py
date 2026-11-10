@@ -94,8 +94,6 @@ def obstacle_interval(config: dict) -> tuple[float, float] | None:
     if not all(math.isfinite(value) for value in (start, end)):
         raise ValueError("Obstacle positions must be finite numbers.")
     wall_origin_x = local_to_wall(0.0, 0.0)[0] if "line" in config and line_method(config) == POINT_TO_POINT else 0.0
-    if start < wall_origin_x:
-        raise ValueError("Obstacle start must not precede the taught start X.")
     if start > end:
         raise ValueError("Obstacle start must not be greater than obstacle end.")
     origin = 0.0

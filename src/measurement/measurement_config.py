@@ -239,11 +239,8 @@ def validate_measurement_config(
 
     geometry = line_geometry(config, routines_data)
     high_low_movement(config, routines_data)
-    interval = obstacle_interval(config)
-    obstacle_limit = (geometry["taught_length"] - geometry["x_start"]
-                      if geometry["method"] == POINT_TO_POINT else geometry["length"])
-    if interval is not None and interval[1] > obstacle_limit + 1e-9:
-        raise ValueError("Obstacle end must not exceed the measurement line length.")
+    # Obstacle bounds may extend beyond the line; validate their values only.
+    obstacle_interval(config)
 
     motion = config["motion"]
     if motion["type"].lower() != "l":

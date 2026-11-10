@@ -58,7 +58,10 @@
                 <dt>Plane X / Y [mm]</dt><dd id="flexible-position">—</dd>
               </dl>
             </fieldset>
-            <div class="actions"><button id="start-flexible" class="primary" type="button">Start program</button><button id="end-flexible" type="button" disabled>End and return Home</button></div>
+            <div class="actions">
+              <div class="flexible-entry-control"><label for="flexible-entry-side">Entrance side</label><select id="flexible-entry-side"><option value="start">From start</option><option value="end">From end</option></select></div>
+              <button id="start-flexible" class="primary" type="button">Start program</button><button id="end-flexible" type="button" disabled>End and return Home</button>
+            </div>
           </section>
           <form id="plane-form" class="panel compact-parameters">
             <fieldset><legend>Move in plane</legend>

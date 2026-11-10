@@ -268,6 +268,29 @@ class MeasurementPositionTests(unittest.TestCase):
         wrong_side.assert_not_called()
         self.assertEqual(finish, "end")
 
+    def test_obstacle_at_or_outside_taught_endpoints_only_skips_covered_points(self):
+        for center, skipped in [(0., [0, 100]), (1000., [900, 1000]),
+                                (-200., []), (1200., [])]:
+            for centered in (True, False):
+                with self.subTest(center=center, centered=centered):
+                    self.config["obstacle"] = ({"present": True, "position": center, "width": 200.}
+                                               if centered else {"start": center - 100., "end": center + 100.})
+                    points = self.plan()
+                    self.assertEqual([p["plane_position_x"] for p in points], list(range(0, 1001, 100)))
+                    self.assertEqual([p["plane_position_x"] for p in points if not p["scheduled"]], skipped)
+                    self.assertEqual(crosses_obstacle(0., 1000., self.config), bool(skipped))
+
+    def test_obstacle_at_or_outside_taught_endpoints_can_launch(self):
+        for center in (0., 1000., -200., 1200.):
+            with self.subTest(center=center), tempfile.TemporaryDirectory() as folder:
+                self.config["obstacle"] = {"present": True, "position": center, "width": 200.}
+                request = server.legacy.MeasurementStartRequest(output_directory=Path(folder))
+                with patch.object(server.legacy, "state") as state, patch.object(server.legacy, "read_routines_file", return_value=self.data), patch.object(server.legacy, "assert_safe_start_position"):
+                    state.get_config.return_value = self.config
+                    state.get_routine_file.return_value = ROOT / "test-routines.json"
+                    self.assertTrue(server.legacy.start_measurement(request)["started"])
+                    state.workers.start_measurement.assert_called_once()
+
     def test_increment_larger_than_section_yields_only_first_point(self):
         self.parameters.update(x_start=200., x_end=900., increment=2000.)
         self.assertEqual([p["plane_position_x"] for p in self.plan()], [200])

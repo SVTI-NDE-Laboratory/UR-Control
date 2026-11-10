@@ -437,10 +437,16 @@ def flexible_options():
     return flexible_options_data()
 
 
+class FlexibleStartRequest(BaseModel):
+    """Use the selected side for both entry and return to Home."""
+    model_config = ConfigDict(extra="forbid")
+    entry_side: Literal["start", "end"] = "start"
+
+
 @api.post("/api/flexible/start")
-def start_flexible():
+def start_flexible(request: FlexibleStartRequest = FlexibleStartRequest()):
     try:
-        return workers.start_flexible()
+        return workers.start_flexible(request.entry_side)
     except (OSError, RuntimeError) as error:
         raise HTTPException(409 if isinstance(error, RuntimeError) else 400, str(error)) from error
 

@@ -81,7 +81,7 @@ def run_cycle(receiver, robot_ip, urp, pre_roll=1.0, post_roll=1.0,
             if reply != first_reply:
                 detail = f'Unquoted path: {first_reply}. Quoted path: {reply}'
             if 'could not understand' in detail.lower():
-                detail += ('. Verify URP_PATH in record.py. If the controller rejects spaces, '
+                detail += ('. Verify URP_PATH in the recorder script. If the controller rejects spaces, '
                            'rename the folder on the robot without spaces and update URP_PATH.')
             raise RuntimeError(f'URP load failed: {detail}')
         # Loading also loads the installation: recheck before asking for motion.

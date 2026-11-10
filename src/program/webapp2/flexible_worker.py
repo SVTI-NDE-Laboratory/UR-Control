@@ -126,9 +126,11 @@ def perform_action(action, receiver, data, geometry, state_file):
         raise ValueError("Unknown flexible measurement action.")
 
 
-def run(directory):
-    """Enter at p_start_l, wait disconnected, then execute serialized commands."""
-    flexible.ENTRY_SIDE = "start"
+def run(directory, entry_side="start"):
+    """Enter at the selected low endpoint and return Home through the same side."""
+    if entry_side not in {"start", "end"}:
+        raise ValueError("Entrance side must be 'start' or 'end'.")
+    flexible.ENTRY_SIDE = entry_side
     data = read_routines_file(ROUTINE_FILE)
     geometry = plane_geometry(data)
     state_file = directory / "state.json"
@@ -182,4 +184,4 @@ def run(directory):
 
 
 if __name__ == "__main__":
-    run(Path(sys.argv[1]))
+    run(Path(sys.argv[1]), sys.argv[2] if len(sys.argv) > 2 else "start")

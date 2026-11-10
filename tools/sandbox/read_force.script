@@ -1,0 +1,13 @@
+# Optional PolyScope monitor. RTDE telemetry does not require this program.
+# No registers are used and no motion, force mode, or sensor tare is commanded.
+# Forces are in N and torques in Nm, expressed in base axes at the flange.
+def read_force():
+  # Expose the latest wrench as a global variable in PolyScope.
+  global measured_wrench_base = get_tcp_force()
+
+  # Refresh continuously, yielding one controller cycle on each iteration.
+  while True:
+    measured_wrench_base = get_tcp_force()
+    sync()
+  end
+end

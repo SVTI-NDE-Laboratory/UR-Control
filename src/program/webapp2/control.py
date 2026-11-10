@@ -38,10 +38,15 @@ class ControlWorkers(WorkerManager):
         flags = (subprocess.CREATE_NEW_CONSOLE if terminal else subprocess.CREATE_NO_WINDOW) if os.name == "nt" else 0
         log = (self.directory / "worker.log").open("w", encoding="utf-8")
         try:
+            # A visible automatic worker mirrors its Python output into its own log.
+            environment = PROFILE.worker_environment()
+            environment.pop("UR15_WORKER_CONSOLE_LOG", None)
+            if terminal and self._kind == "measurement":
+                environment["UR15_WORKER_CONSOLE_LOG"] = str((self.directory / "worker.log").resolve())
             command = ([str(executable), "--worker", module] if getattr(sys, "frozen", False)
                        else [str(executable), "-u", "-m", module])
             self._process = subprocess.Popen([*command, *map(str, arguments)],
-                cwd=ROOT, env=PROFILE.worker_environment(), stdin=subprocess.DEVNULL, stdout=None if terminal else log,
+                cwd=ROOT, env=environment, stdin=subprocess.DEVNULL, stdout=None if terminal else log,
                 stderr=None if terminal else subprocess.STDOUT, creationflags=flags)
             if self._kind == "measurement":
                 # Wait for process exit so all state and feedback writers have
@@ -104,8 +109,10 @@ class ControlWorkers(WorkerManager):
                 "--output-dir", output_directory], show_terminal)
             return self.snapshot_locked()
 
-    def start_flexible(self):
+    def start_flexible(self, entry_side="start"):
         """Reserve the robot for a flexible session, including between actions."""
+        if entry_side not in {"start", "end"}:
+            raise ValueError("Entrance side must be 'start' or 'end'.")
         with self._lock:
             self._assert_available()
             self.directory = RUNTIME / uuid4().hex
@@ -113,7 +120,7 @@ class ControlWorkers(WorkerManager):
             self._state_file = self.directory / "state.json"
             self._kind = "flexible"
             write_json_atomic(self._state_file, {"mode": "starting"})
-            self._spawn("src.program.webapp2.flexible_worker", [self.directory])
+            self._spawn("src.program.webapp2.flexible_worker", [self.directory, entry_side])
             return self.snapshot_locked()
 
     def send_flexible(self, request):

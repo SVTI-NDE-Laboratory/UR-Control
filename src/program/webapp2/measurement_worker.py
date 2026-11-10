@@ -1,12 +1,50 @@
 """Run the original automatic sequence with observation hooks, without editing it."""
 
 import sys
+import os
+from contextlib import contextmanager, redirect_stdout, redirect_stderr
 from pathlib import Path
+import traceback
 
 from .settings import ROOT, ROUTINE_FILE, ROBOT_IP, PROFILE
 from .feedback import Feedback, TrackedServer
 from .flexible_worker import classify_plane
 from read_routines import read_routines_file
+
+
+class ConsoleLog:
+    """Keep the terminal visible while flushing each Python write to the run log."""
+    def __init__(self, console, log):
+        self.console, self.log = console, log
+
+    def write(self, text):
+        self.log.write(text)
+        self.log.flush()
+        if self.console is not None:
+            self.console.write(text)
+            self.console.flush()
+        return len(text)
+
+    def flush(self):
+        self.log.flush()
+        if self.console is not None:
+            self.console.flush()
+
+    def __getattr__(self, name):
+        return getattr(self.console, name)
+
+
+@contextmanager
+def console_logging(path):
+    """Retain stdout, stderr and an uncaught traceback when Show terminal is enabled."""
+    with Path(path).open("a", encoding="utf-8") as log:
+        with redirect_stdout(ConsoleLog(sys.stdout, log)), redirect_stderr(ConsoleLog(sys.stderr, log)):
+            try:
+                yield
+            except BaseException:
+                # The interpreter prints to the restored console after propagation.
+                traceback.print_exc(file=log)
+                raise
 
 
 def main():
@@ -70,4 +108,9 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    log_path = os.environ.get("UR15_WORKER_CONSOLE_LOG")
+    if log_path:
+        with console_logging(log_path):
+            main()
+    else:
+        main()

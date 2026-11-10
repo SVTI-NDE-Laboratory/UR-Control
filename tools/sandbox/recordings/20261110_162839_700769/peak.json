@@ -1,0 +1,11 @@
+{
+  "round": 4,
+  "name": "Markus",
+  "mode": "idle",
+  "started_utc": "2026-11-10T15:30:29.222351+00:00",
+  "samples": 264,
+  "peak_abs_tool_z_N": 474.71310583986167,
+  "controller_timestamp_s": 6443.661999999999,
+  "robot_ip": "192.168.3.10",
+  "updated_utc": "2026-11-10T15:30:36.820686+00:00"
+}

@@ -205,7 +205,7 @@ def initialize(data_dir):
         write_object(config_path, {
             "schema_version": 1,
             "robot_ip": "192.168.3.10",
-            "routine_file": "routines/routine.json",
+            "routine_file": "routines/routine_top.json",
             "routine_scripts_directory": "routine_scripts",
             "measurement_defaults": "measurement_default.json",
             "wall_coordinates": "wall_coordinates.json",
@@ -219,8 +219,7 @@ def initialize(data_dir):
     if not preferences.exists():
         write_object(preferences, {"schema_version": 1,
                                   "configuration_path": "profiles/default/app_config.json"})
-    for name in ("runtime", "logs"):
-        (data_dir / name).mkdir(parents=True, exist_ok=True)
+    (data_dir / "runtime").mkdir(parents=True, exist_ok=True)
     return preferences
 
 

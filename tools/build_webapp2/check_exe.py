@@ -90,11 +90,12 @@ def check(executable):
 
         # A deleted active routine must produce a configuration error rather
         # than silently recreating the routine and its taught coordinates.
-        active_routine = profile_directory / "routines/routine.json"
+        active_routine = profile_directory / "routines/routine_top.json"
         active_routine.unlink()
+        remaining_routines = {path: path.read_bytes() for path in (profile_directory / "routines").iterdir()}
         result = subprocess.run([str(executable), "--check-config", "--data-dir", str(data)],
                                 cwd=directory, env=environment, capture_output=True, text=True, timeout=90)
-        if result.returncode == 0 or any((profile_directory / "routines").iterdir()):
+        if result.returncode == 0 or active_routine.exists() or remaining_routines != {path: path.read_bytes() for path in (profile_directory / "routines").iterdir()}:
             raise RuntimeError("Executable did not preserve the deleted active routine.")
     print("Executable checks passed: UI, assets, defaults, RTDE imports, worker entry points and shutdown. No robot connection opened.")
 

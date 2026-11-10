@@ -149,7 +149,10 @@ The backend also calculates the bounds for CLI runs. Set `present` to false
 to disable exclusions while retaining width and position. Imported explicit
 start/end intervals retain their center and width.
 
-Obstacle positions use the same absolute wall X coordinates as Start and End. When present, the calculated bounds must be ordered and within the taught line.
+Obstacle positions use the same absolute wall X coordinates as Start and End.
+The bounds must be finite and ordered, but may overlap either endpoint or lie
+entirely before or after the taught line. An obstacle has no effect when no
+measurement point or movement path intersects it.
 Obstacles mark existing points as skipped without changing coordinates or
 spacing. Path crossings between samples also use the taught Home detour, even
 if no sample falls inside the obstacle. Set `obstacle.present` to false to remove obstacle exclusions.

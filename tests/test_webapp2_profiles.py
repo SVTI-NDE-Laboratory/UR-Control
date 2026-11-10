@@ -112,6 +112,7 @@ class ProfileTests(unittest.TestCase):
         self.assertTrue((self.profile.paths["robot_programs_directory"] / "apply_force_v2.script").is_file())
 
     def test_first_launch_installs_exact_starter_library(self):
+        self.assertFalse((self.data / "logs").exists())
         starter = ROOT / "src/program/webapp2/default_profile"
         for name in ("robot_programs", "routine_scripts", "routines"):
             expected = {path.relative_to(starter / name): path.read_bytes()
@@ -119,7 +120,8 @@ class ProfileTests(unittest.TestCase):
             actual = {path.relative_to(self.profile.path.parent / name): path.read_bytes()
                       for path in (self.profile.path.parent / name).rglob("*") if path.is_file()}
             self.assertEqual(actual, expected)
-        self.assertEqual(self.profile.paths["routine_file"].name, "routine.json")
+        self.assertEqual(self.profile.paths["routine_file"].name, "routine_top.json")
+        self.assertEqual(read_object(self.profile.paths["wall_coordinates"])["movement_limits"]["y_direction"], "up")
 
     def test_restart_never_restores_deleted_or_edited_starter_files(self):
         # An empty library is also a user choice once the profile exists.
@@ -141,7 +143,7 @@ class ProfileTests(unittest.TestCase):
         self.profile.paths["routine_file"].unlink()
         with self.assertRaises(FileNotFoundError):
             load_profile(self.data)
-        self.assertEqual(list((self.profile.path.parent / "routines").iterdir()), [])
+        self.assertEqual([path.name for path in (self.profile.path.parent / "routines").iterdir()], ["routine_bottom.json"])
 
     def test_nonempty_folder_without_preferences_is_not_seeded(self):
         self.profile.preferences_path.unlink()
@@ -394,7 +396,7 @@ class LocalDataLocationTests(unittest.TestCase):
         candidate = change_data_directory(profile, destination)
         self.assertEqual(application_directory(), destination)
         self.assertEqual(candidate.path, destination / "profiles/default/app_config.json")
-        self.assertEqual(candidate.paths["routine_file"], destination / "profiles/default/routines/routine.json")
+        self.assertEqual(candidate.paths["routine_file"], destination / "profiles/default/routines/routine_top.json")
         self.assertEqual(candidate.paths["routine_scripts_directory"], destination / "profiles/default/routine_scripts")
         self.assertEqual(candidate.paths["measurement_defaults"].read_bytes(), profile.paths["measurement_defaults"].read_bytes())
         self.assertTrue(profile.path.exists())

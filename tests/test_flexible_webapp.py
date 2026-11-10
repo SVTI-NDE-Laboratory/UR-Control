@@ -38,6 +38,22 @@ class PlaneTests(unittest.TestCase):
         self.assertAlmostEqual(result["measurement_xy"]["X"], 500)
         self.assertAlmostEqual(result["measurement_xy"]["Y"], -200)
 
+    def test_entry_and_return_use_selected_endpoint(self):
+        for side in ("start", "end"):
+            with self.subTest(side=side), patch.object(worker.flexible, "ENTRY_SIDE", side), patch.object(worker.flexible, "run_routine") as routine, patch.object(worker.flexible, "movel_pose") as move:
+                worker.flexible.run_entry_sequence(Mock(), self.data, self.geometry, .1, .1)
+                self.assertEqual(routine.call_args.args[0], f"home_to_{side}")
+                low = move.call_args.args[2]
+                expected = self.data["waypoints"][f"p_{side}_l"]["p"]
+                # Plane motion keeps the frame's tool orientation at either endpoint.
+                for actual, target in zip(low[:3], expected[:3]):
+                    self.assertAlmostEqual(actual, target)
+                move.reset_mock()
+                worker.flexible.run_exit_sequence(Mock(), self.data, self.geometry, .1, .1)
+                self.assertEqual(routine.call_args.args[0], f"{side}_to_home")
+                for actual, target in zip(move.call_args_list[0].args[2], low):
+                    self.assertAlmostEqual(actual, target)
+
     def test_out_of_plane_and_wrong_orientation_are_rejected(self):
         pose = worker.flexible.measurement_pose(self.data, self.geometry, 500, -200)
         x_axis, y_axis = worker.flexible.measurement_axes(self.geometry)
@@ -159,6 +175,21 @@ class FlexibleApiTests(unittest.IsolatedAsyncioTestCase):
     async def test_commands_require_started_session(self):
         response = await self.client.post("/api/flexible/command", json={"action": "force"})
         self.assertEqual(response.status_code, 409)
+
+    async def test_start_side_defaults_and_validation(self):
+        with patch.object(self.workers, "start_flexible", return_value={}) as start:
+            for payload, side in (({}, "start"), ({"entry_side": "start"}, "start"), ({"entry_side": "end"}, "end")):
+                response = await self.client.post("/api/flexible/start", json=payload)
+                self.assertEqual(response.status_code, 200, response.text)
+                start.assert_called_with(side)
+            response = await self.client.post("/api/flexible/start")
+            self.assertEqual(response.status_code, 200, response.text)
+            start.assert_called_with("start")
+            start.reset_mock()
+            for payload in ({"entry_side": "other"}, {"entry_side": None}, {"side": "end"}):
+                response = await self.client.post("/api/flexible/start", json=payload)
+                self.assertEqual(response.status_code, 422, response.text)
+            start.assert_not_called()
 
     async def test_stop_ends_ready_flexible_session_and_reports_error(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -363,6 +394,26 @@ class SessionTests(unittest.TestCase):
             stop.assert_called_once()
             self.connections[0].disconnect.assert_called_once()
             self.assertEqual(read_json(Path(directory) / "state.json")["mode"], "error")
+
+    def test_selected_side_reaches_worker_and_remains_for_exit(self):
+        for side in ("start", "end"):
+            with self.subTest(side=side), tempfile.TemporaryDirectory() as temporary:
+                directory = Path(temporary)
+                owner = ControlWorkers()
+                with patch("src.program.webapp2.control.RUNTIME", directory), patch.object(owner, "_spawn") as spawn:
+                    owner.start_flexible(side)
+                    self.assertEqual(spawn.call_args.args[1], [owner.directory, side])
+
+                def entry(*args):
+                    self.assertEqual(worker.flexible.ENTRY_SIDE, side)
+                    write_json_atomic(directory / "command.json", {"action": "end"})
+
+                def exit(*args):
+                    self.assertEqual(worker.flexible.ENTRY_SIDE, side)
+
+                with patch.object(worker.flexible, "ENTRY_SIDE", "start"), patch.object(worker, "Feedback"), patch.object(worker, "assert_robot_running"), patch.object(worker, "get_rtde_receive", return_value=Mock()), patch.object(worker, "assert_at_home"), patch.object(worker, "assert_in_plane", return_value={}), patch.object(worker.flexible, "run_entry_sequence", side_effect=entry), patch.object(worker.flexible, "run_exit_sequence", side_effect=exit) as returning:
+                    worker.run(directory, side)
+                    returning.assert_called_once()
 
     def test_force_rechecks_actual_pose_before_loading_program(self):
         receiver = self.connect("fake")
